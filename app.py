@@ -3,32 +3,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Configuración
-st.set_page_config(page_title="Simulador Naval UV - Equipo 4", layout="wide")
-
-# Estilo
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; }
-    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 5px solid #0056b3; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    h1 { color: #002d5a; }
-    </style>
-    """, unsafe_allow_html=True)
+# Configuración de la página
+st.set_page_config(page_title="Simulador Naval UV", layout="wide")
 
 st.title("⚓ Generador de Curvas de Aguas Abiertas")
-st.subheader("Facultad de Ingeniería Mecánica y Ciencias Navales | Universidad Veracruzana")
+st.subheader("Ingeniería Marina 2, Sistemas de Propulsión | Universidad Veracruzana")
 
-# Información del Proyecto corregida
-with st.expander("👥 Integrantes del Equipo 4"):
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.write("**Materia:** Ingeniería Marina 2, Sistemas de Propulsión")
-        st.write("**Proyecto:** Análisis de Series B de Wageningen")
-    with col_b:
-        st.write("**Estudiantes:**")
-        st.write("- HERNANDEZ FERNANDEZ LIZETH\n- JARQUIN CONTRERAS JADE FERNANDA\n- NAVARRO QUIROZ VANIA AKETZALLI\n- REVILLA REYES IRIS LIZBETH\n- VILLA GARCIA KARLA\n- ELIAS SALAZAR JOSE\n- GALINDO BUSTOS OSCAR")
-
-st.divider()
+# Lista de integrantes
+with st.expander("👥 Ver Equipo 4"):
+    st.write("HERNANDEZ FERNANDEZ LIZETH, JARQUIN CONTRERAS JADE FERNANDA, NAVARRO QUIROZ VANIA AKETZALLI, REVILLA REYES IRIS LIZBETH, VILLA GARCIA KARLA, ELIAS SALAZAR JOSE, GALINDO BUSTOS OSCAR")
 
 @st.cache_data
 def load_data():
@@ -40,39 +23,40 @@ def load_data():
 dict_tablas = load_data()
 
 if dict_tablas:
-    st.sidebar.header("⚙️ Configuración")
-    # LISTA DE HOJAS: Esto evita el error. Tú eliges la hoja que quieres ver.
-    lista_hojas = list(dict_tablas.keys())
-    hoja_seleccionada = st.sidebar.selectbox("Selecciona la hoja de datos (según tu Excel):", lista_hojas)
-    
-    df = dict_tablas[hoja_seleccionada].copy()
-    
-    # Cálculo de Eficiencia
-    df['Eficiencia (nO)'] = (df['J'] / (2 * np.pi)) * (df['KT'] / df['KQ'])
-    df['Eficiencia (nO)'] = df['Eficiencia (nO)'].replace([np.inf, -np.inf], np.nan).fillna(0)
+    # FILTRO INTELIGENTE: Solo mostramos hojas que tengan las 3 columnas necesarias
+    hojas_validas = []
+    for nombre, df in dict_tablas.items():
+        if all(col in df.columns for col in ['J', 'KT', 'KQ']):
+            hojas_validas.append(nombre)
 
-    # Métricas
-    max_idx = df['Eficiencia (nO)'].idxmax()
-    j_opt = df.loc[max_idx, 'J']
-    eff_max = df.loc[max_idx, 'Eficiencia (nO)']
+    if hojas_validas:
+        st.sidebar.success(f"Se encontraron {len(hojas_validas)} tablas válidas")
+        hoja_sel = st.sidebar.selectbox("Selecciona tu tabla de datos:", hojas_validas)
+        
+        df = dict_tablas[hoja_sel].copy()
+        
+        # Cálculo de eficiencia
+        df['nO'] = (df['J'] / (2 * np.pi)) * (df['KT'] / df['KQ'])
+        df['nO'] = df['nO'].replace([np.inf, -np.inf], np.nan).fillna(0)
 
-    c1, c2 = st.columns(2)
-    c1.metric("Eficiencia Máxima (ηO)", f"{eff_max:.4f}")
-    c2.metric("Avance (J) Óptimo", f"{j_opt:.2f}")
-
-    # Gráfica
-    st.subheader(f"📈 Curvas para: {hoja_seleccionada}")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(df['J'], df['KT'], 'b-', label='KT', linewidth=2)
-    ax.plot(df['J'], df['KQ']*10, 'g-', label='10*KQ', linewidth=2)
-    ax.plot(df['J'], df['Eficiencia (nO)'], 'r--', label='nO', linewidth=2)
-    ax.set_ylim(0, 1.2)
-    ax.grid(True, linestyle=':')
-    ax.legend()
-    st.pyplot(fig)
-
-    # Tabla
-    st.subheader("📝 Tabla de Valores")
-    st.dataframe(df[['J', 'KT', 'KQ', 'Eficiencia (nO)']], use_container_width=True)
+        # Gráfica Profesional
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(df['J'], df['KT'], 'b-o', label='KT (Empuje)', markersize=4)
+        ax.plot(df['J'], df['KQ']*10, 'g-o', label='10*KQ (Torque)', markersize=4)
+        ax.plot(df['J'], df['nO'], 'r--o', label='nO (Eficiencia)', markersize=4)
+        
+        ax.set_title(f"Resultados: {hoja_sel}")
+        ax.set_xlabel("Coeficiente de Avance (J)")
+        ax.set_ylabel("Coeficientes")
+        ax.set_ylim(0, 1.2)
+        ax.grid(True, linestyle=':', alpha=0.6)
+        ax.legend()
+        st.pyplot(fig)
+        
+        # Tabla de valores
+        st.subheader("📝 Datos Calculados")
+        st.dataframe(df[['J', 'KT', 'KQ', 'nO']].style.format("{:.4f}"), use_container_width=True)
+    else:
+        st.error("❌ No encontré ninguna pestaña en tu Excel que tenga las columnas 'J', 'KT' y 'KQ' juntas. Revisa tu archivo Excel.")
 else:
-    st.error("No se pudo leer el Excel. Revisa que se llame 'Tabla 1.xlsx'")
+    st.error("❌ No se pudo cargar el archivo 'Tabla 1.xlsx'.")
