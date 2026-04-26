@@ -3,10 +3,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-# 1. Configuración de página con icono naval
+# 1. Configuración de página
 st.set_page_config(page_title="Wageningen B-Series Pro | Equipo 4", layout="wide", page_icon="⚓")
 
-# 2. CSS para el diseño elegante (Tabs modernas y métricas limpias)
+# 2. CSS para el diseño elegante (UV Style)
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -41,7 +41,6 @@ def calcular_curvas(pd_v, ae_v, z_v):
     col_c = 'Coeficiente'
     
     for j in j_vals:
-        # Cálculos con tablas separadas (Corregido)
         kt = np.sum(df_kt[col_c] * (j**df_kt['S (j)']) * (pd_v**df_kt['T (p/d)']) * (ae_v**df_kt['U (ae/ao)']) * (z_v**df_kt['V (z)']))
         kq = np.sum(df_kq[col_c] * (j**df_kq['S (j)']) * (pd_v**df_kq['T (p/d)']) * (ae_v**df_kq['U (ae/ao)']) * (z_v**df_kq['V (z)']))
         kt_l.append(max(0, kt))
@@ -77,7 +76,6 @@ if df_kt is not None:
         - GALINDO BUSTOS OSCAR
         """)
 
-    # Pestañas con el diseño anterior que te gustó
     tab1, tab2, tab3 = st.tabs(["📈 Gráfica de Rendimiento", "📋 Datos Técnicos", "🧠 Fundamentos Teóricos"])
 
     with tab1:
@@ -85,27 +83,22 @@ if df_kt is not None:
         max_eff = res['nO'].max()
         j_opt = res.loc[res['nO'].idxmax(), 'J']
         
-        # Métricas en columnas limpias
         c1, c2, c3 = st.columns(3)
         c1.metric("Eficiencia Máx (ηO)", f"{max_eff*100:.2f}%")
         c2.metric("Avance Óptimo (J)", f"{j_opt:.3f}")
         c3.metric("Z Seleccionado", f"{z_val} Palas")
 
-        # Gráfica con sombreado y diseño estético
         fig, ax = plt.subplots(figsize=(11, 5.5))
         ax.plot(res['J'], res['KT'], color='#004c6d', label='KT (Empuje)', lw=2.5)
         ax.plot(res['J'], res['KQ']*10, color='#2ca02c', label='10*KQ (Torque)', lw=2.5)
         ax.plot(res['J'], res['nO'], color='#ef4444', label='ηO (Eficiencia)', lw=3.5, ls='--')
         
-        # Recuperamos el sombreado elegante
         ax.fill_between(res['J'], 0, res['nO'], color='#ef4444', alpha=0.1)
-        
-        # Línea indicadora del punto óptimo
         ax.axvline(x=j_opt, color='gray', linestyle=':', alpha=0.5)
         
         ax.set_title(f"Diagrama de Aguas Abiertas - Serie B (P/D={pd_val:.2f})", fontsize=14, fontweight='bold')
-        ax.set_xlabel('Coeficiente de Avance (J)', fontsize=11)
-        ax.set_ylabel('Valores Adimensionales', fontsize=11)
+        ax.set_xlabel('Coeficiente de Avance (J)')
+        ax.set_ylabel('Valores Adimensionales')
         ax.set_ylim(0, 1.1)
         ax.set_xlim(0, 1.2)
         ax.grid(True, linestyle='--', alpha=0.4)
@@ -116,22 +109,32 @@ if df_kt is not None:
         st.subheader("Hoja de Resultados Numéricos")
         res_display = res.copy()
         res_display['nO (%)'] = res_display['nO'] * 100
-        # Resaltado verde para el punto óptimo
         st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#dcfce7').format("{:.4f}"), use_container_width=True)
-        st.download_button("📂 Descargar Datos para Reporte (CSV)", res_display.to_csv(index=False), "datos_equipo4.csv")
+        st.download_button("📂 Descargar CSV", res_display.to_csv(index=False), "datos_equipo4.csv")
 
     with tab3:
-        st.header("Sustento Teórico del Proyecto")
-        col_l, col_r = st.columns(2)
-        with col_l:
-            st.markdown("### Modelado Matemático")
-            st.latex(r"K_T = \sum C_n \cdot J^{s} \cdot (P/D)^{t} \cdot (A_E/A_O)^{u} \cdot Z^{v}")
-            st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
-        with col_r:
-            st.markdown("### Relación de Fuerzas")
-            st.latex(r"T = K_T \cdot \rho \cdot n^2 \cdot D^4")
-            st.latex(r"Q = K_Q \cdot \rho \cdot n^2 \cdot D^5")
-        st.info("Nota: Este simulador implementa los polinomios de Oosterveld & van Oossanen para la Serie B de Wageningen.")
+        st.header("Modelo Matemático (Polinomios de Wageningen)")
+        st.write("El rendimiento de la hélice se calcula mediante las ecuaciones de regresión de **Oosterveld & van Oossanen**, basadas en los datos analizados por computadora de la serie B de Wageningen.")
+        
+        st.markdown("### 1. Coeficientes de Empuje (KT) y Par (KQ)")
+        st.latex(r"K_T = \sum_{n=1}^{39} C_n \cdot J^{s_n} \cdot (P/D)^{t_n} \cdot (A_E/A_O)^{u_n} \cdot Z^{v_n}")
+        st.latex(r"K_Q = \sum_{n=1}^{47} C_n \cdot J^{s_n} \cdot (P/D)^{t_n} \cdot (A_E/A_O)^{u_n} \cdot Z^{v_n}")
+        
+        st.markdown("""
+        **Donde:**
+        - **J:** Coeficiente de avance.
+        - **P/D:** Relación de paso.
+        - **AE/AO:** Relación de área expandida.
+        - **Z:** Número de palas.
+        - **Cn:** Coeficientes de la regresión polinomial.
+        """)
+        
+        st.markdown("---")
+        st.markdown("### 2. Eficiencia en Aguas Abiertas (ηO)")
+        st.write("La eficiencia del propulsor se define como la relación entre la potencia de empuje obtenida y la potencia de giro entregada:")
+        st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
+        
+        st.info("Este modelo permite predecir el comportamiento de la hélice sin necesidad de realizar pruebas físicas en canal para cada variación geométrica.")
 
 else:
-    st.error("⚠️ Error: El archivo 'Tabla 1.xlsx' es necesario para los cálculos.")
+    st.error("⚠️ Error: Falta el archivo 'Tabla 1.xlsx'.")
