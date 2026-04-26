@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Configuración premium
+# Configuración premium con colores UV
 st.set_page_config(page_title="Wageningen B-Series Pro | Equipo 4", layout="wide", page_icon="⚓")
 
 # CSS para un look de software moderno y colores UV
@@ -20,18 +20,31 @@ st.markdown("""
 @st.cache_data
 def load_coefficients():
     try:
-        # Intentamos cargar los archivos subidos
-        return pd.read_excel('Tabla 1.xlsx', sheet_name='KT'), pd.read_excel('Tabla 1.xlsx', sheet_name='KQ')
-    except: return None, None
+        kt_df = pd.read_excel('Tabla 1.xlsx', sheet_name='KT')
+        kq_df = pd.read_excel('Tabla 1.xlsx', sheet_name='KQ')
+        # Normalizamos nombres de columnas para evitar el KeyError
+        kt_df.columns = [c.strip().capitalize() for c in kt_df.columns]
+        kq_df.columns = [c.strip().capitalize() for c in kq_df.columns]
+        return kt_df, kq_df
+    except Exception as e:
+        st.error(f"Error al cargar el Excel: {e}")
+        return None, None
 
 df_kt, df_kq = load_coefficients()
 
 def calcular_curvas(pd_v, ae_v, z_v):
     j_vals = np.linspace(0.001, 1.2, 100)
     kt_l, kq_l = [], []
+    
+    # Usamos .get() o búsqueda flexible por si el nombre varía
+    col_coef = 'Coeficiente' 
+    
     for j in j_vals:
-        kt = np.sum(df_kt['Coeficiente'] * (j**df_kt['s (J)']) * (pd_v**df_kt['t (P/D)']) * (ae_v**df_kt['u (AE/AO)']) * (z_v**df_kt['v (Z)']))
-        kq = np.sum(df_kq['Coeficiente'] * (j**df_kq['s (J)']) * (pd_v**df_kq['t (P/D)']) * (ae_v**df_kq['u (AE/AO)']) * (z_v**df_kq['v (Z)']))
+        # Cálculo de KT
+        kt = np.sum(df_kt[col_coef] * (j**df_kt['S (j)']) * (pd_v**df_kt['T (p/d)']) * (ae_v**df_kt['U (ae/ao)']) * (z_v**df_kt['V (z)']))
+        # Cálculo de KQ
+        kq = np.sum(df_kq[col_coef] * (j**df_kq['S (j)']) * (pd_v**df_kq['T (p/d)']) * (ae_v**df_kq['U (ae/ao)']) * (z_v**df_kq['V (z)']))
+        
         kt_l.append(max(0, kt))
         kq_l.append(max(0, kq))
     
@@ -66,15 +79,11 @@ if df_kt is not None:
         c3.metric("KT @ Óptimo", f"{res.loc[res['nO'].idxmax(), 'KT']:.3f}")
         c4.metric("10KQ @ Óptimo", f"{res.loc[res['nO'].idxmax(), 'KQ']*10:.3f}")
 
-        # GRÁFICA CORREGIDA
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(res['J'], res['KT'], color='#004c6d', label='KT (Empuje)', lw=2)
         ax.plot(res['J'], res['KQ']*10, color='#2ca02c', label='10*KQ (Torque)', lw=2)
         ax.plot(res['J'], res['nO'], color='#ef4444', label='ηO (Eficiencia)', lw=3, ls='--')
-        
-        # Sombreado corregido
         ax.fill_between(res['J'], 0, res['nO'], color='#ef4444', alpha=0.1)
-        
         ax.set_title(f"Resultados de Diseño (Z={z_val}, P/D={pd_val:.2f})")
         ax.set_xlabel('J')
         ax.set_ylabel('Coeficientes')
@@ -89,14 +98,8 @@ if df_kt is not None:
 
     with tab3:
         st.markdown("### Modelo Matemático")
-        st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
+        st.latex(r"K_T = \sum C_n \cdot J^{s} \cdot (P/D)^{t} \cdot (A_E/A_O)^{u} \cdot Z^{v}")
         st.info("Cálculos basados en los polinomios de Oosterveld y van Oossanen (Serie B).")
 
 else:
-    st.error("⚠️ Sube el archivo 'Tabla 1.xlsx' a GitHub.")
-        # Sombreado de área de eficiencia
-        ax.fill_between(res['J'], res['nO'], color='#ef4444', alpha=0.1)
-        
-        # Línea vertical en el punto óptimo
-        ax.axvline(x=j_opt, color='gray', linestyle='--', alpha=0.5)
-        ax.annotate(f'Punto de Diseño J={j_opt:.2f}', xy=(j_opt, max_eff), xytext=(j_opt+0.1, max_eff+
+    st.error("⚠️ No se pudo leer el archivo. Revisa que las pestañas se llamen 'KT' y 'KQ'.")
