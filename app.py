@@ -6,7 +6,7 @@ import numpy as np
 # Configuración premium con colores UV
 st.set_page_config(page_title="Wageningen B-Series Pro | Equipo 4", layout="wide", page_icon="⚓")
 
-# CSS para look profesional y colores institucionales
+# CSS para look profesional y colores institucionales (Verde y Azul UV)
 st.markdown("""
     <style>
     .main { background-color: #f0f2f6; }
@@ -38,7 +38,7 @@ def calcular_curvas(pd_v, ae_v, z_v):
     
     for j in j_vals:
         kt = np.sum(df_kt[col_coef] * (j**df_kt['S (j)']) * (pd_v**df_kt['T (p/d)']) * (ae_v**df_kt['U (ae/ao)']) * (z_v**df_kt['V (z)']))
-        kq = np.sum(df_kq[col_coef] * (j**df_kq['S (j)']) * (pd_v**df_kq['T (p/d)']) * (ae_v**df_kq['U (ae/ao)']) * (z_v**df_kq['V (z)']))
+        kq = np.sum(df_kq[col_coef] * (j**df_kq['S (j)']) * (pd_v**df_kt['T (p/d)']) * (ae_v**df_kq['U (ae/ao)']) * (z_v**df_kq['V (z)']))
         kt_l.append(max(0, kt))
         kq_l.append(max(0, kq))
     
@@ -53,22 +53,21 @@ st.caption("Facultad de Ingeniería Mecánica y Ciencias Navales | Universidad V
 if df_kt is not None:
     with st.sidebar:
         st.header("🎮 Panel de Control")
-        with st.expander("Configuración Principal", expanded=True):
+        with st.expander("Configuración de Hélice", expanded=True):
             pd_val = st.slider("Paso/Diámetro (P/D)", 0.5, 1.4, 1.20, 0.01)
             ae_val = st.slider("Relación de Área (AE/AO)", 0.3, 1.0, 0.45, 0.05)
             z_val = st.select_slider("Número de palas (Z)", options=[3, 4, 5, 6, 7], value=4)
         
         st.markdown("---")
         st.write("**Integrantes del Equipo 4:**")
-        # Nombres y apellidos actualizados
         st.info("""
-        - Luna Soto
-        - Jarquin Jiménz
-        - Navarro Velázquez
-        - Revilla Izquierdo
-        - Villa K.
-        - Elias J.
-        - Galindo O.
+        - HERNANDEZ FERNANDEZ LIZETH
+        - JARQUIN CONTRERAS JADE FERNANDA
+        - NAVARRO QUIROZ VANIA AKETZALLI
+        - REVILLA REYES IRIS LIZBETH
+        - VILLA GARCIA KARLA
+        - ELIAS SALAZAR JOSE
+        - GALINDO BUSTOS OSCAR
         """)
 
     tab1, tab2, tab3 = st.tabs(["📈 Gráfica de Rendimiento", "📋 Datos Técnicos", "🧠 Fundamentos Teóricos"])
@@ -98,8 +97,7 @@ if df_kt is not None:
         st.pyplot(fig)
 
     with tab2:
-        st.subheader("Resultados Numéricos")
-        # Agregamos columna de eficiencia en porcentaje para mayor claridad
+        st.subheader("Resultados Numéricos Adimensionales")
         res_display = res.copy()
         res_display['nO (%)'] = res_display['nO'] * 100
         st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#dcfce7').format("{:.4f}"), use_container_width=True)
@@ -107,30 +105,28 @@ if df_kt is not None:
 
     with tab3:
         st.header("Teoría de las Series B de Wageningen")
-        col_a, col_b = st.columns(2)
+        st.write("Los cálculos de este simulador se basan en los polinomios de regresión de **Oosterveld y van Oossanen**, los cuales permiten determinar el rendimiento de propulsores de la Serie B de Wageningen.")
         
+        col_a, col_b = st.columns(2)
         with col_a:
-            st.subheader("Definiciones Físicas")
-            st.write("Las fuerzas reales se relacionan con los coeficientes adimensionales mediante:")
-            st.latex(r"T = K_T \cdot \rho \cdot n^2 \cdot D^4")
-            st.latex(r"Q = K_Q \cdot \rho \cdot n^2 \cdot D^5")
+            st.subheader("Fórmulas de Coeficientes")
+            st.latex(r"K_T = \sum_{n=1}^{39} C_n \cdot J^{s_n} \cdot (P/D)^{t_n} \cdot (A_E/A_O)^{u_n} \cdot Z^{v_n}")
+            st.latex(r"K_Q = \sum_{n=1}^{47} C_n \cdot J^{s_n} \cdot (P/D)^{t_n} \cdot (A_E/A_O)^{u_n} \cdot Z^{v_n}")
             st.markdown("""
-            Donde:
-            - **T:** Empuje (Thrust) [N]
-            - **Q:** Torque (Par motor) [Nm]
-            - **ρ:** Densidad del fluido [$kg/m^3$]
-            - **n:** Velocidad de rotación [rev/s]
-            - **D:** Diámetro de la hélice [m]
+            **Nomenclatura Adimensional:**
+            - **J:** Coeficiente de avance ($V_a / nD$)
+            - **KT:** Coeficiente de empuje
+            - **KQ:** Coeficiente de torque
+            - **ηO:** Eficiencia en aguas abiertas
             """)
         
         with col_b:
-            st.subheader("Ecuación de Eficiencia")
-            st.write("La eficiencia en aguas abiertas ($\eta_O$) representa la relación entre la potencia útil obtenida y la potencia entregada al propulsor:")
+            st.subheader("Aplicación Física (Fuerzas Reales)")
+            st.write("Para obtener las fuerzas en unidades de ingeniería (N, Nm), se utilizan las siguientes relaciones:")
+            st.latex(r"T = K_T \cdot \rho \cdot n^2 \cdot D^4")
+            st.latex(r"Q = K_Q \cdot \rho \cdot n^2 \cdot D^5")
             st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
-            st.info("""
-            **Nota Técnica:** El modelo utiliza los coeficientes de regresión de Oosterveld & van Oossanen (1975). 
-            Estos polinomios permiten predecir el rendimiento sin necesidad de ensayos en canal de experiencias para cada diseño.
-            """)
+            st.info("Donde **ρ** es la densidad del agua, **n** las revoluciones por segundo y **D** el diámetro del propulsor.")
 
 else:
     st.error("⚠️ Error: Sube el archivo 'Tabla 1.xlsx' a GitHub.")
