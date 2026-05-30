@@ -35,9 +35,9 @@ st.markdown("""
     .tech-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     .tech-card h4 { margin-top: 0; color: #4c1d95; font-size: 16px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
     
-    /* Bloques de Fórmulas Académicas */
-    .formula-box { background-color: #0f172a; color: #f8fafc; padding: 18px; border-radius: 8px; border-left: 4px solid #8b5cf6; font-family: 'Courier New', Courier, monospace; margin: 12px 0; }
-    .formula-title { font-size: 11px; text-transform: uppercase; color: #94a3b8; letter-spacing: 1px; font-weight: bold; margin-bottom: 6px; }
+    /* Bloques de Alertas de Diagnóstico en el Campbell */
+    .status-box-safe { background-color: #f0fdf4; border-left: 5px solid #16a34a; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    .status-box-danger { background-color: #fef2f2; border-left: 5px solid #dc2626; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
     
     /* Indicadores de Métricas */
     div[data-testid="stMetricValue"] { font-size: 28px !important; color: #4c1d95; font-weight: 700; letter-spacing: -0.5px; }
@@ -55,6 +55,7 @@ def load_coefficients():
         kq_df = pd.read_excel('Tabla 1.xlsx', sheet_name='KQ')
         for df in [kt_df, kq_df]:
             df.columns = [c.strip().capitalize() for c in df.columns]
+        return kt_df, df_kq
         return kt_df, kq_df
     except Exception as e:
         st.error(f"Error crítico al cargar los polinomios desde 'Tabla 1.xlsx': {e}")
@@ -168,12 +169,9 @@ if df_kt is not None:
         j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
         
         kpi1, kpi2, kpi3 = st.columns(3)
-        with kpi1:
-            st.metric("Eficiencia Máxima (η_O)", f"{max_eff*100:.2f} %")
-        with kpi2:
-            st.metric("Coeficiente de Avance Óptimo (J_opt)", f"{j_opt:.3f}")
-        with kpi3:
-            st.metric("Diámetro del Propulsor", f"{diam_prop_m:.2f} m")
+        with kpi1: st.metric("Eficiencia Máxima (η_O)", f"{max_eff*100:.2f} %")
+        with kpi2: st.metric("Coeficiente de Avance Óptimo (J_opt)", f"{j_opt:.3f}")
+        with kpi3: st.metric("Diámetro del Propulsor", f"{diam_prop_m:.2f} m")
             
         fig, ax = plt.subplots(figsize=(10, 4.2))
         ax.plot(res['J'], res['KT'], color='#0284c7', label=r'Empuje ($K_T$)', lw=2.5)
@@ -185,27 +183,13 @@ if df_kt is not None:
             ax.axvline(x=j_opt, color='#64748b', linestyle=':', alpha=0.7)
             
         ax.set_title("Características Operativas en Aguas Abiertas - Wageningen Serie B", fontsize=11, fontweight='bold', color='#1e293b')
-        ax.set_xlabel('Coeficiente de Avance (J)', fontsize=10)
-        ax.set_ylabel('Parámetros Adimensionales', fontsize=10)
-        ax.set_xlim(0, 1.2)
-        ax.set_ylim(0, 1.1)
-        ax.grid(True, linestyle=':', alpha=0.5)
+        ax.set_xlim(0, 1.2); ax.set_ylim(0, 1.1); ax.grid(True, linestyle=':', alpha=0.5)
         ax.legend(loc='upper right', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0')
         st.pyplot(fig)
         
-        st.markdown("""
-        <div class="tech-card">
-            <h4>🧠 Formulación Hidrodinámica Aplicada (Wageningen Series)</h4>
-            <p>La evaluación numérica se fundamenta en las ecuaciones polinomiales multivariables para hélices de la Serie B:</p>
-        </div>
-        """, unsafe_allow_html=True)
         st.latex(r"K_T = \sum (C_n \cdot J^{S_n} \cdot (P/D)^{T_n} \cdot (A_E/A_O)^{U_n} \cdot Z^{V_n})")
-        st.latex(r"K_Q = \sum (C_m \cdot J^{S_m} \cdot (P/D)^{T_m} \cdot (A_E/A_O)^{U_m} \cdot Z^{V_m})")
         st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
 
-    # --------------------------------------------------------------------------
-    # TAB: REPORTE NUMÉRICO
-    # --------------------------------------------------------------------------
     with tab_res:
         st.subheader("📋 Matriz Completa de Resultados de la Hélice")
         res_display = res.copy()
@@ -229,15 +213,12 @@ if df_kt is not None:
             st.metric("Momento Torsor Nominal", f"{torque_nominal/1000:.2f} kN·m")
             st.metric("Tensión Real Calculada (τ)", f"{esfuerzo_real_mpa:.2f} MPa")
             st.metric("Límite Admisible IACS UR M68", f"{tau_admisible_mpa:.2f} MPa")
-            if esfuerzo_real_mpa <= tau_admisible_mpa:
-                st.success("✅ **CUMPLE SATISFACTORIAMENTE (IACS UR M68)**")
-            else:
-                st.error("❌ **RECHAZADO POR FATIGA TORSIONAL**")
+            if esfuerzo_real_mpa <= tau_admisible_mpa: st.success("✅ **CUMPLE SATISFACTORIAMENTE (IACS UR M68)**")
+            else: st.error("❌ **RECHAZADO POR FATIGA TORSIONAL**")
         with c_t2:
             fig_t, ax_t = plt.subplots(figsize=(6, 2.5))
             ax_t.barh(['Esfuerzo Real', 'Límite Admisible'], [esfuerzo_real_mpa, tau_admisible_mpa], color=['#10b981', '#4c1d95'], height=0.45)
-            ax_t.set_xlabel('Esfuerzo Torsional (MPa)')
-            ax_t.grid(True, linestyle=':', alpha=0.4)
+            ax_t.set_xlabel('Esfuerzo Torsional (MPa)'); ax_t.grid(True, linestyle=':', alpha=0.4)
             st.pyplot(fig_t)
 
     # --------------------------------------------------------------------------
@@ -250,26 +231,57 @@ if df_kt is not None:
             st.metric("Frecuencia de Whirling", f"{f_natural_hz:.2f} Hz")
             st.metric("Velocidad Crítica Lateral", f"{rpm_critica_lateral:.1f} RPM")
             st.metric("Banda Prohibida Excluida (±20%)", f"{margen_inf:.1f} - {margen_sup:.1f} RPM")
-            if rpm_motor < margen_inf or rpm_motor > margen_sup:
-                st.success("✅ **DISEÑO SEGURO: OPERACIÓN FUERA DE RESONANCIA**")
-            else:
-                st.error("❌ **ALERTA: OPERACIÓN DENTRO DE ZONA CRÍTICA**")
+            if rpm_motor < margen_inf or rpm_motor > margen_sup: st.success("✅ **DISEÑO SEGURO: OPERACIÓN FUERA DE RESONANCIA**")
+            else: st.error("❌ **ALERTA: OPERACIÓN DENTRO DE ZONA CRÍTICA**")
         with c_l2:
             fig_l, ax_l = plt.subplots(figsize=(6, 2.5))
             ax_l.axvline(x=rpm_critica_lateral, color='red', linestyle='--')
             ax_l.axvspan(margen_inf, margen_sup, color='#ef4444', alpha=0.15)
             ax_l.scatter([rpm_motor], [1], color='#10b981', s=150, zorder=5, edgecolor='black')
-            ax_l.set_xlim(0, rpm_critica_lateral * 1.6)
-            ax_l.set_yticks([])
-            ax_l.set_xlabel('Velocidad del Eje (RPM)')
+            ax_l.set_xlim(0, rpm_critica_lateral * 1.6); ax_l.set_yticks([]); ax_l.set_xlabel('Velocidad del Eje (RPM)')
             ax_l.grid(True, linestyle=':', alpha=0.5)
             st.pyplot(fig_l)
 
     # --------------------------------------------------------------------------
-    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL
+    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL (¡CON NUEVO LETRERO DINÁMICO!)
     # --------------------------------------------------------------------------
     with tab4:
-        st.subheader("Mapa Dinámico de Intersección de Frecuencias del Sistema")
+        st.subheader("🗺️ Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
+        
+        # Lógica de verificación para el letrero verde/rojo
+        is_campbell_safe = True
+        motivo_riesgo = ""
+        
+        rpm_cruce_lat_zp = f_natural_hz * 60.0 / z_val
+        rpm_cruce_tor_zp = f_torsional_est * 60.0 / z_val
+        
+        # Verificar si las RPM operativas caen en la banda de velocidad prohibida lateral
+        if margen_inf <= rpm_motor <= margen_sup:
+            is_campbell_safe = False
+            motivo_riesgo = "La velocidad de operación continua coincide con la Banda de Velocidad Prohibida por Whirling Lateral."
+            
+        # Desplegar Letrero dinámico de estatus superior
+        if is_campbell_safe:
+            st.markdown(f"""
+            <div class="status-box-safe">
+                <h4 style='color: #15803d; margin: 0;'>🟢 DIAGNÓSTICO CAMPBELL: SISTEMA SEGURO Y COMPATIBLE</h4>
+                <p style='color: #166534; margin: 5px 0 0 0; font-size: 14px;'>
+                    <b>¡Diseño Seguro!</b> A las <b>{rpm_motor:.1f} RPM</b> de servicio, las frecuencias de excitación hidrodinámica de la hélice 
+                    (Orden {z_val}P = { (z_val*rpm_motor)/60.0 :.2f} Hz) operan de manera estable y con márgenes de separación reglamentarios 
+                    respecto a las frecuencias naturales estructurales del eje de cola. No hay riesgo de resonancia destructiva en régimen continuo.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="status-box-danger">
+                <h4 style='color: #991b1b; margin: 0;'>❌ ALERTA INGENIERÍAL: RIESGO DE RESONANCIA DETECTADO</h4>
+                <p style='color: #7f1d1d; margin: 5px 0 0 0; font-size: 14px;'>
+                    <b>Peligro Crítico:</b> {motivo_riesgo} Se requiere modificar el diámetro del eje, el número de palas o el material para desplazar los puntos de cruce fuera del rango de servicio continuo.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
         max_rpm_grafica = rpm_motor * 1.6
         rpm_eje_x = np.linspace(0, max_rpm_grafica, 400)
         
@@ -289,15 +301,15 @@ if df_kt is not None:
         ax_c.set_xlim(0, max_rpm_grafica)
         ax_c.set_ylim(0, max(f_torsional_est, (z_val * rpm_motor) / 60.0) * 1.25)
         ax_c.grid(True, linestyle=':', alpha=0.6)
+        ax_c.set_xlabel('Velocidad de Giro del Motor / Hélice (RPM)', fontsize=10)
+        ax_c.set_ylabel('Frecuencia Dinámica del Sistema (Hz)', fontsize=10)
         ax_c.legend(loc='upper left', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0', fontsize=9.5)
         st.pyplot(fig_c)
         
         st.markdown("### 📊 Matriz Analítica de Puntos de Intersección Críticos")
         rpm_cruce_lat_1p = f_natural_hz * 60.0 / 1.0
-        rpm_cruce_lat_zp = f_natural_hz * 60.0 / z_val
         rpm_cruce_lat_2zp = f_natural_hz * 60.0 / (z_val * 2)
         rpm_cruce_tor_1p = f_torsional_est * 60.0 / 1.0
-        rpm_cruce_tor_zp = f_torsional_est * 60.0 / z_val
         rpm_cruce_tor_2zp = f_torsional_est * 60.0 / (z_val * 2)
         
         def evaluar_zona(rpm_c):
@@ -315,12 +327,11 @@ if df_kt is not None:
         st.dataframe(pd.DataFrame(datos_cruces).style.format({"Frecuencia del Cruce (Hz)": "{:.2f} Hz", "Velocidad Crítica Exacta (RPM)": "{:.1f} RPM"}), use_container_width=True)
 
     # --------------------------------------------------------------------------
-    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS (¡AQUÍ ESTÁ LA CORRECCIÓN!)
+    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS
     # --------------------------------------------------------------------------
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico Avanzado: Mecánica de Fluidos de la Hélice")
         
-        # Flujo de fluidos
         v_m_s = velocidad * 0.514444
         v_avance = v_m_s * (1.0 - estela)
         n_rps = rpm_motor / 60.0
@@ -341,10 +352,8 @@ if df_kt is not None:
         eta_open_water = 0.55
         empuje_t_n = (potencia_kw * 1000.0 * eta_open_water) / (v_avance if v_avance > 0 else 1.0)
         
-        # Keller
         ae_ao_keller = ((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03
         
-        # --- PARÁMETROS PARA DIAGRAMA DE BURRILL ---
         ap_area = ae_val * (math.pi * (diam_prop_m**2) / 4.0) * (1.067 - 0.229 * pd_val)
         q_dinamica_07 = 0.5 * densidad_agua * (v_relativa_07**2)
         tau_c_diseno = empuje_t_n / (ap_area * q_dinamica_07)
@@ -361,10 +370,8 @@ if df_kt is not None:
             st.metric("Área Expandida Mínima (Keller)", f"{ae_ao_keller:.3f}")
             st.metric("Área Expandida de Tu Diseño ($A_E/A_O$)", f"{ae_val:.3f}")
             
-            if ae_val >= ae_ao_keller:
-                st.success("✅ **DISEÑO SEGURO CONTRA CAVITACIÓN (KELLER):** Área suficiente para mitigar burbujas de vapor.")
-            else:
-                st.error("❌ **RIESGO DE CAVITACIÓN (KELLER):** Área insuficiente. Peligro de erosión.")
+            if ae_val >= ae_ao_keller: st.success("✅ **DISEÑO SEGURO CONTRA CAVITACIÓN (KELLER):** Área suficiente.")
+            else: st.error("❌ **RIESGO DE CAVITACIÓN (KELLER):** Área insuficiente.")
                 
         with col_c2:
             fig_burrill, ax_b = plt.subplots(figsize=(6.5, 4.2))
@@ -381,20 +388,10 @@ if df_kt is not None:
             ax_b.set_title("Diagrama Límite de Cavitación de Burrill", fontsize=11, fontweight='bold', color='#1e293b')
             ax_b.set_xlabel(r"Número de Cavitación de la Sección ($\sigma_{0.7R}$)", fontsize=9)
             ax_b.set_ylabel(r"Coeficiente de Empuje de Cavitación ($\tau_C$)", fontsize=9)
-            ax_b.set_xlim(0.1, 1.4)
-            ax_b.set_ylim(0, max(0.4, tau_c_diseno * 1.5))
+            ax_b.set_xlim(0.1, 1.4); ax_b.set_ylim(0, max(0.4, tau_c_diseno * 1.5))
             ax_b.grid(True, linestyle=':', alpha=0.5)
             ax_b.legend(loc='upper right', fontsize=8, frameon=True, facecolor='#ffffff')
             st.pyplot(fig_burrill)
-            
-        st.markdown("""
-        <div class="tech-card">
-            <h4>💡 Explicación de los Criterios para Defensa del Proyecto</h4>
-            <p><b>1. Número de Reynolds (Rn):</b> Al dar en el orden de 10^7, demuestra que la capa límite en la pala es completamente turbulenta. Esto valida que los coeficientes del polinomio de Wageningen no sufrirán efectos de escala severos.</p>
-            <p><b>2. Criterio de Keller:</b> Determina el área mínima para evitar la caída abrupta del rendimiento por cavitación global basándose en la presión estática del agua a la profundidad del eje.</p>
-            <p><b>3. Diagrama de Burrill:</b> Es el estándar de la arquitectura naval para evaluar la severidad de la cavitación en el dorso de la pala. Mientras el punto dorado permanezca en la zona inferior verde, la hélice operará con niveles mínimos de ruido, vibración hidrodinámica y sin riesgo de picadura o erosión material.</p>
-        </div>
-        """, unsafe_allow_html=True)
 
 else:
     st.error("⚠️ Archivo de Coeficientes Inexistente: Asegúrese de posicionar 'Tabla 1.xlsx' en el mismo directorio de ejecución.")
