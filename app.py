@@ -113,7 +113,7 @@ if df_kt is not None:
         
         base = db_buques[tipo_buque]
         
-        with St_expander := st.expander("📐 Geometría de la Carena", expanded=True):
+        with st.expander("📐 Geometría de la Carena", expanded=True):
             eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=base["eslora"], step=1.0)
             lwl = st.number_input("Eslora en la Línea de Agua LWL (m)", value=base["lwl"], step=1.0)
             manga = st.number_input("Manga de Trazado B (m)", value=base["manga"], step=0.5)
@@ -121,14 +121,14 @@ if df_kt is not None:
             calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1)
             velocidad = st.number_input("Velocidad de Servicio (nudos)", value=base["velocidad"], step=0.5)
             
-        with St_expander_prop := st.expander("🌀 Hidrodinámica del Casco y Propulsor", expanded=True):
+        with st.expander("🌀 Hidrodinámica del Casco y Propulsor", expanded=True):
             estela = st.number_input("Fracción de Estela (w)", value=base["estela"], min_value=0.0, max_value=0.6, step=0.001, format="%.3f")
             t_fraction = st.slider("Fracción de Deducción de Empuje (t)", 0.05, 0.35, base["t_fraction"], 0.005)
             eta_r = st.number_input("Eficiencia Rotativa Relativa (η_R)", value=base["eta_r"], min_value=0.80, max_value=1.10, step=0.01, format="%.2f")
             wake_adj_percent = st.slider("Ajuste de Estela No Uniforme (%)", 0.0, 30.0, base["wake_adj_percent"], 0.5)
             inmersion_eje_m = st.number_input("Inmersión del Centro del Eje (h) [m]", value=base["inmersion_eje_m"], min_value=1.0, max_value=30.0, step=0.1)
 
-        with St_expander_mech := st.expander("⚙️ Geometría Mecánica y Materiales", expanded=True):
+        with st.expander("⚙️ Geometría Mecánica y Materiales", expanded=True):
             z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]))
             diam_prop_m = st.number_input("Diámetro de la Hélice D (m)", value=base["diam_prop_m"], step=0.01)
             pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001)
