@@ -74,27 +74,29 @@ def calcular_curvas(pd_v, ae_v, z_v):
     return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO & BARRA LATERAL TOTALMENTE DESBLOQUEADA
+# 3. INTERFAZ DE USUARIO Y CONTROL DE VISUALIZACIÓN AVANZADA
 # ==============================================================================
 st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
 
 if df_kt is not None:
     with st.sidebar:
-        st.markdown("### 🛠️ Configuración Global del Sistema")
-        st.write("Selecciona una plantilla base para cargar los datos predeterminados. **Todos los campos están desbloqueados** para tus modificaciones personalizadas.")
+        st.markdown("### 🛠️ Configuración Global")
         
         tipo_buque = st.selectbox(
             "Cargar Plantilla de Buque Base:",
             ["Granelero (Bulk Carrier)", "Tanque (VLCC)", "Portacontenedores (Containership)", "Personalizado (Manual)"]
         )
         
-        # Base de datos experta con valores iniciales sugeridos
+        # Interruptor clave para ocultar/mostrar parámetros ruidosos
+        mostrar_avanzado = st.checkbox("👁️ Mostrar Configuración Avanzada del Eje/Material", value=False)
+        
+        # Base de datos experta de buques
         db_buques = {
             "Granelero (Bulk Carrier)": {
                 "eslora": 320.0, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
                 "estela": 0.351, "t_fraccion": 0.180, "z_val": 4, "diam_prop_m": 9.86, "pd_val": 0.721,
-                "ae_val": 0.431, "material_helice": "Aleación de Ni-Al-Bronce (Cu3)", "peso_helice_kg": 18500.0, 
+                "ae_val": 0.431, "material_helice": "Bronce de Níquel-Aluminio (Cu3)", "peso_helice_kg": 18500.0, 
                 "inmersion_eje_m": 14.10, "potencia_kw": 22000.0, "rpm_motor": 75.0, "diametro_eje_mm": 680.0, 
                 "sigma_uts": 600.0, "longitud_volado_m": 3.5
             },
@@ -108,7 +110,7 @@ if df_kt is not None:
             "Portacontenedores (Containership)": {
                 "eslora": 366.0, "manga": 48.2, "puntal": 29.8, "calado": 15.50, "velocidad": 22.5,
                 "estela": 0.220, "t_fraccion": 0.140, "z_val": 5, "diam_prop_m": 8.90, "pd_val": 0.950,
-                "ae_val": 0.650, "material_helice": "Aleación de Ni-Al-Bronce (Cu3)", "peso_helice_kg": 24500.0, 
+                "ae_val": 0.650, "material_helice": "Bronce de Níquel-Aluminio (Cu3)", "peso_helice_kg": 24500.0, 
                 "inmersion_eje_m": 11.20, "potencia_kw": 52000.0, "rpm_motor": 98.0, "diametro_eje_mm": 780.0, 
                 "sigma_uts": 650.0, "longitud_volado_m": 3.2
             },
@@ -123,7 +125,7 @@ if df_kt is not None:
         
         base = db_buques[tipo_buque]
         
-        # TODOS LOS ELEMENTOS TIENEN disabled=False (ESTÁN DESBLOQUEADOS)
+        # SECCIÓN 1: DIMENSIONES GEOMÉTRICAS (SIEMPRE VISIBLE)
         with st.expander("📐 Dimensiones de la Carena", expanded=True):
             eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=base["eslora"], step=1.0, key=f"esl_{tipo_buque}")
             manga = st.number_input("Manga de Diseño B (m)", value=base["manga"], step=0.5, key=f"mng_{tipo_buque}")
@@ -131,6 +133,7 @@ if df_kt is not None:
             calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1, key=f"cld_{tipo_buque}")
             velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=base["velocidad"], step=0.5, key=f"vel_{tipo_buque}")
         
+        # SECCIÓN 2: PARÁMETROS HIDRODINÁMICOS (SIEMPRE VISIBLE)
         with st.expander("🌀 Parámetros Hidrodinámicos", expanded=True):
             estela = st.number_input("Fracción de Estela (w)", value=base["estela"], step=0.001, format="%.3f", key=f"est_{tipo_buque}")
             t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=base["t_fraccion"], step=0.001, format="%.3f", key=f"tf_{tipo_buque}")
@@ -140,17 +143,36 @@ if df_kt is not None:
             ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001, key=f"ae_{tipo_buque}")
             inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=base["inmersion_eje_m"], step=0.1, key=f"imm_{tipo_buque}")
             
-        with st.expander("⚙️ Propiedades del Material y Eje", expanded=True):
-            material_helice = st.text_input("Material de la Hélice", value=base["material_helice"], key=f"mat_{tipo_buque}")
-            peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=base["peso_helice_kg"], step=500.0, key=f"ph_{tipo_buque}")
-            potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=base["potencia_kw"], step=500.0, key=f"pot_{tipo_buque}")
-            rpm_motor = st.number_input("RPM de Operación Continua (n)", value=base["rpm_motor"], step=1.0, key=f"rpm_{tipo_buque}")
-            diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=base["diametro_eje_mm"], step=10.0, key=f"dia_{tipo_buque}")
-            sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=base["sigma_uts"], step=50.0, key=f"uts_{tipo_buque}")
-            longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=base["longitud_volado_m"], step=0.1, key=f"vol_{tipo_buque}")
+        # SECCIÓN 3: PROPIEDADES DE INGENIERÍA AVANZADA (OCULTA POR DEFECTO PERO CON VALORES OPERATIVOS)
+        lista_materiales = [
+            "Bronce de Manganeso (Cu1)", 
+            "Bronce de Níquel-Aluminio (Cu3)", 
+            "Acero Inoxidable Austenítico", 
+            "Acero al Carbono Forjado"
+        ]
+        idx_mat_inicial = lista_materiales.index(base["material_helice"]) if base["material_helice"] in lista_materiales else 0
+
+        if mostrar_avanzado:
+            with st.expander("⚙️ Propiedades del Material y Eje (Avanzado)", expanded=True):
+                material_helice = st.selectbox("Material de la Hélice", lista_materiales, index=idx_mat_inicial, key=f"mat_{tipo_buque}")
+                peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=base["peso_helice_kg"], step=500.0, key=f"ph_{tipo_buque}")
+                potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=base["potencia_kw"], step=500.0, key=f"pot_{tipo_buque}")
+                rpm_motor = st.number_input("RPM de Operación Continua (n)", value=base["rpm_motor"], step=1.0, key=f"rpm_{tipo_buque}")
+                diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=base["diametro_eje_mm"], step=10.0, key=f"dia_{tipo_buque}")
+                sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=base["sigma_uts"], step=50.0, key=f"uts_{tipo_buque}")
+                longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=base["longitud_volado_m"], step=0.1, key=f"vol_{tipo_buque}")
+        else:
+            # Si está oculto, las variables se crean internamente con los datos por defecto para que no falle nada
+            material_helice = base["material_helice"]
+            peso_helice_kg = base["peso_helice_kg"]
+            potencia_kw = base["potencia_kw"]
+            rpm_motor = base["rpm_motor"]
+            diametro_eje_mm = base["diametro_eje_mm"]
+            sigma_uts = base["sigma_uts"]
+            longitud_volado_m = base["longitud_volado_m"]
 
     # ==============================================================================
-    # 4. PROCESAMIENTO MATEMÁTICO REAL (EL VERDADERO BACKEND CALCULADO)
+    # 4. PROCESAMIENTO MATEMÁTICO EN SEGUNDO PLANO
     # ==============================================================================
     res = calcular_curvas(pd_val, ae_val, z_val)
     
@@ -167,7 +189,6 @@ if df_kt is not None:
     peso_eje_n = peso_lineal_eje * longitud_volado_m * 9.81
     delta_eje = (peso_eje_n * (longitud_volado_m**3)) / (8.0 * E_acero * I_inercia)
     
-    # Frecuencias calculadas matemáticamente por el programa
     f_natural_hz = 1.0 / (2.0 * math.pi * math.sqrt(delta_helice + delta_eje))
     rpm_critica_lateral = f_natural_hz * 60.0
     margen_inf = rpm_critica_lateral * 0.80
@@ -177,7 +198,7 @@ if df_kt is not None:
     f_torsional_est = f_natural_hz * factor_sname
 
     # ==============================================================================
-    # 5. DIVISIÓN DE SECCIONES POR PESTAÑAS
+    # 5. DIVISION DE PESTAÑAS (OUTPUTS DINÁMICOS)
     # ==============================================================================
     tab1, tab_res, tab2, tab3, tab4, tab5, tab_teoria = st.tabs([
         "📈 Hidrodinámica (Aguas Abiertas)", 
@@ -189,9 +210,7 @@ if df_kt is not None:
         "📚 Sustento Teórico y Fórmulas"
     ])
 
-    # --------------------------------------------------------------------------
-    # TAB 1: MODELO HIDRODINÁMICO DE AGUAS ABIERTAS
-    # --------------------------------------------------------------------------
+    # PESTAÑA 1: MODELO HIDRODINÁMICO
     with tab1:
         max_eff = res['nO'].max()
         j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
@@ -215,18 +234,14 @@ if df_kt is not None:
         ax.legend(loc='upper right', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0')
         st.pyplot(fig)
 
-    # --------------------------------------------------------------------------
-    # TAB REPORTE: MATRIZ DE RESULTADOS HIDRODINÁMICOS
-    # --------------------------------------------------------------------------
+    # PESTAÑA MATRIZ DE RESULTADOS
     with tab_res:
         st.subheader("📋 Matriz Completa de Resultados de la Hélice")
         res_display = res.copy()
         res_display['ηO (%)'] = res_display['nO'] * 100
         st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#f3e8ff').format("{:.4f}"), use_container_width=True, height=350)
 
-    # --------------------------------------------------------------------------
-    # TAB 2: ENTREGABLE 1 - VIBRACIÓN TORSIONAL
-    # --------------------------------------------------------------------------
+    # PESTAÑA ENTREGABLE 1: VIBRACIÓN TORSIONAL
     with tab2:
         st.subheader("Análisis de Esfuerzos de Torsión Cíclicos en el Eje de Cola")
         omega = (2.0 * math.pi * rpm_motor) / 60.0
@@ -256,9 +271,7 @@ if df_kt is not None:
             ax_t.set_xlabel('Esfuerzo Torsional (MPa)'); ax_t.grid(True, linestyle=':', alpha=0.4)
             st.pyplot(fig_t)
 
-    # --------------------------------------------------------------------------
-    # TAB 3: ENTREGABLE 2 - VIBRACIÓN LATERAL
-    # --------------------------------------------------------------------------
+    # PESTAÑA ENTREGABLE 2: VIBRACIÓN LATERAL
     with tab3:
         st.subheader("Cálculo de la Primera Velocidad Crítica Lateral por Flexión (Whirling)")
         c_l1, c_l2 = st.columns([1, 1.2])
@@ -279,9 +292,7 @@ if df_kt is not None:
             ax_l.grid(True, linestyle=':', alpha=0.5)
             st.pyplot(fig_l)
 
-    # --------------------------------------------------------------------------
-    # TAB 4: DIAGRAMA DE CAMPBELL
-    # --------------------------------------------------------------------------
+    # PESTAÑA ENTREGABLE 3: DIAGRAMA DE CAMPBELL
     with tab4:
         st.subheader("🗺️ Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
         
@@ -334,9 +345,7 @@ if df_kt is not None:
         ax_c.legend(loc='upper left', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0', fontsize=9.5)
         st.pyplot(fig_c)
 
-    # --------------------------------------------------------------------------
-    # TAB 5: ADVANCED - CAVITACIÓN Y PROPIEDADES DE MATERIAL
-    # --------------------------------------------------------------------------
+    # PESTAÑA ADVANCED - CAVITACIÓN Y MATERIALES
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico Avanzado y Materiales")
         
@@ -366,9 +375,7 @@ if df_kt is not None:
             else:
                 st.error("❌ **RIESGO DE CAVITACIÓN DETECTADO**")
 
-    # --------------------------------------------------------------------------
-    # PESTAÑA: SUSTENTO TEÓRICO (NOMENCLATURA GEMELA IDENTIFICABLE)
-    # --------------------------------------------------------------------------
+    # PESTAÑA SUSTENTO TEÓRICO
     with tab_teoria:
         st.subheader("📚 Memoria de Cálculo y Origen de Coeficientes Dinámicos")
         st.info("💡 Identificación Directa: Los nombres de abajo corresponden de manera idéntica a las variables lógicas procesadas por el software.")
@@ -408,7 +415,7 @@ if df_kt is not None:
             <div class="tech-card">
                 <h4>🪙 Material de la Hélice</h4>
                 <p><b>Variable en Código / Muestra:</b> <code style='color:#4c1d95;'>material_helice</code></p>
-                <p>Define la composición metalúrgica del propulsor para cálculos de corrosión y masa galvánica. Para el Buque Tanque (VLCC) se predetermina como <b>Bronce de Manganeso (Cu1)</b> para resistir la fatiga en aguas profundas.</p>
+                <p>Define la composición metalúrgica del propulsor para cálculos de corrosión y masa galvánica. Dependiendo de tu selección, afecta la resistencia mecánica global de la instalación de propulsión.</p>
             </div>
             """, unsafe_allow_html=True)
 
