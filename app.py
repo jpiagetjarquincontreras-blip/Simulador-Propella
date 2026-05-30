@@ -86,17 +86,16 @@ def calcular_curvas(pd_v, ae_v, z_v):
     return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO & BARRA LATERAL (¡CAMPOS DESBLOQUEADOS PARA EL FUTURO!)
+# 3. INTERFAZ DE USUARIO & BARRA LATERAL (UNIVERSAL Y REUTILIZABLE)
 # ==============================================================================
 st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
-st.markdown('<div class="main-subtitle">Análisis Hidrodinámico y Vibratorio Estructural — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
 
 if df_kt is not None:
     with st.sidebar:
         st.markdown("### 🛠️ Configuración del Sistema")
         st.write("Establezca los parámetros operativos de diseño.")
         
-        # Se removió el parámetro disabled=True para que la app sea universal
         with st.expander("📐 Dimensiones de la Carena", expanded=True):
             eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=320.0, step=1.0)
             manga = st.number_input("Manga de Diseño B (m)", value=58.0, step=0.5)
@@ -104,6 +103,7 @@ if df_kt is not None:
             calado = st.number_input("Calado de Diseño T (m)", value=20.80, step=0.1)
             velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=15.5, step=0.5)
             estela = st.number_input("Fracción de Estela (w)", value=0.351, step=0.001, format="%.3f")
+            t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=0.180, step=0.001, format="%.3f")
         
         with st.expander("🌀 Geometría de la Hélice", expanded=True):
             z_val = st.slider("Número de Palas (Z)", 3, 7, 4)
@@ -111,6 +111,7 @@ if df_kt is not None:
             pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, 0.721, 0.001)
             ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, 0.431, 0.001)
             peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=18500.0, step=500.0)
+            inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=14.10, step=0.1)
             
         with st.expander("⚙️ Planta Propulsora y Eje", expanded=True):
             potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=22000.0, step=500.0)
@@ -124,14 +125,15 @@ if df_kt is not None:
         st.caption("Lizeth H.F. · Jade F.J.C. · Vania A.N.Q. · Iris L.R.R. · Karla V.G. · José E.S. · Óscar G.B.")
 
     # ==============================================================================
-    # 4. DIVISIÓN DE SECCIONES POR PESTAÑAS
+    # 4. DIVISIÓN DE SECCIONES POR PESTAÑAS (¡NUEVA PESTAÑA AGREGADA!)
     # ==============================================================================
-    tab1, tab_res, tab2, tab3, tab4 = st.tabs([
+    tab1, tab_res, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Hidrodinámica (Aguas Abiertas)", 
         "📋 Reporte de Datos Numéricos",
         "💥 Entregable 1: Vibración Torsional", 
         "📊 Entregable 2: Vibración Lateral",
-        "🗺️ Entregable 3: Diagrama de Campbell"
+        "🗺️ Entregable 3: Diagrama de Campbell",
+        "🧼 Avanzado: Cavitación & Fluidos"
     ])
 
     # Variables globales compartidas calculadas dinámicamente en el backend
@@ -368,6 +370,92 @@ if df_kt is not None:
         fig_c.tight_layout()
         st.pyplot(fig_c)
         st.info("💡 **Guía de Defensa Académica:** Con este reescalado, se aprecian con total nitidez los puntos de intersección. Nota cómo el Orden fundamental del paso de palas cruzará la frecuencia natural a menores revoluciones, demostrando que a las 75 RPM de operación tu diseño se mantiene libre de resonancia destructiva.")
+
+    # --------------------------------------------------------------------------
+    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS (¡NUEVO!)
+    # --------------------------------------------------------------------------
+    with tab5:
+        st.subheader("🧼 Análisis Hidrodinámico Avanzado: Mecánica de Fluidos de la Hélice")
+        
+        # --- CÁLCULO DEL NÚMERO DE REYNOLDS (Rn @ 0.7R) ---
+        v_m_s = velocidad * 0.514444 # Nudos a m/s
+        v_avance = v_m_s * (1.0 - estela)
+        n_rps = rpm_motor / 60.0
+        
+        # Velocidad tangencial y relativa en 0.7R
+        radius_07 = 0.7 * (diam_prop_m / 2.0)
+        v_tangencial = 2.0 * math.pi * n_rps * radius_07
+        v_relativa_07 = math.sqrt(v_avance**2 + v_tangencial**2)
+        
+        # Cuerda aproximada en 0.7R (Estimación clásica para series Wageningen B)
+        cuerda_07 = (1.5 * diam_prop_m * ae_val) / z_val
+        viscosidad_cinematica = 1.188e-6 # Agua salada a 15°C
+        reynolds_n = (v_relativa_07 * cuerda_07) / viscosidad_cinematica
+        
+        # --- CÁLCULO DE CAVITACIÓN POR EL CRITERIO DE KELLER ---
+        # Presiones
+        p_atmosferica = 101325.0 # Pa
+        p_vapor = 1705.0 # Pa para agua salada a 15°C
+        densidad_agua = 1025.0 # kg/m³
+        p_hidrostatica = p_atmosferica + (densidad_agua * 9.81 * inmersion_eje_m) - p_vapor
+        
+        # Fuerza de empuje requerida (T) deducida de la potencia instalada
+        # Eficiencia supuesta en aguas abiertas para Keller aproximado = 0.55
+        eta_open_water = 0.55
+        empuje_t_n = (potencia_kw * 1000.0 * eta_open_water) / (v_avance if v_avance > 0 else 1.0)
+        
+        # Ecuación de Keller para Área Expandida Mínima
+        # Factores constantes estándar: 1.3 para buques de doble hélice, 1.0 para monocascos (buque tanque)
+        keller_factor = 1.0
+        ae_ao_keller = ((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03
+        
+        # --- DESPLIEGUE EN INTERFAZ ---
+        col_c1, col_c2 = st.columns([1, 1.2])
+        
+        with col_c1:
+            st.markdown("##### 🧪 Parámetros Cinemáticos")
+            st.metric("Número de Reynolds ($R_n$ en $0.7r$)", f"{reynolds_n:.2e}")
+            if reynolds_n > 2e5:
+                st.caption("✅ **Régimen Completamente Turbulento:** Flujo mecánicamente estable sobre los perfiles de las palas según la ITTC.")
+            else:
+                st.caption("⚠️ **Flujo Transicional:** Riesgo de efectos de escala laminar.")
+                
+            st.markdown("---")
+            st.markdown("##### 🧼 Evaluación de Cavitación (Keller)")
+            st.metric("Área Expandida Mínima Requerida", f"{ae_ao_keller:.3f}")
+            st.metric("Área Expandida de Tu Diseño ($A_E/A_O$)", f"{ae_val:.3f}")
+            
+            st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
+            if ae_val >= ae_ao_keller:
+                st.success("✅ **DISEÑO SEGURO CONTRA CAVITACIÓN:** El área de las palas es suficiente para distribuir la presión sin generar burbujas de vapor.")
+            else:
+                st.error("❌ **RIESGO DE CAVITACIÓN DETECTADO:** El área real es menor a la sugerida por Keller. Peligro de erosión, ruido y caída de empuje.")
+                
+        with col_c2:
+            # Gráfico de barras comparativo compacto para Cavitación sin espacios vacíos
+            fig_cav, ax_cav = plt.subplots(figsize=(6, 2.5))
+            bars_cav = ax_cav.barh(['Tu Diseño', 'Mínimo de Keller'], [ae_val, ae_ao_keller], 
+                                 color=['#10b981' if ae_val >= ae_ao_keller else '#db2777', '#64748b'], height=0.45)
+            ax_cav.set_xlabel('Relación de Área Expandida ($A_E/A_O$)', fontsize=10)
+            ax_cav.grid(True, linestyle=':', alpha=0.4)
+            
+            for bar in bars_cav:
+                width = bar.get_width()
+                ax_cav.text(width + 0.02, bar.get_y() + bar.get_height()/2, f'{width:.3f}', 
+                          va='center', ha='left', fontsize=9, fontweight='bold')
+            ax_cav.set_xlim(0, max(ae_val, ae_ao_keller) * 1.25)
+            
+            fig_cav.tight_layout()
+            st.pyplot(fig_cav)
+            
+        st.markdown("""
+        <div class="tech-card">
+            <h4>📘 Sustentación Teórica Aplicada</h4>
+            <p>La hélice opera en un fluido viscoso real, lo que demanda verificar las condiciones críticas de la capa límite y el cambio de fase:</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"R_n = \frac{V_{rel, 0.7} \cdot c_{0.7}}{\nu}")
+        st.latex(r"\left(\frac{A_E}{A_O}\right)_{Keller} = \frac{(1.3 + 0.3 \cdot Z) \cdot T}{(p_0 - p_v) \cdot D^2} + k")
 
 else:
     st.error("⚠️ Archivo de Coeficientes Inexistente: Asegúrese de posicionar 'Tabla 1.xlsx' en el mismo directorio de ejecución.")
