@@ -115,13 +115,13 @@ if df_kt is not None:
         
         base = db_buques[tipo_buque]
         
-        with St.expander("📐 Geometría de la Carena", expanded=True):
+        with st.expander("📐 Geometría de la Carena", expanded=True):
             eslora = st.number_input("Eslora Lpp (m)", value=base["eslora"], step=1.0)
             manga = st.number_input("Manga B (m)", value=base["manga"], step=0.5)
             calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1)
             velocidad = st.number_input("Velocidad de Servicio (nudos)", value=base["velocidad"], step=0.5)
         
-        with St.expander("🌀 Configuración de la Hélice", expanded=True):
+        with st.expander("🌀 Configuración de la Hélice", expanded=True):
             z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]))
             diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=base["diam_prop_m"], step=0.01)
             pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001)
