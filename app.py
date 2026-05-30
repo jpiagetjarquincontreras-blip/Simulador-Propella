@@ -186,7 +186,9 @@ if df_kt is not None:
         ax.legend(loc='upper right', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0')
         st.pyplot(fig)
         
-        st.latex(r"K_T = \sum (C_n \cdot J^{S_n} \cdot (P/D)^{T_n} \cdot (A_E/A_O)^{U_n} \cdot Z^{V_n})")
+        st.markdown("##### 📐 Ecuaciones Polinomiales Reglamentarias:")
+        st.latex(r"K_T = \sum_{n=1}^{39} C_n \cdot J^{S_n} \cdot \left(\frac{P}{D}\right)^{T_n} \cdot \left(\frac{A_E}{A_O}\right)^{U_n} \cdot Z^{V_n}")
+        st.latex(r"K_Q = \sum_{n=1}^{47} C_n \cdot J^{S_n} \cdot \left(\frac{P}{D}\right)^{T_n} \cdot \left(\frac{A_E}{A_O}\right)^{U_n} \cdot Z^{V_n}")
         st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
 
     with tab_res:
@@ -196,7 +198,7 @@ if df_kt is not None:
         st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#f3e8ff').format("{:.4f}"), use_container_width=True, height=350)
 
     # --------------------------------------------------------------------------
-    # TAB 2: ENTRIGABLE 1 - VIBRACIÓN TORSIONAL
+    # TAB 2: ENTREGABLE 1 - VIBRACIÓN TORSIONAL
     # --------------------------------------------------------------------------
     with tab2:
         st.subheader("Análisis de Esfuerzos de Torsión Cíclicos en el Eje de Cola")
@@ -250,9 +252,6 @@ if df_kt is not None:
         is_campbell_safe = True
         motivo_riesgo = ""
         
-        rpm_cruce_lat_zp = f_natural_hz * 60.0 / z_val
-        rpm_cruce_tor_zp = f_torsional_est * 60.0 / z_val
-        
         if margen_inf <= rpm_motor <= margen_sup:
             is_campbell_safe = False
             motivo_riesgo = "La velocidad de operación continua coincide con la Banda de Velocidad Prohibida por Whirling Lateral."
@@ -304,8 +303,10 @@ if df_kt is not None:
         
         st.markdown("### 📊 Matriz Analítica de Puntos de Intersección Críticos")
         rpm_cruce_lat_1p = f_natural_hz * 60.0 / 1.0
+        rpm_cruce_lat_zp = f_natural_hz * 60.0 / z_val
         rpm_cruce_lat_2zp = f_natural_hz * 60.0 / (z_val * 2)
         rpm_cruce_tor_1p = f_torsional_est * 60.0 / 1.0
+        rpm_cruce_tor_zp = f_torsional_est * 60.0 / z_val
         rpm_cruce_tor_2zp = f_torsional_est * 60.0 / (z_val * 2)
         
         def evaluar_zona(rpm_c):
@@ -323,7 +324,7 @@ if df_kt is not None:
         st.dataframe(pd.DataFrame(datos_cruces).style.format({"Frecuencia del Cruce (Hz)": "{:.2f} Hz", "Velocidad Crítica Exacta (RPM)": "{:.1f} RPM"}), use_container_width=True)
 
     # --------------------------------------------------------------------------
-    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS
+    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS (¡CON NUEVA GRÁFICA!)
     # --------------------------------------------------------------------------
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico Avanzado: Mecánica de Fluidos de la Hélice")
@@ -360,6 +361,29 @@ if df_kt is not None:
             st.markdown("##### 🧪 Parámetros Cinemáticos & Reynolds")
             st.metric("Número de Reynolds ($R_n$ en $0.7r$)", f"{reynolds_n:.2e}")
             st.caption("✅ **Régimen Completamente Turbulento:** Flujo mecánicamente estable sobre los perfiles de las palas según la ITTC.")
+            
+            # --- NUEVA GRÁFICA DE REYNOLDS VS VELOCIDAD ---
+            st.markdown("##### 📈 Sensibilidad de Reynolds ($R_n$) vs. Velocidad del Buque")
+            velocidades_nudos = np.linspace(1, 22, 100)
+            reynolds_curva = []
+            for v_kn in velocidades_nudos:
+                v_ms_i = v_kn * 0.514444
+                v_va_i = v_ms_i * (1.0 - estela)
+                v_rel_i = math.sqrt(v_va_i**2 + v_tangencial**2)
+                rn_i = (v_rel_i * cuerda_07) / viscosidad_cinematica
+                reynolds_curva.append(rn_i)
+                
+            fig_rn, ax_rn = plt.subplots(figsize=(6.5, 3.8))
+            ax_rn.plot(velocidades_nudos, reynolds_curva, color='#4c1d95', lw=2.5, label='Reynolds Calculado')
+            ax_rn.axvline(x=velocidad, color='#10b981', linestyle='--', lw=1.8, label=f'Velocidad Servicio ({velocidad} kts)')
+            ax_rn.axhline(y=2e5, color='#ef4444', linestyle=':', label='Límite Crítico ITTC ($2\\cdot 10^5$)')
+            ax_rn.fill_between(velocidades_nudos, 2e5, max(reynolds_curva)*1.1, color='#10b981', alpha=0.05, label='Régimen Turbulento Estable')
+            
+            ax_rn.set_xlabel('Velocidad del Buque (Nudos)', fontsize=9)
+            ax_rn.set_ylabel('Número de Reynolds ($R_n$)', fontsize=9)
+            ax_rn.grid(True, linestyle=':', alpha=0.5)
+            ax_rn.legend(loc='lower right', fontsize=8, frameon=True, facecolor='#ffffff')
+            st.pyplot(fig_rn)
                 
             st.markdown("---")
             st.markdown("##### 🧼 Evaluación de Cavitación (Keller & Burrill)")
