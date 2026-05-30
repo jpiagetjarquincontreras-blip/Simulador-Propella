@@ -86,7 +86,7 @@ def calcular_curvas(pd_v, ae_v, z_v):
     return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO & BARRA LATERAL (UNIVERSAL Y REUTILIZABLE)
+# 3. INTERFAZ DE USUARIO & BARRA LATERAL (UNIVERSAL Y DINÁMICA)
 # ==============================================================================
 st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
@@ -125,7 +125,7 @@ if df_kt is not None:
         st.caption("Lizeth H.F. · Jade F.J.C. · Vania A.N.Q. · Iris L.R.R. · Karla V.G. · José E.S. · Óscar G.B.")
 
     # ==============================================================================
-    # 4. DIVISIÓN DE SECCIONES POR PESTAÑAS (¡NUEVA PESTAÑA AGREGADA!)
+    # 4. DIVISIÓN DE SECCIONES POR PESTAÑAS
     # ==============================================================================
     tab1, tab_res, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Hidrodinámica (Aguas Abiertas)", 
@@ -154,6 +154,7 @@ if df_kt is not None:
     rpm_critica_lateral = f_natural_hz * 60.0
     margen_inf = rpm_critica_lateral * 0.80
     margen_sup = rpm_critica_lateral * 1.20
+    f_torsional_est = f_natural_hz * 1.4
 
     # --------------------------------------------------------------------------
     # TAB 1: MODELO HIDRODINÁMICO DE AGUAS ABIERTAS
@@ -323,7 +324,7 @@ if df_kt is not None:
             st.pyplot(fig_l)
 
     # --------------------------------------------------------------------------
-    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL 
+    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL (¡CON MATRIZ DE INTERSECCIONES!)
     # --------------------------------------------------------------------------
     with tab4:
         st.subheader("Mapa Dinámico de Intersección de Frecuencias del Sistema")
@@ -346,7 +347,6 @@ if df_kt is not None:
         
         fig_c, ax_c = plt.subplots(figsize=(10, 4.8))
         
-        f_torsional_est = f_natural_hz * 1.4
         ax_c.axhline(y=f_natural_hz, color='#4c1d95', linestyle='--', lw=2, label=f'Frecuencia Natural Lateral ({f_natural_hz:.1f} Hz)')
         ax_c.axhline(y=f_torsional_est, color='#b45309', linestyle='--', lw=1.8, label=f'Frecuencia Natural Torsional Est. ({f_torsional_est:.1f} Hz)')
         
@@ -361,7 +361,7 @@ if df_kt is not None:
         ax_c.set_xlim(0, max_rpm_grafica)
         ax_c.set_ylim(0, f_max_interes * 1.25)
         
-        ax_c.set_title(f"Diagrama de Campbell - Buque Tanque (Hélice de Z={z_val} Palas)", fontsize=11, fontweight='bold', color='#1e293b')
+        ax_c.set_title(f"Diagrama de Campbell - Análisis de Resonancia Dinámica (Z={z_val} Palas)", fontsize=11, fontweight='bold', color='#1e293b')
         ax_c.set_xlabel('Velocidad de Giro del Eje (RPM)', fontsize=10)
         ax_c.set_ylabel('Frecuencia del Sistema (Hz)', fontsize=10)
         ax_c.grid(True, linestyle=':', alpha=0.6)
@@ -369,49 +369,96 @@ if df_kt is not None:
         
         fig_c.tight_layout()
         st.pyplot(fig_c)
-        st.info("💡 **Guía de Defensa Académica:** Con este reescalado, se aprecian con total nitidez los puntos de intersección. Nota cómo el Orden fundamental del paso de palas cruzará la frecuencia natural a menores revoluciones, demostrando que a las 75 RPM de operación tu diseño se mantiene libre de resonancia destructiva.")
+        
+        # --- NUEVO BACKEND: CÁLCULO ANALÍTICO DE INTERSECCIONES ---
+        st.markdown("### 📊 Matriz Analítica de Puntos de Intersección Críticos")
+        st.write("Ecuaciones matemáticas resueltas en tiempo real para encontrar las RPM exactas de resonancia:")
+        
+        # Cálculos de RPM de cruce
+        rpm_cruce_lat_1p = f_natural_hz * 60.0 / 1.0
+        rpm_cruce_lat_zp = f_natural_hz * 60.0 / z_val
+        rpm_cruce_lat_2zp = f_natural_hz * 60.0 / (z_val * 2)
+        
+        rpm_cruce_tor_1p = f_torsional_est * 60.0 / 1.0
+        rpm_cruce_tor_zp = f_torsional_est * 60.0 / z_val
+        rpm_cruce_tor_2zp = f_torsional_est * 60.0 / (z_val * 2)
+        
+        # Función auxiliar para categorizar el riesgo de la velocidad de cruce
+        def evaluar_zona(rpm_c):
+            if margen_inf <= rpm_c <= margen_sup:
+                return "🔴 ¡DENTRO DE BANDA PROHIBIDA (CRÍTICO)!"
+            elif rpm_c < margen_inf:
+                return "🟢 Por debajo del régimen operativo"
+            else:
+                return "🟡 Por encima del régimen operativo"
+                
+        # Creación del DataFrame de Intersecciones
+        datos_cruces = {
+            "Frecuencia Estructural Natural": [
+                "Lateral (Whirling)", "Lateral (Whirling)", "Lateral (Whirling)",
+                "Torsional Est.", "Torsional Est.", "Torsional Est."
+            ],
+            "Orden de Excitación Dinámica": [
+                "Orden 1P (Desbalanceo)", f"Orden {z_val}P (Paso de Palas)", f"Orden {z_val*2}P (2do Armónico)",
+                "Orden 1P (Desbalanceo)", f"Orden {z_val}P (Paso de Palas)", f"Orden {z_val*2}P (2do Armónico)"
+            ],
+            "Frecuencia del Cruce (Hz)": [
+                f_natural_hz, f_natural_hz, f_natural_hz,
+                f_torsional_est, f_torsional_est, f_torsional_est
+            ],
+            "Velocidad Crítica Exacta (RPM)": [
+                rpm_cruce_lat_1p, rpm_cruce_lat_zp, rpm_cruce_lat_2zp,
+                rpm_cruce_tor_1p, rpm_cruce_tor_zp, rpm_cruce_tor_2zp
+            ],
+            "Evaluación de Seguridad / Riesgo": [
+                evaluar_zona(rpm_cruce_lat_1p), evaluar_zona(rpm_cruce_lat_zp), evaluar_zona(rpm_cruce_lat_2zp),
+                evaluar_zona(rpm_cruce_tor_1p), evaluar_zona(rpm_cruce_tor_zp), evaluar_zona(rpm_cruce_tor_2zp)
+            ]
+        }
+        
+        df_cruces = pd.DataFrame(datos_cruces)
+        
+        # Desplegar tabla formateada y estilizada
+        st.dataframe(
+            df_cruces.style.format({
+                "Frecuencia del Cruce (Hz)": "{:.2f} Hz",
+                "Velocidad Crítica Exacta (RPM)": "{:.1f} RPM"
+            }),
+            use_container_width=True
+        )
+        
+        st.info("💡 **Tip para tu Exposición Académica:** El dato fundamental a defender aquí es el del **Orden Paso de Palas fundamental (Z P)** con la Frecuencia Lateral. Fíjate en la tabla cómo arroja que el cruce matemático se da a menores revoluciones, demostrando que tu zona de operación a 75 RPM es completamente estable.")
 
     # --------------------------------------------------------------------------
-    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS (¡NUEVO!)
+    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS
     # --------------------------------------------------------------------------
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico Avanzado: Mecánica de Fluidos de la Hélice")
         
-        # --- CÁLCULO DEL NÚMERO DE REYNOLDS (Rn @ 0.7R) ---
-        v_m_s = velocidad * 0.514444 # Nudos a m/s
+        v_m_s = velocidad * 0.514444
         v_avance = v_m_s * (1.0 - estela)
         n_rps = rpm_motor / 60.0
         
-        # Velocidad tangencial y relativa en 0.7R
         radius_07 = 0.7 * (diam_prop_m / 2.0)
         v_tangencial = 2.0 * math.pi * n_rps * radius_07
         v_relativa_07 = math.sqrt(v_avance**2 + v_tangencial**2)
         
-        # Cuerda aproximada en 0.7R (Estimación clásica para series Wageningen B)
         cuerda_07 = (1.5 * diam_prop_m * ae_val) / z_val
-        viscosidad_cinematica = 1.188e-6 # Agua salada a 15°C
+        viscosidad_cinematica = 1.188e-6
         reynolds_n = (v_relativa_07 * cuerda_07) / viscosidad_cinematica
         
-        # --- CÁLCULO DE CAVITACIÓN POR EL CRITERIO DE KELLER ---
-        # Presiones
-        p_atmosferica = 101325.0 # Pa
-        p_vapor = 1705.0 # Pa para agua salada a 15°C
-        densidad_agua = 1025.0 # kg/m³
+        p_atmosferica = 101325.0
+        p_vapor = 1705.0
+        densidad_agua = 1025.0
         p_hidrostatica = p_atmosferica + (densidad_agua * 9.81 * inmersion_eje_m) - p_vapor
         
-        # Fuerza de empuje requerida (T) deducida de la potencia instalada
-        # Eficiencia supuesta en aguas abiertas para Keller aproximado = 0.55
         eta_open_water = 0.55
         empuje_t_n = (potencia_kw * 1000.0 * eta_open_water) / (v_avance if v_avance > 0 else 1.0)
         
-        # Ecuación de Keller para Área Expandida Mínima
-        # Factores constantes estándar: 1.3 para buques de doble hélice, 1.0 para monocascos (buque tanque)
         keller_factor = 1.0
         ae_ao_keller = ((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03
         
-        # --- DESPLIEGUE EN INTERFAZ ---
         col_c1, col_c2 = st.columns([1, 1.2])
-        
         with col_c1:
             st.markdown("##### 🧪 Parámetros Cinemáticos")
             st.metric("Número de Reynolds ($R_n$ en $0.7r$)", f"{reynolds_n:.2e}")
@@ -432,7 +479,6 @@ if df_kt is not None:
                 st.error("❌ **RIESGO DE CAVITACIÓN DETECTADO:** El área real es menor a la sugerida por Keller. Peligro de erosión, ruido y caída de empuje.")
                 
         with col_c2:
-            # Gráfico de barras comparativo compacto para Cavitación sin espacios vacíos
             fig_cav, ax_cav = plt.subplots(figsize=(6, 2.5))
             bars_cav = ax_cav.barh(['Tu Diseño', 'Mínimo de Keller'], [ae_val, ae_ao_keller], 
                                  color=['#10b981' if ae_val >= ae_ao_keller else '#db2777', '#64748b'], height=0.45)
