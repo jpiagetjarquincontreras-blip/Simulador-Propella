@@ -73,7 +73,7 @@ def calcular_curvas(pd_v, ae_v, z_v):
     return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO E INPUTS SOLICITADOS
+# 3. INTERFAZ DE USUARIO E INPUTS REQUERIDOS
 # ==============================================================================
 st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
@@ -89,25 +89,25 @@ if df_kt is not None:
         
         db_buques = {
             "Granelero (Bulk Carrier)": {
-                "eslora": 320.0, "manga": 58.0, "calado": 20.80, "velocidad": 15.5,
+                "eslora": 320.0, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
                 "estela": 0.351, "z_val": 4, "diam_prop_m": 9.86, "pd_val": 0.721,
                 "ae_val": 0.431, "peso_helice_kg": 52000.0, "inmersion_eje_m": 14.10, 
                 "potencia_kw": 22000.0, "rpm_motor": 75.0, "diametro_eje_mm": 680.0, 
-                "longitud_volado_m": 3.5
+                "longitud_volado_m": 3.5, "margen_servicio": 15.0, "non_uniform_wake": 1.05
             },
             "Tanque (VLCC)": {
-                "eslora": 333.0, "manga": 60.0, "calado": 21.50, "velocidad": 14.8,
+                "eslora": 333.0, "manga": 60.0, "puntal": 30.5, "calado": 21.50, "velocidad": 14.8,
                 "estela": 0.385, "z_val": 4, "diam_prop_m": 10.20, "pd_val": 0.695,
                 "ae_val": 0.455, "peso_helice_kg": 72500.0, "inmersion_eje_m": 14.80, 
                 "potencia_kw": 25000.0, "rpm_motor": 72.0, "diametro_eje_mm": 710.0, 
-                "longitud_volado_m": 3.8
+                "longitud_volado_m": 3.8, "margen_servicio": 20.0, "non_uniform_wake": 1.08
             },
             "Portacontenedores (Containership)": {
-                "eslora": 366.0, "manga": 48.2, "calado": 15.50, "velocidad": 22.5,
+                "eslora": 366.0, "manga": 48.2, "puntal": 29.8, "calado": 15.50, "velocidad": 22.5,
                 "estela": 0.220, "z_val": 5, "diam_prop_m": 8.90, "pd_val": 0.950,
                 "ae_val": 0.650, "peso_helice_kg": 78000.0, "inmersion_eje_m": 11.20, 
                 "potencia_kw": 52000.0, "rpm_motor": 98.0, "diametro_eje_mm": 780.0, 
-                "longitud_volado_m": 3.2
+                "longitud_volado_m": 3.2, "margen_servicio": 15.0, "non_uniform_wake": 1.12
             }
         }
         
@@ -116,30 +116,36 @@ if df_kt is not None:
         with st.expander("📐 Geometría de la Carena", expanded=True):
             eslora = st.number_input("Eslora Lpp (m)", value=base["eslora"], step=1.0)
             manga = st.number_input("Manga B (m)", value=base["manga"], step=0.5)
+            puntal = st.number_input("Puntal D (m)", value=base["puntal"], step=0.5)
             calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1)
             velocidad = st.number_input("Velocidad de Servicio (nudos)", value=base["velocidad"], step=0.5)
             estela = st.number_input("Fracción de Estela (w)", value=base["estela"], min_value=0.0, max_value=0.6, step=0.001, format="%.3f")
+            non_uniform_wake = st.number_input("Ajuste de Estela No Uniforme", value=base["non_uniform_wake"], min_value=1.0, max_value=1.3, step=0.01)
         
-        with st.expander("🌀 Configuración de la Hélice", expanded=True):
+        with st.expander("🌀 Configuración de la Hélice y Materiales", expanded=True):
             z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]))
             diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=base["diam_prop_m"], step=0.01)
             pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001)
             ae_val = st.slider("Relación de Área (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001)
             inmersion_eje_m = st.number_input("Inmersión del Eje (h) [m]", value=base["inmersion_eje_m"], min_value=1.0, max_value=30.0, step=0.1)
+            margen_servicio = st.slider("Margen de Servicio Requerido (%)", 0.0, 30.0, base["margen_servicio"], 0.5)
             
-            # Catálogo solicitado de materiales para hélices navales reales
+            # Catálogo extendido con bronces, aceros al carbono y aceros inoxidables forjados
             dict_materiales = {
                 "Bronce de Manganeso (Cu1)": 450.0,
                 "Bronce de Níquel-Manganeso (Cu2)": 490.0,
                 "Bronce de Níquel-Aluminio (Cu3)": 590.0,
-                "Bronce de Manganeso-Aluminio (Cu4)": 630.0
+                "Bronce de Manganeso-Aluminio (Cu4)": 630.0,
+                "Acero Forjado Naval Estándar (Carbon Steel)": 400.0,
+                "Acero Forjado Aleado de Alta Resistencia": 600.0,
+                "Acero Inoxidable Austenítico Forjado": 520.0
             }
-            material_seleccionado = st.selectbox("Material de la Hélice:", list(dict_materiales.keys()))
+            material_seleccionado = st.selectbox("Material de la Estructura / Hélice:", list(dict_materiales.keys()))
             sigma_uts = dict_materiales[material_seleccionado]
 
-        # Inyección interna del backend sin saturar la pantalla
+        # Inyección interna del backend
         peso_helice_kg = base["peso_helice_kg"]
-        potencia_kw = base["potencia_kw"]
+        potencia_kw = base["potencia_kw"] * (1.0 + (margen_servicio / 100.0)) # Afectado por el margen de servicio
         rpm_motor = base["rpm_motor"]
         diametro_eje_mm = base["diametro_eje_mm"]
         longitud_volado_m = base["longitud_volado_m"]
@@ -193,7 +199,7 @@ if df_kt is not None:
         kpi1, kpi2, kpi3 = st.columns(3)
         with kpi1: st.metric("Eficiencia Máxima (η_O)", f"{max_eff*100:.2f} %")
         with kpi2: st.metric("Coeficiente de Avance Óptimo (J_opt)", f"{j_opt:.3f}")
-        with kpi3: st.metric("Material Seleccionado", f"{material_seleccionado}")
+        with kpi3: st.metric("Material Activo Seleccionado", f"{material_seleccionado}")
             
         fig, ax = plt.subplots(figsize=(10, 4.2))
         ax.plot(res['J'], res['KT'], color='#0284c7', label=r'Empuje ($K_T$)', lw=2.5)
@@ -228,13 +234,13 @@ if df_kt is not None:
         
         c_t1, c_t2 = st.columns([1, 1.2])
         with c_t1:
-            st.metric("Momento Torsor Nominal", f"{torque_nominal/1000:.2f} kN·m")
+            st.metric("Momento Torsor M.S. Compensado", f"{torque_nominal/1000:.2f} kN·m")
             st.metric("Esfuerzo Real Calculado (τ)", f"{esfuerzo_real_mpa:.2f} MPa")
             st.metric("Límite Admisible IACS UR M68", f"{tau_admisible_mpa:.2f} MPa")
             if esfuerzo_real_mpa <= tau_admisible_mpa: 
                 st.success("✅ **CUMPLE SATISFACTORIAMENTE (IACS UR M68)**")
             else: 
-                st.error("❌ **RECHAZADO POR FATIGA TORSIONAL**")
+                st.error("❌ **RECHAZADO POR FATIGA TORSIONAL STRUCTURAL**")
         with c_t2:
             fig_t, ax_t = plt.subplots(figsize=(6, 2.5))
             ax_t.barh(['Esfuerzo Real', 'Límite Admisible'], [esfuerzo_real_mpa, tau_admisible_mpa], color=['#10b981', '#4c1d95'], height=0.45)
@@ -280,7 +286,7 @@ if df_kt is not None:
         ax_c.legend(loc='upper left')
         st.pyplot(fig_c)
 
-    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS (CON CUADRO DE VALIDACIÓN SOLICITADO)
+    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico de Fluidos y Pérdida de Sustentación")
         
@@ -290,15 +296,17 @@ if df_kt is not None:
         
         eta_open_water = max_eff if max_eff > 0 else 0.55
         empuje_t_n = (potencia_kw * 1000.0 * eta_open_water) / (v_avance if v_avance > 0 else 1.0)
-        ae_ao_keller = ((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03
         
-        # Cuadro de confirmación/validación de estado correcto solicitado
+        # El límite de Keller ahora es afectado dinámicamente por la estela no uniforme
+        ae_ao_keller = (((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03) * non_uniform_wake
+        
+        # Cuadro de validación modificado
         if ae_val >= ae_ao_keller:
             st.markdown(f"""
             <div class="status-box-safe">
                 <h4 style='color: #15803d; margin: 0;'>🟢 COMPORTAMIENTO DE FLUIDOS: CORRECTO Y ESTABLE</h4>
                 <p style='color: #166534; margin: 5px 0 0 0; font-size: 14.5px;'>
-                    <b>Validación Exitosa:</b> La hélice cuenta con un área expandida real de <b>{ae_val:.3f}</b>, superando el límite crítico de Keller de <b>{ae_ao_keller:.3f}</b>. El flujo es seguro ante desprendimientos turbulentos severos y libre de erosión prematura por cavitación.
+                    <b>Validación Exitosa:</b> La hélice cuenta con un área expandida real de <b>{ae_val:.3f}</b>, superando el límite crítico ajustado de Keller de <b>{ae_ao_keller:.3f}</b> (incluyendo factor de estela no uniforme de {non_uniform_wake:.2f}). El flujo es seguro ante desprendimientos turbulentos severos y libre de erosión prematura por cavitación.
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -307,7 +315,7 @@ if df_kt is not None:
             <div class="status-box-danger">
                 <h4 style='color: #991b1b; margin: 0;'>⚠️ ALERTA DE FLUIDOS: RIESGO DE CAVITACIÓN DETECTADO</h4>
                 <p style='color: #7f1d1d; margin: 5px 0 0 0; font-size: 14.5px;'>
-                    <b>Rediseño Recomendado:</b> El área actual es menor al límite de Keller (mínimo requerido: {ae_ao_keller:.3f}). Se sugiere aumentar el área expandida (Ae/A0) en la barra lateral.
+                    <b>Rediseño Recomendado por Estela Irregular:</b> El área actual es menor al límite de Keller compensado (mínimo requerido: {ae_ao_keller:.3f}). Se sugiere aumentar el área expandida (Ae/A0) o mitigar las perturbaciones geométricas en la barra lateral.
                 </p>
             </div>
             """, unsafe_allow_html=True)
