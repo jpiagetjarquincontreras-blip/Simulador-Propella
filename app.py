@@ -13,33 +13,21 @@ st.set_page_config(
     page_icon="⚓"
 )
 
-# Inyección de CSS Avanzado para simular un software comercial moderno
 st.markdown("""
     <style>
-    /* Estilo general de la app */
     .main { background-color: #f8fafc; color: #1e293b; font-family: 'Segoe UI', Roboto, sans-serif; }
-    
-    /* Encabezado Principal */
     .main-title { font-size: 34px; font-weight: 800; color: #1e2022; margin-bottom: 5px; letter-spacing: -0.5px; }
     .main-subtitle { font-size: 14px; color: #64748b; font-weight: 500; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 1px; }
-    
-    /* Tabs Navegación */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: #f1f5f9; padding: 6px 8px; border-radius: 12px; }
     .stTabs [data-baseweb="tab"] { 
         height: 44px; background-color: transparent; border: none;
         border-radius: 8px; padding: 8px 16px; font-weight: 600; color: #64748b; transition: all 0.2s ease; 
     }
     .stTabs [aria-selected="true"] { background-color: #4c1d95 !important; color: white !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
-    
-    /* Contenedores de Fórmulas y Reportes */
     .tech-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     .tech-card h4 { margin-top: 0; color: #4c1d95; font-size: 16px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-    
-    /* Bloques de Alertas de Diagnóstico en el Campbell */
     .status-box-safe { background-color: #f0fdf4; border-left: 5px solid #16a34a; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
     .status-box-danger { background-color: #fef2f2; border-left: 5px solid #dc2626; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-    
-    /* Indicadores de Métricas */
     div[data-testid="stMetricValue"] { font-size: 28px !important; color: #4c1d95; font-weight: 700; letter-spacing: -0.5px; }
     div[data-testid="stMetricLabel"] { font-size: 12px !important; color: #64748b; text-transform: uppercase; font-weight: 600; }
     </style>
@@ -86,7 +74,7 @@ def calcular_curvas(pd_v, ae_v, z_v):
     return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO & BARRA LATERAL AUTOMATIZADA CON BLOQUEO (DISABLED)
+# 3. INTERFAZ DE USUARIO & BARRA LATERAL AUTOMATIZADA CORREGIDA
 # ==============================================================================
 st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
@@ -94,68 +82,75 @@ st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Est
 if df_kt is not None:
     with st.sidebar:
         st.markdown("### 🛠️ Configuración Automática del Sistema")
-        st.write("Selecciona el tipo de embarcación. Las propiedades complejas se calcularán y bloquearán automáticamente para evitar alteraciones accidentales.")
         
         tipo_buque = st.selectbox(
             "Tipo de Buque de Diseño:",
             ["Granelero (Bulk Carrier)", "Tanque (VLCC)", "Portacontenedores (Containership)", "Personalizado (Manual)"]
         )
         
-        bloquear_inputs = (tipo_buque != "Personalizado (Manual)")
+        # Ahora el bloqueo SOLAMENTE aplica a las salidas calculadas automáticamente
+        bloquear_automaticos = (tipo_buque != "Personalizado (Manual)")
         
-        # Base de datos con correspondencias técnicas exactas
+        # Base de datos maestra
         db_buques = {
             "Granelero (Bulk Carrier)": {
                 "eslora": 320.0, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
                 "estela": 0.351, "t_fraccion": 0.180, "z_val": 4, "diam_prop_m": 9.86, "pd_val": 0.721,
-                "ae_val": 0.431, "peso_helice_kg": 18500.0, "inmersion_eje_m": 14.10, "potencia_kw": 22000.0,
-                "rpm_motor": 75.0, "diametro_eje_mm": 680.0, "sigma_uts": 600.0, "longitud_volado_m": 3.5
+                "ae_val": 0.431, "material_helice": "Aleación de Ni-Al-Bronce (Cu3)", "peso_helice_kg": 18500.0, 
+                "inmersion_eje_m": 14.10, "potencia_kw": 22000.0, "rpm_motor": 75.0, "diametro_eje_mm": 680.0, 
+                "sigma_uts": 600.0, "longitud_volado_m": 3.5
             },
             "Tanque (VLCC)": {
                 "eslora": 333.0, "manga": 60.0, "puntal": 30.5, "calado": 21.50, "velocidad": 14.8,
                 "estela": 0.385, "t_fraccion": 0.195, "z_val": 4, "diam_prop_m": 10.20, "pd_val": 0.695,
-                "ae_val": 0.455, "peso_helice_kg": 21000.0, "inmersion_eje_m": 14.80, "potencia_kw": 25000.0,
-                "rpm_motor": 72.0, "diametro_eje_mm": 710.0, "sigma_uts": 600.0, "longitud_volado_m": 3.8
+                "ae_val": 0.455, "material_helice": "Bronce de Manganeso (Cu1)", "peso_helice_kg": 21000.0, 
+                "inmersion_eje_m": 14.80, "potencia_kw": 25000.0, "rpm_motor": 72.0, "diametro_eje_mm": 710.0, 
+                "sigma_uts": 600.0, "longitud_volado_m": 3.8
             },
             "Portacontenedores (Containership)": {
                 "eslora": 366.0, "manga": 48.2, "puntal": 29.8, "calado": 15.50, "velocidad": 22.5,
                 "estela": 0.220, "t_fraccion": 0.140, "z_val": 5, "diam_prop_m": 8.90, "pd_val": 0.950,
-                "ae_val": 0.650, "peso_helice_kg": 24500.0, "inmersion_eje_m": 11.20, "potencia_kw": 52000.0,
-                "rpm_motor": 98.0, "diametro_eje_mm": 780.0, "sigma_uts": 650.0, "longitud_volado_m": 3.2
+                "ae_val": 0.650, "material_helice": "Aleación de Ni-Al-Bronce (Cu3)", "peso_helice_kg": 24500.0, 
+                "inmersion_eje_m": 11.20, "potencia_kw": 52000.0, "rpm_motor": 98.0, "diametro_eje_mm": 780.0, 
+                "sigma_uts": 650.0, "longitud_volado_m": 3.2
             },
             "Personalizado (Manual)": {
                 "eslora": 320.0, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
                 "estela": 0.351, "t_fraccion": 0.180, "z_val": 4, "diam_prop_m": 9.86, "pd_val": 0.721,
-                "ae_val": 0.431, "peso_helice_kg": 18500.0, "inmersion_eje_m": 14.10, "potencia_kw": 22000.0,
-                "rpm_motor": 75.0, "diametro_eje_mm": 680.0, "sigma_uts": 600.0, "longitud_volado_m": 3.5
+                "ae_val": 0.431, "material_helice": "Bronce de Manganeso (Cu1)", "peso_helice_kg": 18500.0, 
+                "inmersion_eje_m": 14.10, "potencia_kw": 22000.0, "rpm_motor": 75.0, "diametro_eje_mm": 680.0, 
+                "sigma_uts": 600.0, "longitud_volado_m": 3.5
             }
         }
         
         base = db_buques[tipo_buque]
         
+        # INPUTS SIEMPRE LIBRES (disabled=False) para que se puedan modificar las dimensiones principales
         with st.expander("📐 Dimensiones de la Carena", expanded=True):
-            eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=base["eslora"], step=1.0, key=f"esl_{tipo_buque}", disabled=bloquear_inputs)
-            manga = st.number_input("Manga de Diseño B (m)", value=base["manga"], step=0.5, key=f"mng_{tipo_buque}", disabled=bloquear_inputs)
-            puntal = st.number_input("Puntal Estructural D (m)", value=base["puntal"], step=0.5, key=f"pnt_{tipo_buque}", disabled=bloquear_inputs)
-            calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1, key=f"cld_{tipo_buque}", disabled=bloquear_inputs)
-            velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=base["velocidad"], step=0.5, key=f"vel_{tipo_buque}", disabled=bloquear_inputs)
-            estela = st.number_input("Fracción de Estela (w)", value=base["estela"], step=0.001, format="%.3f", key=f"est_{tipo_buque}", disabled=bloquear_inputs)
-            t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=base["t_fraccion"], step=0.001, format="%.3f", key=f"tf_{tipo_buque}", disabled=bloquear_inputs)
+            eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=base["eslora"], step=1.0, key=f"esl_{tipo_buque}")
+            manga = st.number_input("Manga de Diseño B (m)", value=base["manga"], step=0.5, key=f"mng_{tipo_buque}")
+            puntal = st.number_input("Puntal Estructural D (m)", value=base["puntal"], step=0.5, key=f"pnt_{tipo_buque}")
+            calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1, key=f"cld_{tipo_buque}")
+            velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=base["velocidad"], step=0.5, key=f"vel_{tipo_buque}")
         
-        with st.expander("🌀 Geometría de la Hélice", expanded=True):
-            z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]), key=f"z_{tipo_buque}", disabled=bloquear_inputs)
-            diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=base["diam_prop_m"], step=0.01, key=f"dp_{tipo_buque}", disabled=bloquear_inputs)
-            pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001, key=f"pd_{tipo_buque}", disabled=bloquear_inputs)
-            ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001, key=f"ae_{tipo_buque}", disabled=bloquear_inputs)
-            peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=base["peso_helice_kg"], step=500.0, key=f"ph_{tipo_buque}", disabled=bloquear_inputs)
-            inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=base["inmersion_eje_m"], step=0.1, key=f"imm_{tipo_buque}", disabled=bloquear_inputs)
+        # INPUTS BLOQUEADOS EXCLUSIVAMENTE SI ES AUTOMÁTICO (disabled=bloquear_automaticos)
+        with st.expander("🌀 Parámetros Hidrodinámicos Calculados", expanded=True):
+            estela = st.number_input("Fracción de Estela (w)", value=base["estela"], step=0.001, format="%.3f", key=f"est_{tipo_buque}", disabled=bloquear_automaticos)
+            t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=base["t_fraccion"], step=0.001, format="%.3f", key=f"tf_{tipo_buque}", disabled=bloquear_automaticos)
+            z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]), key=f"z_{tipo_buque}", disabled=bloquear_automaticos)
+            diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=base["diam_prop_m"], step=0.01, key=f"dp_{tipo_buque}", disabled=bloquear_automaticos)
+            pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001, key=f"pd_{tipo_buque}", disabled=bloquear_automaticos)
+            ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001, key=f"ae_{tipo_buque}", disabled=bloquear_automaticos)
+            inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=base["inmersion_eje_m"], step=0.1, key=f"imm_{tipo_buque}", disabled=bloquear_automaticos)
             
-        with st.expander("⚙️ Planta Propulsora y Eje", expanded=True):
-            potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=base["potencia_kw"], step=500.0, key=f"pot_{tipo_buque}", disabled=bloquear_inputs)
-            rpm_motor = st.number_input("RPM de Operación Continua (n)", value=base["rpm_motor"], step=1.0, key=f"rpm_{tipo_buque}", disabled=bloquear_inputs)
-            diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=base["diametro_eje_mm"], step=10.0, key=f"dia_{tipo_buque}", disabled=bloquear_inputs)
-            sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=base["sigma_uts"], step=50.0, key=f"uts_{tipo_buque}", disabled=bloquear_inputs)
-            longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=base["longitud_volado_m"], step=0.1, key=f"vol_{tipo_buque}", disabled=bloquear_inputs)
+        with st.expander("⚙️ Propiedades del Material y Eje", expanded=True):
+            material_helice = st.text_input("Material de la Hélice", value=base["material_helice"], key=f"mat_{tipo_buque}", disabled=bloquear_automaticos)
+            peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=base["peso_helice_kg"], step=500.0, key=f"ph_{tipo_buque}", disabled=bloquear_automaticos)
+            potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=base["potencia_kw"], step=500.0, key=f"pot_{tipo_buque}", disabled=bloquear_automaticos)
+            rpm_motor = st.number_input("RPM de Operación Continua (n)", value=base["rpm_motor"], step=1.0, key=f"rpm_{tipo_buque}", disabled=bloquear_automaticos)
+            diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=base["diametro_eje_mm"], step=10.0, key=f"dia_{tipo_buque}", disabled=bloquear_automaticos)
+            sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=base["sigma_uts"], step=50.0, key=f"uts_{tipo_buque}", disabled=bloquear_automaticos)
+            longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=base["longitud_volado_m"], step=0.1, key=f"vol_{tipo_buque}", disabled=bloquear_automaticos)
 
     # ==============================================================================
     # 4. CALCULO DE VARIABLES GLOBALES DE DISEÑO (BACKEND UNIFICADO)
@@ -180,7 +175,6 @@ if df_kt is not None:
     margen_inf = rpm_critica_lateral * 0.80
     margen_sup = rpm_critica_lateral * 1.20
     
-    # 1.4: Factor de Amplificación Dinámica Giroscópica (Nomenclatura unificada)
     factor_sname = 1.4
     f_torsional_est = f_natural_hz * factor_sname
 
@@ -240,14 +234,12 @@ if df_kt is not None:
         omega = (2.0 * math.pi * rpm_motor) / 60.0
         torque_nominal = (potencia_kw * 1000.0) / omega
         
-        # 0.15: Factor de Fluctuación de Torque Dinámico de la Hélice
         factor_torsor_dinamico = 0.15
         torque_dinamico_alternante = torque_nominal * factor_torsor_dinamico 
         
         wt_modulo_torsional = (math.pi * (diametro_m**3)) / 16.0
         esfuerzo_real_mpa = (torque_dinamico_alternante / wt_modulo_torsional) / 1e6
         
-        # 0.35: Factor de Seguridad de Fatiga Torsional (IACS UR M68)
         factor_iacs_m68 = 0.35
         tau_admisible_mpa = factor_iacs_m68 * (sigma_uts / 3.0)
         
@@ -290,7 +282,7 @@ if df_kt is not None:
             st.pyplot(fig_l)
 
     # --------------------------------------------------------------------------
-    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL
+    # TAB 4: DIAGRAMA DE CAMPBELL
     # --------------------------------------------------------------------------
     with tab4:
         st.subheader("🗺️ Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
@@ -345,10 +337,10 @@ if df_kt is not None:
         st.pyplot(fig_c)
 
     # --------------------------------------------------------------------------
-    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS 
+    # TAB 5: ADVANCED - CAVITACIÓN Y PROPIEDADES DE MATERIAL
     # --------------------------------------------------------------------------
     with tab5:
-        st.subheader("🧼 Análisis Hidrodinámico Avanzado: Mecánica de Fluidos de la Hélice")
+        st.subheader("🧼 Análisis Hidrodinámico Avanzado y Materiales")
         
         v_m_s = velocidad * 0.514444
         v_avance = v_m_s * (1.0 - estela)
@@ -361,11 +353,13 @@ if df_kt is not None:
         eta_open_water = 0.55
         empuje_t_n = (potencia_kw * 1000.0 * eta_open_water) / (v_avance if v_avance > 0 else 1.0)
         
-        # Fórmula de Área Expandida Mínima de Keller (Nomenclatura unificada)
         ae_ao_keller = ((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03
         
         col_c1, col_c2 = st.columns(2)
         with col_c1:
+            st.markdown("##### 🪙 Especificación de Material Seleccionado")
+            st.metric("Material Estructural Activo", f"{material_helice}")
+            
             st.markdown("##### 🧼 Evaluación de Cavitación (Keller)")
             st.metric("Área Expandida Mínima Requerida (Keller)", f"{ae_ao_keller:.3f}")
             st.metric("Área Expandida de Tu Diseño (Ae/A0)", f"{ae_val:.3f}")
@@ -375,11 +369,11 @@ if df_kt is not None:
                 st.error("❌ **RIESGO DE CAVITACIÓN DETECTADO**")
 
     # --------------------------------------------------------------------------
-    # PESTAÑA: SUSTENTO TEÓRICO Y MEMORIA DE CÁLCULO (NOMENCLATURA GEMELA)
+    # PESTAÑA: SUSTENTO TEÓRICO (NOMENCLATURA GEMELA IDENTIFICABLE)
     # --------------------------------------------------------------------------
     with tab_teoria:
         st.subheader("📚 Memoria de Cálculo y Origen de Coeficientes Dinámicos")
-        st.info("💡 Nomenclatura unificada: Los nombres y variables de abajo coinciden exactamente con las variables de cálculo y las métricas del sistema.")
+        st.info("💡 Identificación Directa: Los nombres de abajo corresponden de manera idéntica a las variables lógicas procesadas por el software.")
         
         col_t1, col_t2 = st.columns(2)
         
@@ -387,18 +381,17 @@ if df_kt is not None:
             st.markdown(f"""
             <div class="tech-card">
                 <h4>💥 Factor de Seguridad de Fatiga Torsional — IACS UR M68</h4>
-                <p><b>Variable en Código:</b> <code style='color:#4c1d95;'>factor_iacs_m68 = {factor_iacs_m68}</code></p>
-                <p>Establece que para prevenir la fatiga cíclica destructiva en el eje de cola por torsión, el límite admisible admisible se calcula reduciendo la resistencia del material:</p>
+                <p><b>Variable en Código / Gráfica:</b> <code style='color:#4c1d95;'>factor_iacs_m68</code></p>
+                <p>Establece la reducción obligatoria por seguridad de fatiga para calcular el esfuerzo admisible en el eje:</p>
             </div>
             """, unsafe_allow_html=True)
             st.latex(r"\tau_{admisible} = factor\_iacs\_m68 \cdot \left( \frac{\sigma_{UTS}}{3} \right)")
-            st.caption(f"Donde factor_iacs_m68 = {factor_iacs_m68} según la Asociación Internacional de Sociedades de Clasificación.")
             
             st.markdown(f"""
             <div class="tech-card">
                 <h4>🗺️ Factor de Amplificación Dinámica Giroscópica — Criterio SNAME</h4>
-                <p><b>Variable en Código:</b> <code style='color:#4c1d95;'>factor_sname = {factor_sname}</code></p>
-                <p>Compensa los efectos dinámicos rotacionales de la masa de la hélice en voladizo sobre el eje de cola, estimando la frecuencia torsional fundamental en el Diagrama de Campbell:</p>
+                <p><b>Variable en Código / Gráfica:</b> <code style='color:#4c1d95;'>factor_sname</code></p>
+                <p>Multiplicador dinámico que estima la resonancia fundamental en torsión sobre el Diagrama de Campbell:</p>
             </div>
             """, unsafe_allow_html=True)
             st.latex(r"f_{torsional\_estimada} = f_{natural\_fundamental} \cdot factor\_sname")
@@ -407,20 +400,19 @@ if df_kt is not None:
             st.markdown("""
             <div class="tech-card">
                 <h4>🧼 Área Expandida Mínima Requerida — Criterio de Keller</h4>
-                <p><b>Variable en Código:</b> <code style='color:#4c1d95;'>ae_ao_keller</code></p>
-                <p>Define la relación mínima de áreas de las palas para evitar la erosión del material y pérdida de empuje provocada por burbujas de cavitación:</p>
+                <p><b>Variable en Código / Gráfica:</b> <code style='color:#4c1d95;'>ae_ao_keller</code></p>
+                <p>Define la geometría de palas crítica para evitar efectos erosivos por cavitación en fluidos marinos:</p>
             </div>
             """, unsafe_allow_html=True)
             st.latex(r"ae\_ao\_keller = \frac{(1.3 + 0.3 \cdot Z) \cdot T_P}{(P_{Atm} + \rho \cdot g \cdot H_{inmersion} - P_{Vapor}) \cdot D^2} + 0.03")
             
             st.markdown(f"""
             <div class="tech-card">
-                <h4>🌀 Factor de Fluctuación de Torque Dinámico de la Hélice</h4>
-                <p><b>Variable en Código:</b> <code style='color:#4c1d95;'>factor_torsor_dinamico = {factor_torsor_dinamico}</code></p>
-                <p>Representa el porcentaje de carga cíclica vibratoria oscilante inducido por el flujo hidrodinámico desigual que entra a la hélice, utilizado para calcular el esfuerzo real:</p>
+                <h4>🪙 Material de la Hélice</h4>
+                <p><b>Variable en Código / Muestra:</b> <code style='color:#4c1d95;'>material_helice</code></p>
+                <p>Define la composición metalúrgica del propulsor para cálculos de corrosión y masa galvánica. Para el Buque Tanque (VLCC) se predetermina como <b>Bronce de Manganeso (Cu1)</b> para resistir la fatiga en aguas profundas.</p>
             </div>
             """, unsafe_allow_html=True)
-            st.latex(r"Torque\_Dinamico\_Alternante = Torque\_Nominal \cdot factor\_torsor\_dinamico")
 
 else:
     st.error("⚠️ Archivo de Coeficientes Inexistente: Asegúrese de posicionar 'Tabla 1.xlsx' en el mismo directorio de ejecución.")
