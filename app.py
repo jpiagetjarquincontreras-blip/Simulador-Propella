@@ -74,24 +74,22 @@ def calcular_curvas(pd_v, ae_v, z_v):
     return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO & BARRA LATERAL AUTOMATIZADA CORREGIDA
+# 3. INTERFAZ DE USUARIO & BARRA LATERAL TOTALMENTE DESBLOQUEADA
 # ==============================================================================
 st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
 
 if df_kt is not None:
     with st.sidebar:
-        st.markdown("### 🛠️ Configuración Automática del Sistema")
+        st.markdown("### 🛠️ Configuración Global del Sistema")
+        st.write("Selecciona una plantilla base para cargar los datos predeterminados. **Todos los campos están desbloqueados** para tus modificaciones personalizadas.")
         
         tipo_buque = st.selectbox(
-            "Tipo de Buque de Diseño:",
+            "Cargar Plantilla de Buque Base:",
             ["Granelero (Bulk Carrier)", "Tanque (VLCC)", "Portacontenedores (Containership)", "Personalizado (Manual)"]
         )
         
-        # Ahora el bloqueo SOLAMENTE aplica a las salidas calculadas automáticamente
-        bloquear_automaticos = (tipo_buque != "Personalizado (Manual)")
-        
-        # Base de datos maestra
+        # Base de datos experta con valores iniciales sugeridos
         db_buques = {
             "Granelero (Bulk Carrier)": {
                 "eslora": 320.0, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
@@ -125,7 +123,7 @@ if df_kt is not None:
         
         base = db_buques[tipo_buque]
         
-        # INPUTS SIEMPRE LIBRES (disabled=False) para que se puedan modificar las dimensiones principales
+        # TODOS LOS ELEMENTOS TIENEN disabled=False (ESTÁN DESBLOQUEADOS)
         with st.expander("📐 Dimensiones de la Carena", expanded=True):
             eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=base["eslora"], step=1.0, key=f"esl_{tipo_buque}")
             manga = st.number_input("Manga de Diseño B (m)", value=base["manga"], step=0.5, key=f"mng_{tipo_buque}")
@@ -133,27 +131,26 @@ if df_kt is not None:
             calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1, key=f"cld_{tipo_buque}")
             velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=base["velocidad"], step=0.5, key=f"vel_{tipo_buque}")
         
-        # INPUTS BLOQUEADOS EXCLUSIVAMENTE SI ES AUTOMÁTICO (disabled=bloquear_automaticos)
-        with st.expander("🌀 Parámetros Hidrodinámicos Calculados", expanded=True):
-            estela = st.number_input("Fracción de Estela (w)", value=base["estela"], step=0.001, format="%.3f", key=f"est_{tipo_buque}", disabled=bloquear_automaticos)
-            t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=base["t_fraccion"], step=0.001, format="%.3f", key=f"tf_{tipo_buque}", disabled=bloquear_automaticos)
-            z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]), key=f"z_{tipo_buque}", disabled=bloquear_automaticos)
-            diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=base["diam_prop_m"], step=0.01, key=f"dp_{tipo_buque}", disabled=bloquear_automaticos)
-            pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001, key=f"pd_{tipo_buque}", disabled=bloquear_automaticos)
-            ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001, key=f"ae_{tipo_buque}", disabled=bloquear_automaticos)
-            inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=base["inmersion_eje_m"], step=0.1, key=f"imm_{tipo_buque}", disabled=bloquear_automaticos)
+        with st.expander("🌀 Parámetros Hidrodinámicos", expanded=True):
+            estela = st.number_input("Fracción de Estela (w)", value=base["estela"], step=0.001, format="%.3f", key=f"est_{tipo_buque}")
+            t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=base["t_fraccion"], step=0.001, format="%.3f", key=f"tf_{tipo_buque}")
+            z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]), key=f"z_{tipo_buque}")
+            diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=base["diam_prop_m"], step=0.01, key=f"dp_{tipo_buque}")
+            pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001, key=f"pd_{tipo_buque}")
+            ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001, key=f"ae_{tipo_buque}")
+            inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=base["inmersion_eje_m"], step=0.1, key=f"imm_{tipo_buque}")
             
         with st.expander("⚙️ Propiedades del Material y Eje", expanded=True):
-            material_helice = st.text_input("Material de la Hélice", value=base["material_helice"], key=f"mat_{tipo_buque}", disabled=bloquear_automaticos)
-            peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=base["peso_helice_kg"], step=500.0, key=f"ph_{tipo_buque}", disabled=bloquear_automaticos)
-            potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=base["potencia_kw"], step=500.0, key=f"pot_{tipo_buque}", disabled=bloquear_automaticos)
-            rpm_motor = st.number_input("RPM de Operación Continua (n)", value=base["rpm_motor"], step=1.0, key=f"rpm_{tipo_buque}", disabled=bloquear_automaticos)
-            diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=base["diametro_eje_mm"], step=10.0, key=f"dia_{tipo_buque}", disabled=bloquear_automaticos)
-            sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=base["sigma_uts"], step=50.0, key=f"uts_{tipo_buque}", disabled=bloquear_automaticos)
-            longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=base["longitud_volado_m"], step=0.1, key=f"vol_{tipo_buque}", disabled=bloquear_automaticos)
+            material_helice = st.text_input("Material de la Hélice", value=base["material_helice"], key=f"mat_{tipo_buque}")
+            peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=base["peso_helice_kg"], step=500.0, key=f"ph_{tipo_buque}")
+            potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=base["potencia_kw"], step=500.0, key=f"pot_{tipo_buque}")
+            rpm_motor = st.number_input("RPM de Operación Continua (n)", value=base["rpm_motor"], step=1.0, key=f"rpm_{tipo_buque}")
+            diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=base["diametro_eje_mm"], step=10.0, key=f"dia_{tipo_buque}")
+            sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=base["sigma_uts"], step=50.0, key=f"uts_{tipo_buque}")
+            longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=base["longitud_volado_m"], step=0.1, key=f"vol_{tipo_buque}")
 
     # ==============================================================================
-    # 4. CALCULO DE VARIABLES GLOBALES DE DISEÑO (BACKEND UNIFICADO)
+    # 4. PROCESAMIENTO MATEMÁTICO REAL (EL VERDADERO BACKEND CALCULADO)
     # ==============================================================================
     res = calcular_curvas(pd_val, ae_val, z_val)
     
@@ -170,6 +167,7 @@ if df_kt is not None:
     peso_eje_n = peso_lineal_eje * longitud_volado_m * 9.81
     delta_eje = (peso_eje_n * (longitud_volado_m**3)) / (8.0 * E_acero * I_inercia)
     
+    # Frecuencias calculadas matemáticamente por el programa
     f_natural_hz = 1.0 / (2.0 * math.pi * math.sqrt(delta_helice + delta_eje))
     rpm_critica_lateral = f_natural_hz * 60.0
     margen_inf = rpm_critica_lateral * 0.80
