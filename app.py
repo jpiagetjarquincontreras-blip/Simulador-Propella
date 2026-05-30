@@ -16,6 +16,7 @@ st.set_page_config(
 # Inyección de CSS Avanzado para simular un software comercial moderno
 st.markdown("""
     <style>
+    /* Estilo general de la app */
     .main { background-color: #f8fafc; color: #1e293b; font-family: 'Segoe UI', Roboto, sans-serif; }
     
     /* Encabezado Principal */
@@ -85,48 +86,77 @@ def calcular_curvas(pd_v, ae_v, z_v):
     return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO & BARRA LATERAL (UNIVERSAL Y DINÁMICA)
+# 3. INTERFAZ DE USUARIO & BARRA LATERAL AUTOMATIZADA
 # ==============================================================================
 st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
 
 if df_kt is not None:
     with st.sidebar:
-        st.markdown("### 🛠️ Configuración del Sistema")
+        st.markdown("### 🛠️ Configuración Automática del Sistema")
+        st.write("Selecciona el tipo de embarcación. Las propiedades complejas de fluidos, materiales y coeficientes de diseño se calibrarán automáticamente.")
         
-        # --- AUTOMATIZACIÓN DE BUQUES ---
-        tipo_buque = st.selectbox("Seleccione Tipo de Buque (Carga Automática)", ["Manual", "Granelero", "Tanque", "Portacontenedores"])
-        db = {
-            "Granelero": {"L": 320.0, "B": 58.0, "D": 30.0, "T": 20.8, "V": 15.5, "w": 0.351, "t": 0.180, "Dp": 9.86, "pd": 0.721, "ae": 0.431, "P": 22000.0, "n": 75.0, "d": 680.0, "u": 600.0, "vol": 3.5},
-            "Tanque": {"L": 330.0, "B": 60.0, "D": 31.0, "T": 21.0, "V": 14.5, "w": 0.380, "t": 0.200, "Dp": 9.50, "pd": 0.700, "ae": 0.450, "P": 25000.0, "n": 70.0, "d": 700.0, "u": 600.0, "vol": 3.8},
-            "Portacontenedores": {"L": 350.0, "B": 50.0, "D": 28.0, "T": 15.0, "V": 22.0, "w": 0.250, "t": 0.150, "Dp": 8.50, "pd": 0.900, "ae": 0.600, "P": 45000.0, "n": 95.0, "d": 750.0, "u": 650.0, "vol": 3.0}
+        # Selector Maestro de Tipo de Buque para evitar la confusión de datos "misteriosos"
+        tipo_buque = st.selectbox(
+            "Tipo de Buque de Diseño:",
+            ["Granelero (Bulk Carrier)", "Tanque (VLCC)", "Portacontenedores (Containership)", "Personalizado (Manual)"]
+        )
+        
+        # Base de datos experta con los parámetros técnicos mapeados
+        db_buques = {
+            "Granelero (Bulk Carrier)": {
+                "eslora": 320.0, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
+                "estela": 0.351, "t_fraccion": 0.180, "z_val": 4, "diam_prop_m": 9.86, "pd_val": 0.721,
+                "ae_val": 0.431, "peso_helice_kg": 18500.0, "inmersion_eje_m": 14.10, "potencia_kw": 22000.0,
+                "rpm_motor": 75.0, "diametro_eje_mm": 680.0, "sigma_uts": 600.0, "longitud_volado_m": 3.5
+            },
+            "Tanque (VLCC)": {
+                "eslora": 333.0, "manga": 60.0, "puntal": 30.5, "calado": 21.50, "velocidad": 14.8,
+                "estela": 0.385, "t_fraccion": 0.195, "z_val": 4, "diam_prop_m": 10.20, "pd_val": 0.695,
+                "ae_val": 0.455, "peso_helice_kg": 21000.0, "inmersion_eje_m": 14.80, "potencia_kw": 25000.0,
+                "rpm_motor": 72.0, "diametro_eje_mm": 710.0, "sigma_uts": 600.0, "longitud_volado_m": 3.8
+            },
+            "Portacontenedores (Containership)": {
+                "eslora": 366.0, "manga": 48.2, "puntal": 29.8, "calado": 15.50, "velocidad": 22.5,
+                "estela": 0.220, "t_fraccion": 0.140, "z_val": 5, "diam_prop_m": 8.90, "pd_val": 0.950,
+                "ae_val": 0.650, "peso_helice_kg": 24500.0, "inmersion_eje_m": 11.20, "potencia_kw": 52000.0,
+                "rpm_motor": 98.0, "diametro_eje_mm": 780.0, "sigma_uts": 650.0, "longitud_volado_m": 3.2
+            },
+            "Personalizado (Manual)": {
+                "eslora": 320.0, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
+                "estela": 0.351, "t_fraccion": 0.180, "z_val": 4, "diam_prop_m": 9.86, "pd_val": 0.721,
+                "ae_val": 0.431, "peso_helice_kg": 18500.0, "inmersion_eje_m": 14.10, "potencia_kw": 22000.0,
+                "rpm_motor": 75.0, "diametro_eje_mm": 680.0, "sigma_uts": 600.0, "longitud_volado_m": 3.5
+            }
         }
         
-        c = db.get(tipo_buque, {"L": 320.0, "B": 58.0, "D": 30.0, "T": 20.8, "V": 15.5, "w": 0.351, "t": 0.180, "Dp": 9.86, "pd": 0.721, "ae": 0.431, "P": 22000.0, "n": 75.0, "d": 680.0, "u": 600.0, "vol": 3.5})
+        # Recuperamos la plantilla correspondiente
+        base = db_buques[tipo_buque]
         
-        with st.expander("📐 Dimensiones de la Carena", expanded=True):
-            eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=c["L"], step=1.0)
-            manga = st.number_input("Manga de Diseño B (m)", value=c["B"], step=0.5)
-            puntal = st.number_input("Puntal Estructural D (m)", value=c["D"], step=0.5)
-            calado = st.number_input("Calado de Diseño T (m)", value=c["T"], step=0.1)
-            velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=c["V"], step=0.5)
-            estela = st.number_input("Fracción de Estela (w)", value=c["w"], step=0.001, format="%.3f")
-            t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=c["t"], step=0.001, format="%.3f")
+        # Se despliegan los controles usando llaves únicas de Streamlit para que muten al cambiar el selector
+        with st.expander("📐 Dimensiones de la Carena", expanded=(tipo_buque == "Personalizado (Manual)")):
+            eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=base["eslora"], step=1.0, key=f"esl_{tipo_buque}")
+            manga = st.number_input("Manga de Diseño B (m)", value=base["manga"], step=0.5, key=f"mng_{tipo_buque}")
+            puntal = st.number_input("Puntal Estructural D (m)", value=base["puntal"], step=0.5, key=f"pnt_{tipo_buque}")
+            calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1, key=f"cld_{tipo_buque}")
+            velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=base["velocidad"], step=0.5, key=f"vel_{tipo_buque}")
+            estela = st.number_input("Fracción de Estela (w)", value=base["estela"], step=0.001, format="%.3f", key=f"est_{tipo_buque}")
+            t_fraccion = st.number_input("Fracción de Deducción de Empuje (t)", value=base["t_fraccion"], step=0.001, format="%.3f", key=f"tf_{tipo_buque}")
         
         with st.expander("🌀 Geometría de la Hélice", expanded=True):
-            z_val = st.slider("Número de Palas (Z)", 3, 7, 4)
-            diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=c["Dp"], step=0.01)
-            pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, c["pd"], 0.001)
-            ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, c["ae"], 0.001)
-            peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=18500.0, step=500.0)
-            inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=14.10, step=0.1)
+            z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]), key=f"z_{tipo_buque}")
+            diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=base["diam_prop_m"], step=0.01, key=f"dp_{tipo_buque}")
+            pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001, key=f"pd_{tipo_buque}")
+            ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001, key=f"ae_{tipo_buque}")
+            peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=base["peso_helice_kg"], step=500.0, key=f"ph_{tipo_buque}")
+            inmersion_eje_m = st.number_input("Inmersión del Eje H (m)", value=base["inmersion_eje_m"], step=0.1, key=f"imm_{tipo_buque}")
             
         with st.expander("⚙️ Planta Propulsora y Eje", expanded=True):
-            potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=c["P"], step=500.0)
-            rpm_motor = st.number_input("RPM de Operación Continua (n)", value=c["n"], step=1.0)
-            diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=c["d"], step=10.0)
-            sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=c["u"], step=50.0)
-            longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=c["vol"], step=0.1)
+            potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=base["potencia_kw"], step=500.0, key=f"pot_{tipo_buque}")
+            rpm_motor = st.number_input("RPM de Operación Continua (n)", value=base["rpm_motor"], step=1.0, key=f"rpm_{tipo_buque}")
+            diametro_eje_mm = st.number_input("Diámetro del Eje de Cola d (mm)", value=base["diametro_eje_mm"], step=10.0, key=f"dia_{tipo_buque}")
+            sigma_uts = st.number_input("Resistencia a la Tracción σ_UTS (MPa)", value=base["sigma_uts"], step=50.0, key=f"uts_{tipo_buque}")
+            longitud_volado_m = st.number_input("Longitud del Voladizo L (m)", value=base["longitud_volado_m"], step=0.1, key=f"vol_{tipo_buque}")
 
         st.markdown("---")
         st.markdown("**Integrantes del Equipo 4:**")
@@ -154,10 +184,12 @@ if df_kt is not None:
     rpm_critica_lateral = f_natural_hz * 60.0
     margen_inf = rpm_critica_lateral * 0.80
     margen_sup = rpm_critica_lateral * 1.20
+    
+    # 1.4: Factor de amplificación dinámica aplicado a la frecuencia fundamental
     f_torsional_est = f_natural_hz * 1.4
 
     # ==============================================================================
-    # 5. DIVISIÓN DE SECCIONES POR PESTAÑAS
+    # 5. DIVISIÓN DE SECCIONES POR PESTAÑAS (COMPLETAS)
     # ==============================================================================
     tab1, tab_res, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Hidrodinámica (Aguas Abiertas)", 
@@ -168,6 +200,9 @@ if df_kt is not None:
         "🧼 Avanzado: Cavitación & Fluidos"
     ])
 
+    # --------------------------------------------------------------------------
+    # TAB 1: MODELO HIDRODINÁMICO DE AGUAS ABIERTAS
+    # --------------------------------------------------------------------------
     with tab1:
         max_eff = res['nO'].max()
         j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
@@ -196,12 +231,18 @@ if df_kt is not None:
         st.latex(r"K_Q = \sum_{n=1}^{47} C_n \cdot J^{S_n} \cdot \left(\frac{P}{D}\right)^{T_n} \cdot \left(\frac{A_E}{A_O}\right)^{U_n} \cdot Z^{V_n}")
         st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
 
+    # --------------------------------------------------------------------------
+    # TAB REPORTE: MATRIZ DE RESULTADOS HIDRODINÁMICOS
+    # --------------------------------------------------------------------------
     with tab_res:
         st.subheader("📋 Matriz Completa de Resultados de la Hélice")
         res_display = res.copy()
         res_display['ηO (%)'] = res_display['nO'] * 100
         st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#f3e8ff').format("{:.4f}"), use_container_width=True, height=350)
 
+    # --------------------------------------------------------------------------
+    # TAB 2: ENTREGABLE 1 - VIBRACIÓN TORSIONAL
+    # --------------------------------------------------------------------------
     with tab2:
         st.subheader("Análisis de Esfuerzos de Torsión Cíclicos en el Eje de Cola")
         omega = (2.0 * math.pi * rpm_motor) / 60.0
@@ -209,6 +250,8 @@ if df_kt is not None:
         torque_dinamico_alternante = torque_nominal * 0.15 
         wt_modulo_torsional = (math.pi * (diametro_m**3)) / 16.0
         esfuerzo_real_mpa = (torque_dinamico_alternante / wt_modulo_torsional) / 1e6
+        
+        # 0.35: Factor de seguridad normativo IACS M68 aplicado sobre el límite torsional admisible
         tau_admisible_mpa = 0.35 * (sigma_uts / 3.0)
         
         c_t1, c_t2 = st.columns([1, 1.2])
@@ -216,14 +259,19 @@ if df_kt is not None:
             st.metric("Momento Torsor Nominal", f"{torque_nominal/1000:.2f} kN·m")
             st.metric("Tensión Real Calculada (τ)", f"{esfuerzo_real_mpa:.2f} MPa")
             st.metric("Límite Admisible IACS UR M68", f"{tau_admisible_mpa:.2f} MPa")
-            if esfuerzo_real_mpa <= tau_admisible_mpa: st.success("✅ **CUMPLE SATISFACTORIAMENTE (IACS UR M68)**")
-            else: st.error("❌ **RECHAZADO POR FATIGA TORSIONAL**")
+            if esfuerzo_real_mpa <= tau_admisible_mpa: 
+                st.success("✅ **CUMPLE SATISFACTORIAMENTE (IACS UR M68)**")
+            else: 
+                st.error("❌ **RECHAZADO POR FATIGA TORSIONAL**")
         with c_t2:
             fig_t, ax_t = plt.subplots(figsize=(6, 2.5))
             ax_t.barh(['Esfuerzo Real', 'Límite Admisible'], [esfuerzo_real_mpa, tau_admisible_mpa], color=['#10b981', '#4c1d95'], height=0.45)
             ax_t.set_xlabel('Esfuerzo Torsional (MPa)'); ax_t.grid(True, linestyle=':', alpha=0.4)
             st.pyplot(fig_t)
 
+    # --------------------------------------------------------------------------
+    # TAB 3: ENTREGABLE 2 - VIBRACIÓN LATERAL
+    # --------------------------------------------------------------------------
     with tab3:
         st.subheader("Cálculo de la Primera Velocidad Crítica Lateral por Flexión (Whirling)")
         c_l1, c_l2 = st.columns([1, 1.2])
@@ -231,8 +279,10 @@ if df_kt is not None:
             st.metric("Frecuencia de Whirling", f"{f_natural_hz:.2f} Hz")
             st.metric("Velocidad Crítica Lateral", f"{rpm_critica_lateral:.1f} RPM")
             st.metric("Banda Prohibida Excluida (±20%)", f"{margen_inf:.1f} - {margen_sup:.1f} RPM")
-            if rpm_motor < margen_inf or rpm_motor > margen_sup: st.success("✅ **DISEÑO SEGURO: OPERACIÓN FUERA DE RESONANCIA**")
-            else: st.error("❌ **ALERTA: OPERACIÓN DENTRO DE ZONA CRÍTICA**")
+            if rpm_motor < margen_inf or rpm_motor > margen_sup: 
+                st.success("✅ **DISEÑO SEGURO: OPERACIÓN FUERA DE RESONANCIA**")
+            else: 
+                st.error("❌ **ALERTA: OPERACIÓN DENTRO DE ZONA CRÍTICA**")
         with c_l2:
             fig_l, ax_l = plt.subplots(figsize=(6, 2.5))
             ax_l.axvline(x=rpm_critica_lateral, color='red', linestyle='--')
@@ -242,6 +292,9 @@ if df_kt is not None:
             ax_l.grid(True, linestyle=':', alpha=0.5)
             st.pyplot(fig_l)
 
+    # --------------------------------------------------------------------------
+    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL
+    # --------------------------------------------------------------------------
     with tab4:
         st.subheader("🗺️ Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
         
@@ -319,6 +372,9 @@ if df_kt is not None:
         }
         st.dataframe(pd.DataFrame(datos_cruces).style.format({"Frecuencia del Cruce (Hz)": "{:.2f} Hz", "Velocidad Crítica Exacta (RPM)": "{:.1f} RPM"}), use_container_width=True)
 
+    # --------------------------------------------------------------------------
+    # TAB 5: ADVANCED - CAVITACIÓN Y NÚMERO DE REYNOLDS 
+    # --------------------------------------------------------------------------
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico Avanzado: Mecánica de Fluidos de la Hélice")
         
@@ -383,8 +439,10 @@ if df_kt is not None:
             st.metric("Área Expandida Mínima (Keller)", f"{ae_ao_keller:.3f}")
             st.metric("Área Expandida de Tu Diseño ($A_E/A_O$)", f"{ae_val:.3f}")
             
-            if ae_val >= ae_ao_keller: st.success("✅ **DISEÑO SEGURO CONTRA CAVITACIÓN (KELLER):** Área suficiente.")
-            else: st.error("❌ **RIESGO DE CAVITACIÓN (KELLER):** Área insuficiente.")
+            if ae_val >= ae_ao_keller: 
+                st.success("✅ **DISEÑO SEGURO CONTRA CAVITACIÓN (KELLER):** Área suficiente.")
+            else: 
+                st.error("❌ **RIESGO DE CAVITACIÓN (KELLER):** Área insuficiente.")
                 
         with col_c2:
             fig_burrill, ax_b = plt.subplots(figsize=(6.5, 4.2))
