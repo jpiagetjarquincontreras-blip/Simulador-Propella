@@ -273,9 +273,39 @@ if df_kt is not None:
             ax_l.grid(True, linestyle=':', alpha=0.5)
             st.pyplot(fig_l)
 
-    # PESTAÑA 5: DIAGRAMA DE CAMPBELL
+    # PESTAÑA 5: DIAGRAMA DE CAMPBELL (ACTUALIZADO)
     with tab4:
         st.subheader("🗺️ Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
+        
+        # --- NUEVA TABLA DE DIAGNÓSTICO ---
+        st.markdown("#### 🔍 Tabla de Diagnóstico de Intersecciones (Resonancia)")
+        
+        # Definición de órdenes de interés
+        ordenes = ["1P", f"{z_val}P (Frecuencia de Pala)", f"{2*z_val}P (Armónico 2ZP)"]
+        frecuencias_ordenes = [
+            (1 * rpm_motor) / 60.0,
+            (z_val * rpm_motor) / 60.0,
+            (2 * z_val * rpm_motor) / 60.0
+        ]
+        
+        # Lógica de diagnóstico
+        estados = []
+        for f in frecuencias_ordenes:
+            margen = abs(f - f_natural_hz) / f_natural_hz
+            if margen < 0.20:
+                estados.append("⚠️ RIESGO DE RESONANCIA")
+            else:
+                estados.append("✅ OPERACIÓN SEGURA")
+        
+        df_diagnostico = pd.DataFrame({
+            "Orden": ordenes,
+            "Frecuencia de Excitación (Hz)": frecuencias_ordenes,
+            "Estado Estructural": estados
+        })
+        
+        st.table(df_diagnostico.style.applymap(lambda x: 'background-color: #fef2f2' if 'RIESGO' in x else 'background-color: #f0fdf4', subset=['Estado Estructural']))
+
+        # --- GRÁFICO DE CAMPBELL ---
         max_rpm_grafica = rpm_motor * 1.6
         rpm_eje_x = np.linspace(0, max_rpm_grafica, 400)
         
@@ -290,7 +320,6 @@ if df_kt is not None:
         ax_c.grid(True, linestyle=':')
         ax_c.legend(loc='upper left')
         st.pyplot(fig_c)
-
     # PESTAÑA 6: CAVITACIÓN Y REYNOLDS (VARIABLES COMPLETAMENTE VINCULADAS)
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico de Fluidos y Pérdida de Sustentación")
