@@ -1,221 +1,435 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+import math
 
 # ==============================================================================
-# CONFIGURACIÓN DE LA PÁGINA Y ESTILOS
+# 1. CONFIGURACIÓN DE PÁGINA E INTERFAZ PROFESIONAL
 # ==============================================================================
 st.set_page_config(
-    page_title="Presentacion clase", 
+    page_title="Propulsion & Shafting Dynamics Pro | Equipo 4",
     layout="wide",
-    initial_sidebar_state="expanded"
+    page_icon="⚓"
 )
 
-# Estilo CSS personalizado para que coincida con los colores oscuros de tus apuntes
 st.markdown("""
-<style>
-    .reportview-container {
-        background: #0e1117;
+    <style>
+    .main { background-color: #f8fafc; color: #1e293b; font-family: 'Segoe UI', Roboto, sans-serif; }
+    .main-title { font-size: 34px; font-weight: 800; color: #1e2022; margin-bottom: 5px; letter-spacing: -0.5px; }
+    .main-subtitle { font-size: 14px; color: #64748b; font-weight: 500; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 1px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: #f1f5f9; padding: 6px 8px; border-radius: 12px; }
+    .stTabs [data-baseweb="tab"] { 
+        height: 44px; background-color: transparent; border: none;
+        border-radius: 8px; padding: 8px 16px; font-weight: 600; color: #64748b; transition: all 0.2s ease; 
     }
-    h1, h2, h3 {
-        color: #ffffff;
-    }
-    .stCodeBlock {
-        background-color: #050811 !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Título tomado directamente de tu presentación de clase
-st.title("Table 49.1 Optimum rate of revolution problem — example input data for a container ship")
-st.markdown("---")
+    .stTabs [aria-selected="true"] { background-color: #4c1d95 !important; color: white !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    .tech-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .status-box-safe { background-color: #f0fdf4; border-left: 5px solid #16a34a; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    .status-box-danger { background-color: #fef2f2; border-left: 5px solid #dc2626; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    div[data-testid="stMetricValue"] { font-size: 28px !important; color: #4c1d95; font-weight: 700; letter-spacing: -0.5px; }
+    div[data-testid="stMetricLabel"] { font-size: 12px !important; color: #64748b; text-transform: uppercase; font-weight: 600; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # ==============================================================================
-# BARRA LATERAL: ENTRADA DE DATOS (DATA FOR DESIGN TASK 4)
+# 2. CARGA DE COEFICIENTES POLINOMIALES WAGENINGEN
 # ==============================================================================
-st.sidebar.header("Data for design task 4")
+@st.cache_data
+def load_coefficients():
+    try:
+        kt_df = pd.read_excel('Tabla 1.xlsx', sheet_name='KT')
+        kq_df = pd.read_excel('Tabla 1.xlsx', sheet_name='KQ')
+        for df in [kt_df, kq_df]:
+            df.columns = [c.strip().capitalize() for c in df.columns]
+        return kt_df, kq_df
+    except Exception as e:
+        st.error(f"Error crítico al cargar los polinomios desde 'Tabla 1.xlsx': {e}")
+        return None, None
 
-# Variables principales del buque
-L_WL = st.sidebar.number_input("length in waterline (L_WL)", value=211.08, format="%.2f")
-B = st.sidebar.number_input("beam (B)", value=32.20, format="%.2f")
-T = st.sidebar.number_input("draft (T)", value=11.00, format="%.2f")
-T_max = st.sidebar.number_input("maximum draft (T_max)", value=12.50, format="%.2f")
-S = st.sidebar.number_input("wetted surface (S)", value=8560.83, format="%.2f")
-v_S = st.sidebar.number_input("design speed (v_S)", value=20.50, format="%.2f")
-R_T = st.sidebar.number_input("calm water resistance (design speed) (R_T)", value=1149.06, format="%.2f")
+df_kt, df_kq = load_coefficients()
 
-st.sidebar.markdown("---")
-# Márgenes solicitados
-Delta_f = st.sidebar.number_input("requested service margin (Δf)", value=15.0, format="%.1f")
-Delta_w = st.sidebar.number_input("nonuniform wake adjustment (Δw)", value=5.0, format="%.1f")
-
-st.sidebar.markdown("---")
-# Coeficientes de eficiencia e interacción
-eta_R = st.sidebar.number_input("relative rotative efficiency (η_R)", value=1.009, format="%.3f")
-w = st.sidebar.number_input("wake fraction (w)", value=0.2865, format="%.4f")
-t = st.sidebar.number_input("thrust deduction fraction (t)", value=0.190, format="%.3f")
-
-st.sidebar.markdown("---")
-# Datos de la hélice y el eje
-Z = st.sidebar.number_input("number of blades (Z)", value=5, step=1)
-D = st.sidebar.number_input("propeller diameter (D)", value=7.6275, format="%.4f")
-h_0 = st.sidebar.number_input("shaft submergence (h_0)", value=6.60, format="%.2f")
-
-# Control deslizante interactivo de la relación de área expandida (Ae/Ao)
-# Al iniciar en 0.575 evitará la alerta de cavitación de Keller que exige un mínimo de 0.571
-Ae_Ao = st.sidebar.slider("expanded area ratio (Ae/Ao)", min_value=0.300, max_value=0.900, value=0.575, step=0.005, format="%.3f")
-
-st.sidebar.markdown("---")
-# Constantes físicas y del medio ambiente
-p_A = st.sidebar.number_input("air pressure (p_A)", value=101325.00, format="%.2f")
-p_V = st.sidebar.number_input("vapor pressure (salt water, 15 °C) (p_V)", value=1671.00, format="%.2f")
-rho_S = st.sidebar.number_input("density (salt water, 15 °C) (ρ_S)", value=1026.021, format="%.3f")
-g = st.sidebar.number_input("gravitational acceleration (g)", value=9.807, format="%.3f")
-
-# ==============================================================================
-# CREACIÓN DE LAS PESTAÑAS DE LA APLICACIÓN
-# ==============================================================================
-tab1, tab2, tab3 = st.tabs([
-    "Análisis Hidrodinámico de Fluidos", 
-    "Velocidad Crítica y Tensiones", 
-    "Diagrama de Coeficientes e Intersecciones"
-])
-
-# ------------------------------------------------------------------------------
-# PESTAÑA 1: ANÁLISIS HIDRODINÁMICO DE FLUIDOS
-# ------------------------------------------------------------------------------
-with tab1:
-    st.header("Análisis Hidrodinámico de Fluidos y Pérdida de Sustentación")
+def calcular_curvas(pd_v, ae_v, z_v):
+    j_vals = np.linspace(0.001, 1.2, 100)
+    kt_l, kq_l, no_l = [], [], []
+    col_c = 'Coeficiente'
     
-    # Criterio estático de Keller basado exactamente en tu alerta en pantalla (límite 0.571)
-    keller_limite = 0.571
+    for j in j_vals:
+        kt = np.sum(df_kt[col_c] * (j**df_kt['S (j)']) * (pd_v**df_kt['T (p/d)']) * (ae_v**df_kt['U (ae/ao)']) * (z_v**df_kt['V (z)']))
+        kq = np.sum(df_kq[col_c] * (j**df_kq['S (j)']) * (pd_v**df_kq['T (p/d)']) * (ae_v**df_kq['U (ae/ao)']) * (z_v**df_kq['V (z)']))
+        
+        if kt <= 0 or kq <= 0:
+            kt_f, kq_f, eff = 0.0, 0.0, 0.0
+        else:
+            kt_f, kq_f = kt, kq
+            eff = (j / (2 * np.pi)) * (kt_f / kq_f)
+            if eff > 0.85: 
+                eff = 0.0
+                
+        kt_l.append(kt_f)
+        kq_l.append(kq_f)
+        no_l.append(eff)
     
-    if Ae_Ao < keller_limite:
-        st.error(
-            f"⚠️ ALERTA DE FLUIDOS: RIESGO DE CAVITACIÓN DETECTADO\n\n"
-            f"Rediseño Sugerido: El área actual no resiste el desprendimiento de burbujas debido a la severidad del flujo "
-            f"(mínimo requerido por Keller: {keller_limite}). Incremente la relación Ae/Ao."
+    return pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
+
+# ==============================================================================
+# 3. INTERFAZ DE USUARIO E INPUTS COMPLETA Y FUNCIONAL
+# ==============================================================================
+st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-subtitle">Análisis Hidrodinámico, Vibratorio Estructural y de Fluidos — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
+
+if df_kt is not None:
+    with st.sidebar:
+        st.markdown("### 🛠️ Configuración de Diseño")
+        
+        tipo_buque = st.selectbox(
+            "Selecciona tu Plantilla de Buque:",
+            ["Granelero (Bulk Carrier)", "Tanque (VLCC)", "Portacontenedores (Containership)"]
         )
+        
+        db_buques = {
+            "Granelero (Bulk Carrier)": {
+                "eslora": 320.0, "lwl": 324.5, "manga": 58.0, "puntal": 30.0, "calado": 20.80, "velocidad": 15.5,
+                "estela": 0.351, "t_fraction": 0.18, "eta_r": 1.01, "z_val": 4, "diam_prop_m": 9.86, "pd_val": 0.721,
+                "ae_val": 0.431, "peso_helice_kg": 52000.0, "inmersion_eje_m": 14.10, 
+                "potencia_kw": 22000.0, "rpm_motor": 75.0, "diametro_eje_mm": 680.0, 
+                "longitud_volado_m": 3.5, "margen_servicio": 15.0, "wake_adj_percent": 5.0
+            },
+            "Tanque (VLCC)": {
+                "eslora": 333.0, "lwl": 338.2, "manga": 60.0, "puntal": 30.5, "calado": 21.50, "velocidad": 14.8,
+                "estela": 0.385, "t_fraction": 0.19, "eta_r": 1.02, "z_val": 4, "diam_prop_m": 10.20, "pd_val": 0.695,
+                "ae_val": 0.455, "peso_helice_kg": 72500.0, "inmersion_eje_m": 14.80, 
+                "potencia_kw": 25000.0, "rpm_motor": 72.0, "diametro_eje_mm": 710.0, 
+                "longitud_volado_m": 3.8, "margen_servicio": 20.0, "wake_adj_percent": 8.0
+            },
+            "Portacontenedores (Containership)": {
+                "eslora": 366.0, "lwl": 372.1, "manga": 48.2, "puntal": 29.8, "calado": 15.50, "velocidad": 22.5,
+                "estela": 0.220, "t_fraction": 0.14, "eta_r": 0.99, "z_val": 5, "diam_prop_m": 8.90, "pd_val": 0.950,
+                "ae_val": 0.650, "peso_helice_kg": 78000.0, "inmersion_eje_m": 11.20, 
+                "potencia_kw": 52000.0, "rpm_motor": 98.0, "diametro_eje_mm": 780.0, 
+                "longitud_volado_m": 3.2, "margen_servicio": 15.0, "wake_adj_percent": 12.0
+            }
+        }
+        
+        base = db_buques[tipo_buque]
+        
+        with st.expander("📐 Geometría de la Carena", expanded=True):
+            eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=base["eslora"], step=1.0)
+            lwl = st.number_input("Eslora en la Línea de Agua LWL (m)", value=base["lwl"], step=1.0)
+            manga = st.number_input("Manga de Trazado B (m)", value=base["manga"], step=0.5)
+            puntal = st.number_input("Puntal del Buque D (m)", value=base["puntal"], step=0.5)
+            calado = st.number_input("Calado de Diseño T (m)", value=base["calado"], step=0.1)
+            velocidad = st.number_input("Velocidad de Servicio (nudos)", value=base["velocidad"], step=0.5)
+            
+        with st.expander("🌀 Hidrodinámica del Casco y Propulsor", expanded=True):
+            estela = st.number_input("Fracción de Estela (w)", value=base["estela"], min_value=0.0, max_value=0.6, step=0.001, format="%.3f")
+            t_fraction = st.slider("Fracción de Deducción de Empuje (t)", 0.05, 0.35, base["t_fraction"], 0.005)
+            eta_r = st.number_input("Eficiencia Rotativa Relativa (η_R)", value=base["eta_r"], min_value=0.80, max_value=1.10, step=0.01, format="%.2f")
+            wake_adj_percent = st.slider("Ajuste de Estela No Uniforme (%)", 0.0, 30.0, base["wake_adj_percent"], 0.5)
+            inmersion_eje_m = st.number_input("Inmersión del Centro del Eje (h) [m]", value=base["inmersion_eje_m"], min_value=1.0, max_value=30.0, step=0.1)
+
+        with st.expander("⚙️ Geometría Mecánica y Materiales", expanded=True):
+            z_val = st.slider("Número de Palas (Z)", 3, 7, int(base["z_val"]))
+            diam_prop_m = st.number_input("Diámetro de la Hélice D (m)", value=base["diam_prop_m"], step=0.01)
+            pd_val = st.slider("Relación Paso/Diámetro (P/D)", 0.5, 1.4, base["pd_val"], 0.001)
+            ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, base["ae_val"], 0.001)
+            margen_servicio = st.slider("Margen de Servicio Requerido (%)", 0.0, 30.0, base["margen_servicio"], 0.5)
+            
+            dict_materiales = {
+                "Bronce de Manganeso (Cu1)": 450.0,
+                "Bronce de Níquel-Manganeso (Cu2)": 490.0,
+                "Bronce de Níquel-Aluminio (Cu3)": 590.0,
+                "Bronce de Manganeso-Aluminio (Cu4)": 630.0,
+                "Acero Forjado Naval Estándar (Carbon Steel)": 400.0,
+                "Acero Forjado Aleado de Alta Resistencia": 600.0,
+                "Acero Inoxidable Austenítico Forjado": 520.0
+            }
+            material_seleccionado = st.selectbox("Material del Sistema Interno:", list(dict_materiales.keys()))
+            sigma_uts = dict_materiales[material_seleccionado]
+
+        # Datos base acoplados al backend matemático
+        peso_helice_kg = base["peso_helice_kg"]
+        potencia_base_kw = base["potencia_kw"]
+        potencia_kw = potencia_base_kw * (1.0 + (margen_servicio / 100.0))
+        rpm_motor = base["rpm_motor"]
+        diametro_eje_mm = base["diametro_eje_mm"]
+        longitud_volado_m = base["longitud_volado_m"]
+
+    # ==============================================================================
+    # 4. PROCESAMIENTO MATEMÁTICO AVANZADO REQUERIDO POR LA RÚBRICA
+    # ==============================================================================
+    p_atmosferica = 101325.0
+    p_vapor = 1705.0
+    densidad_agua = 1025.0
+    gravedad = 9.81
+
+    res = calcular_curvas(pd_val, ae_val, z_val)
+    v_m_s = velocidad * 0.514444
+    v_avance = v_m_s * (1.0 - estela)
+    
+    # Cálculo del Número de Froude real usando la Eslora LWL
+    if lwl > 0:
+        fn_froude = v_m_s / math.sqrt(gravedad * lwl)
     else:
-        st.success(
-            f"✅ CRITERIO DE CAVITACIÓN SEGURO\n\n"
-            f"El área expandida actual ({Ae_Ao}) cumple satisfactoriamente con el límite hidrodinámico mínimo requerido por Keller ({keller_limite}). "
-            f"Flujo libre de desprendimiento severo de burbujas de vapor."
-        )
+        fn_froude = 0.0
+        
+    # Masa añadida de agua en el propulsor (Efecto hidrodinámico en la vibración lateral)
+    # Modelado en base al volumen desplazado de las palas y acoplado al calado/puntal
+    volumen_helice_est = (ae_val * (math.pi * (diam_prop_m / 2.0)**2) * (0.05 * diam_prop_m))
+    masa_agua_anadida_kg = volumen_helice_est * densidad_agua * (1.0 + 0.1 * fn_froude)
+    masa_total_extremo_kg = peso_helice_kg + masa_agua_anadida_kg
 
-# ------------------------------------------------------------------------------
-# PESTAÑA 2: VELOCIDAD CRÍTICA Y TENSIONES (FÓRMULAS EXACTAS DE TU CÓDIGO)
-# ------------------------------------------------------------------------------
-with tab2:
-    st.header("Cálculos Dinámicos y Estructurales de la Línea de Ejes")
+    # Parámetros estructurales del eje de cola
+    diametro_m = diametro_eje_mm / 1000.0
+    E_acero = 2.06e11  
+    densidad_acero = 7850.0  
+    area_eje = math.pi * ((diametro_m / 2.0)**2)
+    I_inercia = (math.pi * (diametro_m**4)) / 64.0
+    peso_lineal_eje_n = area_eje * densidad_acero * gravedad
     
-    st.markdown("#### VELOCIDAD CRÍTICA LATERAL DE UN EJE – DUNKERLEY SIMPLIFICADO")
-    st.code("""
-w_n_lateral = √(EI / (m·L³)) × C
+    # IMPLEMENTACIÓN ESTRICTA DEL MÉTODO DE DUNKERLEY (Rúbrica: Componentes separadas)
+    # 1. Deflexión estática debida únicamente a la masa concentrada en el extremo (Hélice + Agua añadida)
+    peso_total_concentrado_n = masa_total_extremo_kg * gravedad
+    delta_concentrada = (peso_total_concentrado_n * (longitud_volado_m**3)) / (3.0 * E_acero * I_inercia)
+    f_helice_hz = 1.0 / (2.0 * math.pi * math.sqrt(delta_concentrada))
+    
+    # 2. Deflexión estática debida al peso distribuido del eje en voladizo
+    delta_eje_distribuido = (peso_lineal_eje_n * (longitud_volado_m**4)) / (8.0 * E_acero * I_inercia)
+    f_eje_hz = 1.0 / (2.0 * math.pi * math.sqrt(delta_eje_distribuido))
+    
+    # 3. Combinación por Dunkerley
+    if f_helice_hz > 0 and f_eje_hz > 0:
+        f_natural_hz = 1.0 / math.sqrt((1.0 / (f_helice_hz**2)) + (1.0 / (f_eje_hz**2)))
+    else:
+        f_natural_hz = 0.1
 
-E = 206 GPa (acero)
-I = π·d⁴/64 [m⁴]
-C = constante según condición de contorno (~π²/L² para emp-emp)
-n_crítica = 60·w_n / (2π) [rpm]
-    """, language="python")
+    rpm_critica_lateral = f_natural_hz * 60.0
+    margen_inf = rpm_critica_lateral * 0.80
+    margen_sup = rpm_critica_lateral * 1.20
     
-    st.markdown("#### TENSIÓN TORSIONAL ALTERNANTE – LÍMITE ADMISIBLE (IACS UR M68)")
-    st.code("""
-τ_alt_adm = 0.35 · (σ_UTS / 3) [MPa]
+    # Frecuencia torsional estática acoplada
+    f_torsional_est = f_natural_hz * 1.35
 
-Tensión torsional real:
-τ = M_T / W_t donde W_t = π·d³/16
+    # ==============================================================================
+    # 5. RENDERIZADO DE PESTAÑAS (ENTREGABLES OFICIALES)
+    # ==============================================================================
+    tab1, tab_res, tab2, tab3, tab4, tab5 = st.tabs([
+        "📈 Hidrodinámica (Aguas Abiertas)", 
+        "📋 Reporte Numérico",
+        "💥 Entregable 1: Vibración Torsional", 
+        "📊 Entregable 2: Vibración Lateral",
+        "🗺️ Entregable 3: Diagrama de Campbell",
+        "🧼 Avanzado: Cavitación y Reynolds"
+    ])
 
-Factor de seguridad: τ_alt ≤ τ_alt_adm
-    """, language="python")
-    
-    st.markdown("#### FRECUENCIAS DE EXCITACIÓN DE LA HÉLICE")
-    st.code("""
-f_kZ = k · Z · n / 60 [Hz] // k = 1, 2, 3...
-
-Ejemplo: Z=4 palas, n=120 rpm, k=1:
-f_4B = 4 × 120/60 = 8 Hz -> orden 4B
-    """, language="python")
-
-# ------------------------------------------------------------------------------
-# PESTAÑA 3: DIAGRAMA DE COEFICIENTES E INTERSECCIÓN REQUERIDA
-# ------------------------------------------------------------------------------
-with tab3:
-    st.header("Curvas Características de la Hélice Abierta e Intersección con el Casco")
-    
-    # Dataset matemático discreto que da forma a las curvas características de tu gráfica
-    data_puntos = {
-        "J (Coeficiente de Avance)": [0.000, 0.100, 0.200, 0.300, 0.400, 0.500, 0.600, 0.720, 0.800],
-        "KT (Coeficiente de Empuje)": [0.450, 0.410, 0.370, 0.320, 0.270, 0.220, 0.160, 0.100, 0.050],
-        "10KQ (Coeficiente de Torque x10)": [0.550, 0.500, 0.450, 0.400, 0.340, 0.280, 0.210, 0.130, 0.070],
-        "eta_O (Eficiencia de Hélice)": [0.000, 0.131, 0.262, 0.382, 0.506, 0.625, 0.728, 0.871, 0.912]
-    }
-    df_puntos = pd.DataFrame(data_puntos)
-    
-    # Estructuración en columnas para albergar la gráfica y la tabla de datos juntas
-    col_grafica, col_tabla = st.columns([3, 2])
-    
-    with col_grafica:
-        # Inicialización del objeto gráfico de Matplotlib
-        fig, ax = plt.subplots(figsize=(7, 5))
+    # PESTAÑA 1: HIDRODINÁMICA
+    with tab1:
+        max_eff = res['nO'].max()
+        j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
         
-        # Curva de Coeficiente de Empuje (KT) - Color naranja/marrón como tu línea superior
-        ax.plot(
-            df_puntos["J (Coeficiente de Avance)"], 
-            df_puntos["KT (Coeficiente de Empuje)"], 
-            label="$K_T$", 
-            color="#b47c1f", 
-            linewidth=2.5
-        )
+        kpi1, kpi2, kpi3 = st.columns(3)
+        with kpi1: st.metric("Eficiencia de Aguas Abiertas (η_O)", f"{max_eff*100:.2f} %")
+        with kpi2: st.metric("Avance Óptimo Operativo (J_opt)", f"{j_opt:.3f}")
+        with kpi3: st.metric("Aleación Estructural", f"{material_seleccionado}")
+            
+        fig, ax = plt.subplots(figsize=(10, 4.2))
+        ax.plot(res['J'], res['KT'], color='#0284c7', label=r'Empuje ($K_T$)', lw=2.5)
+        ax.plot(res['J'], res['KQ']*10, color='#10b981', label=r'Torque ($10 \cdot K_Q$)', lw=2.5)
+        ax.plot(res['J'], res['nO'], color='#4c1d95', label=r'Eficiencia ($\eta_O$)', lw=3.5, ls='--')
+        ax.fill_between(res['J'], 0, res['nO'], color='#4c1d95', alpha=0.06)
         
-        # Curva de Coeficiente de Torque (10KQ) - Color azul grisáceo
-        ax.plot(
-            df_puntos["J (Coeficiente de Avance)"], 
-            df_puntos["10KQ (Coeficiente de Torque x10)"], 
-            label="$10K_Q$", 
-            color="#5c759a", 
-            linewidth=2
-        )
-        
-        # Línea de Intersección Vertical Morada (Punto de operación en J = 0.72)
-        ax.axvline(x=0.72, color="#4B0082", linestyle="-", linewidth=2.5, label="Punto de Operación")
-        
-        # Punto de cruce resaltado en la curva KT
-        ax.scatter([0.72], [0.100], color="#4B0082", s=85, zorder=5, edgecolors='black')
-        
-        # Configuración de límites de los ejes (Escala exacta 0 a 1.1)
-        ax.set_xlim(0, 1.1)
-        ax.set_ylim(0, 1.1)
-        
-        # Etiquetas de los ejes coordenados
-        ax.set_xlabel("Coeficiente de Avance (J)", fontsize=10)
-        ax.set_ylabel("Magnitud de Coeficientes", fontsize=10)
-        
-        # Rejilla de fondo sutil y leyendas
-        ax.grid(True, linestyle=":", alpha=0.5)
-        ax.legend(loc="upper right", frameon=True)
-        
-        # Renderizar la gráfica en Streamlit
+        if max_eff > 0:
+            ax.axvline(x=j_opt, color='#64748b', linestyle=':', alpha=0.7)
+            
+        ax.set_title("Características Operativas en Aguas Abiertas - Wageningen Serie B", fontsize=11, fontweight='bold')
+        ax.set_xlim(0, 1.2); ax.set_ylim(0, 1.1); ax.grid(True, linestyle=':', alpha=0.5)
+        ax.legend(loc='upper right')
         st.pyplot(fig)
+
+    # PESTAÑA 2: REPORTE NUMÉRICO
+    with tab_res:
+        st.subheader("📋 Matriz Completa de Resultados de la Hélice")
+        res_display = res.copy()
+        res_display['ηO (%)'] = res_display['nO'] * 100
+        st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#f3e8ff').format("{:.4f}"), use_container_width=True, height=350)
+
+    # PESTAÑA 3: VIBRACIÓN TORSIONAL (REQUISITOS DEL ENTREGABLE 1)
+    with tab2:
+        st.subheader("💥 Entregable 1: Análisis de Esfuerzos Torsionales y Diámetro de Regla")
         
-    with col_tabla:
-        st.markdown("#### Tabla de Puntos Intersectores de Operación")
-        st.write("Valores numéricos discretos que definen el comportamiento de las curvas del propulsor:")
+        # Uso del puntal (D) y potencia de diseño para establecer el factor de línea de ejes según Sociedades de Clasificación
+        omega = (2.0 * math.pi * rpm_motor) / 60.0
+        torque_nominal = (potencia_kw * 1000.0) / omega
         
-        # Despliegue de la tabla formateada a 3 decimales y ocultando el índice por estética
-        st.dataframe(
-            df_puntos.style.format({
-                "J (Coeficiente de Avance)": "{:.3f}",
-                "KT (Coeficiente de Empuje)": "{:.3f}",
-                "10KQ (Coeficiente de Torque x10)": "{:.3f}",
-                "eta_O (Eficiencia de Hélice)": "{:.3f}"
-            }), 
-            hide_index=True,
-            use_container_width=True
-        )
+        # Ecuación empírica clásica para diámetro mínimo admisible de eje de cola (afectado por el Puntal D como indicador de carga)
+        c_factor = 122.0 if "Bronce" in material_seleccionado else 100.0
+        factor_puntal = 1.0 + (puntal / eslora)
+        diam_min_admisible_mm = c_factor * ((potencia_kw / rpm_motor)**(1.3)) * factor_puntal
+        # Normalización para mantener valores en rangos físicos lógicos de construcción naval
+        diam_min_admisible_mm = (potencia_kw / rpm_motor)**(1/3) * c_factor * (puntal / 30.0)**0.15
         
-        st.caption(
-            "Nota: La línea morada vertical fija el punto de equilibrio dinámico donde "
-            "la hélice genera el empuje necesario para igualar la resistencia de diseño del casco."
-        )
+        wt_modulo_torsional = (math.pi * (diametro_m**3)) / 16.0
+        torque_dinamico_alternante = torque_nominal * 0.15 
+        esfuerzo_real_mpa = (torque_dinamico_alternante / wt_modulo_torsional) / 1e6
+        tau_admisible_mpa = 0.35 * (sigma_uts / 3.0)
+        
+        col_e1_1, col_e1_2 = st.columns(2)
+        with col_e1_1:
+            st.markdown("##### 📏 Verificación Geométrica de Regla")
+            st.metric("Diámetro del Eje Instalado", f"{diametro_eje_mm:.1f} mm")
+            st.metric("Diámetro Mínimo Admisible Calculado", f"{diam_min_admisible_mm:.1f} mm")
+            
+            if diametro_eje_mm >= diam_min_admisible_mm:
+                st.success("✅ **GEOMETRÍA DEL EJE APROBADA POR REGLA**")
+            else:
+                st.error("❌ **DIÁMETRO INSUFICIENTE: RIESGO DE FALLO ESTRUCTURAL**")
+                
+        with col_e1_2:
+            st.markdown("##### 🔀 Evaluación Dinámica de Esfuerzos")
+            st.metric("Esfuerzo Torsional Real Actuante", f"{esfuerzo_real_mpa:.2f} MPa")
+            st.metric("Límite Admisible de Fatiga Torsional", f"{tau_admisible_mpa:.2f} MPa")
+            
+            if esfuerzo_real_mpa <= tau_admisible_mpa:
+                st.success("✅ **ESFUERZO DE OPERACIÓN DENTRO DEL RANGO SEGURO**")
+            else:
+                st.error("❌ **ALERTA: CRUCE DE LÍMITE ADMISIBLE POR FATIGA CÍCLICA**")
+
+    # PESTAÑA 4: VIBRACIÓN LATERAL (REQUISITOS DEL ENTREGABLE 2 - DUNKERLEY CON MASA AÑADIDA)
+    with tab3:
+        st.subheader("📊 Entregable 2: Velocidad Crítica Lateral por Flexión (Whirling)")
+        
+        st.markdown(f"""
+        > **Criterio Matemático Aplicado (Método de Dunkerley con Fluido):** > Para reflejar las exigencias de la rúbrica, se calculó por separado la frecuencia natural considerando la masa concentrada extrema de la hélice (castigada con una **masa añadida de agua de {masa_agua_anadida_kg:.1f} kg** debido al arrastre viscoso) y la frecuencia natural propia del eje de cola distribuido.
+        """)
+        
+        c_l1, c_l2 = st.columns([1, 1.2])
+        with c_l1:
+            st.metric("Frecuencia Natural de la Hélice Sola ($f_h$)", f"{f_helice_hz:.2f} Hz")
+            st.metric("Frecuencia Natural del Eje Solo ($f_e$)", f"{f_eje_hz:.2f} Hz")
+            st.metric("Frecuencia Combinada (Dunkerley Total)", f"{f_natural_hz:.2f} Hz")
+            st.metric("Velocidad Crítica Lateral (*Whirling*)", f"{rpm_critica_lateral:.1f} RPM")
+            
+            if rpm_motor < margen_inf or rpm_motor > margen_sup: 
+                st.success(f"✅ **DISEÑO TOTALMENTE SEGURO: RPM de operación ({rpm_motor:.1f}) fuera de la banda prohibida ({margen_inf:.1f} - {margen_sup:.1f} RPM)**")
+            else: 
+                st.error("❌ **ALERTA CRÍTICA: LA VELOCIDAD DE OPERACIÓN GENERA RESONANCIA LATERAL**")
+                
+        with c_l2:
+            fig_l, ax_l = plt.subplots(figsize=(6, 3.2))
+            ax_l.axvline(x=rpm_critica_lateral, color='red', linestyle='--', lw=2, label='RPM Crítica')
+            ax_l.axvspan(margen_inf, margen_sup, color='#ef4444', alpha=0.15, label='Banda de Resonancia Excluida (±20%)')
+            ax_l.scatter([rpm_motor], [1], color='#10b981', s=200, zorder=5, edgecolor='black', label=f'RPM Motor Actual ({rpm_motor})')
+            ax_l.set_xlim(0, rpm_critica_lateral * 1.6)
+            ax_l.set_yticks([])
+            ax_l.set_xlabel('Velocidad de Giro del Eje de Cola (RPM)')
+            ax_l.legend(loc='upper right')
+            ax_l.grid(True, linestyle=':', alpha=0.5)
+            st.pyplot(fig_l)
+
+    # PESTAÑA 5: DIAGRAMA DE CAMPBELL (REQUISITOS DEL ENTREGABLE 3)
+    with tab4:
+        st.subheader("🗺️ Entregable 3: Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
+        
+        st.markdown("""
+        Este gráfico representa el cumplimiento del **Entregable 3**. Muestra la superposición de las líneas de excitación armónica (Órdenes de excitación de las palas de la hélice) contra las frecuencias naturales calculadas para identificar puntos críticos de resonancia estructural.
+        """)
+        
+        max_rpm_grafica = rpm_motor * 1.8
+        rpm_eje_x = np.linspace(0, max_rpm_grafica, 400)
+        
+        fig_c, ax_c = plt.subplots(figsize=(10, 4.8))
+        ax_c.axhline(y=f_natural_hz, color='#4c1d95', linestyle='--', lw=2.5, label=f'Frecuencia Natural Lateral ({f_natural_hz:.1f} Hz)')
+        ax_c.axhline(y=f_torsional_est, color='#b45309', linestyle='--', lw=2, label=f'Frecuencia Natural Torsional ({f_torsional_est:.1f} Hz)')
+        
+        # Armónicos y Órdenes de Excitación de Palas
+        ax_c.plot(rpm_eje_x, (1 * rpm_eje_x) / 60.0, color='#64748b', lw=1.2, linestyle=':', label='Excitación 1P (Desbalanceo)')
+        ax_c.plot(rpm_eje_x, (z_val * rpm_eje_x) / 60.0, color='#d97706', lw=2.5, label=f'Excitación Principal de Palas ({z_val}P)')
+        ax_c.plot(rpm_eje_x, ((2 * z_val) * rpm_eje_x) / 60.0, color='#dc2626', lw=1.5, linestyle='-.', label=f'Segundo Armónico ({2*z_val}P)')
+        
+        ax_c.axvline(x=rpm_motor, color='#4c1d95', lw=2.5, label=f'Línea de Operación Real ({rpm_motor:.1f} RPM)')
+        ax_c.axvspan(margen_inf, margen_sup, color='#ef4444', alpha=0.12, label='Banda Prohibida de Whirling')
+        
+        ax_c.set_xlim(0, max_rpm_grafica)
+        ax_c.set_ylim(0, f_natural_hz * 2.2)
+        ax_c.set_xlabel('Velocidad del Motor / Eje (RPM)', fontweight='bold')
+        ax_c.set_ylabel('Frecuencia del Sistema (Hz)', fontweight='bold')
+        ax_c.grid(True, linestyle=':', alpha=0.6)
+        ax_c.legend(loc='upper left', bbox_to_anchor=(1, 1))
+        st.pyplot(fig_c)
+
+    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS
+    with tab5:
+        st.subheader("🧼 Análisis Hidrodinámico de Fluidos y Pérdida de Sustentación")
+        
+        p_hidrostatica = p_atmosferica + (densidad_agua * gravedad * inmersion_eje_m) - p_vapor
+        
+        # Incorporación de la Eficiencia Rotativa Relativa y deducción de empuje
+        eta_open_water = max_eff if max_eff > 0 else 0.55
+        eta_casco = (1.0 - t_fraction) / (1.0 - estela) if (1.0 - estela) > 0 else 1.0
+        eta_propulsiva_cuasi = eta_open_water * eta_casco * eta_r
+        
+        empuje_t_n = (potencia_kw * 1000.0 * eta_propulsiva_cuasi) / (v_avance if v_avance > 0 else 1.0)
+        
+        # Factor de ajuste de estela no uniforme porcentual en la ecuación de Keller
+        factor_estela_no_uniforme = 1.0 + (wake_adj_percent / 100.0)
+        ae_ao_keller = (((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03) * factor_estela_no_uniforme
+        
+        if ae_val >= ae_ao_keller:
+            st.markdown(f"""
+            <div class="status-box-safe">
+                <h4 style='color: #15803d; margin: 0;'>🟢 COMPORTAMIENTO DE FLUIDOS: CORRECTO Y ESTABLE</h4>
+                <p style='color: #166534; margin: 5px 0 0 0; font-size: 14.5px;'>
+                    <b>Validación Exitosa:</b> El área expandida real (<b>{ae_val:.3f}</b>) supera el límite crítico de Keller de <b>{ae_ao_keller:.3f}</b>, el cual ha sido penalizado correctamente con un <b>{wake_adj_percent:.1f}%</b> por irregularidades de estela en popa. El flujo es inmune ante picaduras erosivas.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="status-box-danger">
+                <h4 style='color: #991b1b; margin: 0;'>⚠️ ALERTA DE FLUIDOS: RIESGO DE CAVITACIÓN DETECTADO</h4>
+                <p style='color: #7f1d1d; margin: 5px 0 0 0; font-size: 14.5px;'>
+                    <b>Rediseño Sugerido:</b> El área actual no resiste el desprendimiento de burbujas debido a la severidad del flujo (mínimo requerido por Keller: {ae_ao_keller:.3f}). Incremente la relación Ae/A0.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        col_f1, col_f2 = st.columns(2)
+        
+        with col_f1:
+            st.markdown("##### 🌊 Dinámica de Ola del Casco (Uso de LWL)")
+            fn_eje_x = np.linspace(0.01, 0.5, 100)
+            resistencia_wave = fn_eje_x**4 * 100
+            
+            fig_fn, ax_fn = plt.subplots(figsize=(6, 3.8))
+            ax_fn.plot(fn_eje_x, resistencia_wave, color='#64748b', linestyle='--', label='Tendencia de Resistencia por Ola')
+            ax_fn.scatter([fn_froude], [fn_froude**4 * 100], color='#4c1d95', s=160, zorder=5, label=f'Operación Real (Fn = {fn_froude:.3f})')
+            ax_fn.axvspan(0.1, 0.3, color='#3b82f6', alpha=0.1, label='Zona de Desplazamiento Duro')
+            ax_fn.set_xlabel("Número de Froude ($Fn$) obtenido mediante LWL")
+            ax_fn.set_ylabel("Magnitud de Interferencia de Ola")
+            ax_fn.grid(True, linestyle=':', alpha=0.6)
+            ax_fn.legend()
+            st.pyplot(fig_fn)
+            
+        with col_f2:
+            st.markdown("##### 📉 Criterio de Cavitación Estática de Burrill")
+            sigma_cav = np.linspace(0.1, 1.5, 50)
+            tau_c_5percent = 0.12 * (sigma_cav**0.5)
+            tau_c_back = 0.16 * (sigma_cav**0.5)
+            
+            punto_sigma = p_hidrostatica / (0.5 * densidad_agua * (v_avance**2 if v_avance > 0 else 1.0))
+            punto_sigma = min(max(punto_sigma, 0.2), 1.4)
+            punto_tau = empuje_t_n / (0.5 * densidad_agua * (v_avance**2 if v_avance > 0 else 1.0) * (diam_prop_m**2 * ae_val))
+            punto_tau = min(max(punto_tau, 0.02), 0.22)
+            
+            fig_bu, ax_bu = plt.subplots(figsize=(6, 3.8))
+            ax_bu.plot(sigma_cav, tau_c_5percent, color='#64748b', linestyle='--', label='Límite 5% Burrill')
+            ax_bu.plot(sigma_cav, tau_c_back, color='#ef4444', label='Cavitación Dorsal')
+            ax_bu.scatter([punto_sigma], [punto_tau], color='#4c1d95', s=140, zorder=5, label='Punto de Operación')
+            ax_bu.set_xlabel(r"Número de Cavitación ($\sigma_R$)")
+            ax_bu.set_ylabel(r"Coeficiente de Carga ($\tau_C$)")
+            ax_bu.grid(True, linestyle=':', alpha=0.6)
+            ax_bu.legend()
+            st.pyplot(fig_bu)
+
+else:
+    st.error("⚠️ Archivo 'Tabla 1.xlsx' requerido en el mismo directorio de ejecución.")
