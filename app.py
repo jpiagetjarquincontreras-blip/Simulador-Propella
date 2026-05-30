@@ -66,12 +66,13 @@ if df_kt is not None:
             ae_val = st.slider("Relación de Área (AE/AO)", 0.3, 1.0, 0.45, 0.05)
             z_val = st.select_slider("Número de palas (Z)", options=[3, 4, 5, 6, 7], value=4)
         
-        # NUEVAS ENTRADAS PARA EL BUQUE TANQUE (ENTREGABLE 1 Y VIBRACIONES)
         with st.expander("⚙️ Datos de Planta Propulsora (Buque Tanque)", expanded=True):
             potencia_kw = st.number_input("Potencia MCR del Motor (kW)", value=8500.0, step=100.0)
             rpm_motor = st.number_input("RPM de Servicio (n)", value=95.0, step=5.0)
             diametro_eje_mm = st.number_input("Diámetro del Eje de Cola (mm)", value=420.0, step=10.0)
             sigma_uts = st.number_input("Resistencia del Acero (σ_UTS en MPa)", value=600.0, step=50.0)
+            longitud_volado_m = st.number_input("Longitud del Tramo Volado del Eje (m)", value=2.5, step=0.1)
+            peso_helice_kg = st.number_input("Peso Estimado de la Hélice (kg)", value=4500.0, step=100.0)
         
         st.markdown("---")
         st.write("**Integrantes del Equipo 4:**")
@@ -85,7 +86,7 @@ if df_kt is not None:
         - GALINDO BUSTOS OSCAR
         """)
 
-    # Expandimos a 5 pestañas para cubrir todos los requerimientos solicitados
+    # Pestañas organizadas con los nuevos entregables incluidos
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Gráfica de Rendimiento", 
         "📋 Datos Técnicos", 
@@ -130,50 +131,109 @@ if df_kt is not None:
         st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#dcfce7').format("{:.4f}"), use_container_width=True)
         st.download_button("📂 Descargar CSV", res_display.to_csv(index=False), "datos_equipo4.csv")
 
-    # TAB 3: NUEVO - ENTREGABLE 1 (Análisis de Vibración Torsional - TVA)
+    # TAB 3: ENTREGABLE 1 (Análisis de Vibración Torsional)
     with tab3:
         st.header("💥 Entregable 1: Análisis de Vibración Torsional (IACS UR M68)")
-        st.write("Esta sección audita mecánicamente el eje de cola del Buque Tanque para asegurar que los esfuerzos provocados por las vibraciones de torsión no fracturen el acero.")
+        st.write("Esta sección evalúa los esfuerzos provocados por la torsión en el eje del Buque Tanque de acuerdo con la norma internacional.")
         
-        # 1. Cálculo de la norma
+        # Fórmulas de la norma IACS M68
         tau_admisible = 0.35 * (sigma_uts / 3.0)
-        
-        # 2. Cálculos reales del eje del buque tanque
         omega = (2 * math.pi * rpm_motor) / 60.0
         torque_nominal_nm = (potencia_kw * 1000.0) / omega
+        torque_dinamico_nm = torque_nominal_nm * 0.15 # Estimación de carga dinámica alternante
         
-        # En diseño dinámico, se asume un 15% como la componente alternante por vibración (peor escenario)
-        torque_dinamico_nm = torque_nominal_nm * 0.15
-        
-        # Propiedad geométrica del eje (Metros cúbicos)
         diametro_m = diametro_eje_mm / 1000.0
         wt = (math.pi * (diametro_m**3)) / 16.0
-        
-        # Esfuerzo real en MPa
         esfuerzo_real_mpa = (torque_dinamico_nm / wt) / 1000000.0
         
-        # Despliegue de métricas en la interfaz
         vt1, vt2, vt3 = st.columns(3)
         vt1.metric("Torque Nominal del Motor", f"{torque_nominal_nm/1000:.1f} kN·m")
-        vt2.metric("Límite Seguro Admisible (Norma)", f"{tau_admisible:.2f} MPa")
-        vt3.metric("Esfuerzo Real por Vibración", f"{esfuerzo_real_mpa:.2f} MPa")
+        vt2.metric("Límite Seguro (Norma)", f"{tau_admisible:.2f} MPa")
+        vt3.metric("Esfuerzo Dinámico Real", f"{esfuerzo_real_mpa:.2f} MPa")
         
         st.markdown("---")
         st.subheader("⚖️ Veredicto de Seguridad Estructural")
-        
         if esfuerzo_real_mpa <= tau_admisible:
-            st.success(f"✅ **¡SISTEMA SEGURO!** El esfuerzo torsional real ({esfuerzo_real_mpa:.2f} MPa) es MENOR al límite máximo permitido por la norma IACS UR M68 ({tau_admisible:.2f} MPa). El eje resistirá la fatiga cíclica del Buque Tanque.")
+            st.success(f"✅ **¡SISTEMA SEGURO!** El esfuerzo torsional real ({esfuerzo_real_mpa:.2f} MPa) es MENOR al límite máximo permitido por la norma ({tau_admisible:.2f} MPa).")
         else:
-            st.error(f"❌ **¡ALERTA DE PELIGRO DE FRACTURA!** El esfuerzo real ({esfuerzo_real_mpa:.2f} MPa) SUPERA el límite admisible ({tau_admisible:.2f} MPa). El eje se romperá por fatiga torsional. **Solución:** Ve al Panel de Control a la izquierda y aumenta el 'Diámetro del Eje de Cola'.")
+            st.error(f"❌ **¡ALERTA DE PELIGRO DE FRACTURA!** El esfuerzo real ({esfuerzo_real_mpa:.2f} MPa) SUPERA el límite admisible ({tau_admisible:.2f} MPa). Aumenta el 'Diámetro del Eje de Cola' en el Panel de Control.")
 
-    # TAB 4: ESPACIO RESERVADO PARA ENTREGABLES 2 Y 3 (Para que los vayas llenando después)
+    # TAB 4: ENTREGABLES 2 Y 3 (Velocidades Críticas Laterales y Diagrama de Campbell)
     with tab4:
-        st.header("📊 Entregables 2 y 3: Velocidades Críticas y Diagrama de Campbell")
-        st.write("Esta sección queda lista para albergar la fórmula de Dunkerley y sus gráficos interactivos de frecuencias.")
-        st.info("💡 Aquí programaremos más adelante las líneas horizontales y diagonales para ver los cruces de resonancia dinámicamente.")
+        st.header("📊 Entregable 2: Velocidades Críticas Laterales (Whirling)")
+        st.write("Cálculo de la velocidad crítica a la que el eje de cola empezaría a pandearse dinámicamente debido al peso de la hélice.")
 
-    # TAB 5: FUNDAMENTOS TEÓRICOS (Tu código original con pequeños añadidos formales)
-    with tab3 if 'tab5' not in locals() else tab5:
+        # Ecuaciones para flexión y Dunkerley
+        E_acero = 2.06e11  
+        densidad_acero = 7850.0  
+        
+        r_eje = (diametro_eje_mm / 1000.0) / 2.0
+        area_eje = math.pi * (r_eje**2)
+        I_inercia = (math.pi * ((r_eje*2)**4)) / 64.0
+        peso_por_metro_eje = area_eje * densidad_acero
+        
+        # Deflexiones estáticas
+        P_helice = peso_helice_kg * 9.81
+        delta_helice = (P_helice * (longitud_volado_m**3)) / (3 * E_acero * I_inercia)
+        W_eje = peso_por_metro_eje * longitud_volado_m * 9.81
+        delta_eje = (W_eje * (longitud_volado_m**3)) / (8 * E_acero * I_inercia)
+        
+        f_critica_hz = 1.0 / (2.0 * math.pi * math.sqrt(delta_helice + delta_eje))
+        rpm_critica = f_critica_hz * 60.0
+        
+        limite_inferior_seguro = rpm_critica * 0.80
+        limite_superior_seguro = rpm_critica * 1.20
+
+        vl1, vl2, vl3 = st.columns(3)
+        vl1.metric("Velocidad Crítica Lateral", f"{rpm_critica:.1f} RPM")
+        vl2.metric("Límite Crítico Inferior (-20%)", f"{limite_inferior_seguro:.1f} RPM")
+        vl3.metric("Límite Crítico Superior (+20%)", f"{limite_superior_seguro:.1f} RPM")
+
+        st.markdown("---")
+        st.subheader("⚖️ Verificación del Margen de Operación")
+        if rpm_motor < limite_inferior_seguro or rpm_motor > limite_superior_seguro:
+            st.success(f"✅ **¡ZONA DE OPERACIÓN SEGURA!** Las RPM de servicio ({rpm_motor:.1f} RPM) están fuera del rango de resonancia de Whirling.")
+        else:
+            st.error(f"❌ **¡ALERTA DE RESONANCIA LATERAL!** Las RPM caen dentro de la zona peligrosa. Modifica la geometría en el panel izquierdo.")
+
+        # --- DIAGRAMA DE CAMPBELL (ENTREGABLE 3) ---
+        st.markdown("---")
+        st.header("📈 Entregable 3: Diagrama de Campbell Dinámico")
+        st.write("Mapeo interactivo de órdenes de excitación contra frecuencias naturales del sistema.")
+        
+        rpm_x = np.linspace(0, rpm_motor * 1.3, 200)
+        f_natural_lateral = f_critica_hz
+        f_natural_torsional = f_critica_hz * 1.5
+        
+        orden_1p = (1 * rpm_x) / 60.0
+        orden_zp = (z_val * rpm_x) / 60.0
+        orden_2zp = ((z_val * 2) * rpm_x) / 60.0
+
+        fig_campbell, ax_c = plt.subplots(figsize=(11, 6))
+        
+        ax_c.axhline(y=f_natural_lateral, color='#6b2d7a', linestyle='--', lw=2, label=f'Frecuencia Natural Lateral ({f_natural_lateral:.1f} Hz)')
+        ax_c.axhline(y=f_natural_torsional, color='#d95f02', linestyle='--', lw=2, label=f'Frecuencia Natural Torsional ({f_natural_torsional:.1f} Hz)')
+        
+        ax_c.plot(rpm_x, orden_1p, color='#7570b3', lw=1.5, label='Orden 1P (Eje Desbalanceado)')
+        ax_c.plot(rpm_x, orden_zp, color='#1b9e77', lw=2.5, label=f'Orden {z_val}P (Frecuencia de Palas)')
+        ax_c.plot(rpm_x, orden_2zp, color='#e7298a', lw=1.5, ls=':', label=f'Orden {z_val*2}P (Segundo Armónico)')
+        
+        ax_c.axvline(x=rpm_motor, color='#005129', lw=3, label=f'RPM de Servicio ({rpm_motor:.1f} RPM)')
+        ax_c.axvspan(limite_inferior_seguro, limite_superior_seguro, color='red', alpha=0.15, label='Zona Prohibida (BSR)')
+
+        ax_c.set_title(f"Diagrama de Campbell - Buque Tanque (Hélice de {z_val} Palas)", fontsize=14, fontweight='bold')
+        ax_c.set_xlabel("Velocidad del Motor (RPM)")
+        ax_c.set_ylabel("Frecuencia de Excitación (Hz)")
+        ax_c.set_xlim(0, rpm_motor * 1.3)
+        ax_c.set_ylim(0, max(f_natural_torsional * 1.5, 50))
+        ax_c.grid(True, linestyle=':', alpha=0.6)
+        ax_c.legend(loc='upper left', frameon=True, shadow=True)
+
+        st.pyplot(fig_campbell)
+        st.info("💡 **Cómo leer esta gráfica para la defensa del proyecto:** Los puntos donde las líneas diagonales cruzan con las líneas horizontales punteadas son zonas de resonancia destructiva. Nuestro buque tanque debe operar (línea verde vertical) lejos de esos cruces y fuera de la zona sombreada en rojo.")
+
+    # TAB 5: FUNDAMENTOS TEÓRICOS
+    with tab5:
         st.header("Modelo Matemático (Polinomios de Wageningen y Normas Navales)")
         st.write("El rendimiento de la hélice se calcula mediante las ecuaciones de regresión de **Oosterveld & van Oossanen**, basadas en los datos de la serie B de Wageningen.")
         
