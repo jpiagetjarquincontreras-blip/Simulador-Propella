@@ -35,21 +35,13 @@ st.markdown("""
     .tech-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     .tech-card h4 { margin-top: 0; color: #4c1d95; font-size: 16px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
     
-    /* Bloques de Fórmulas Académicas (Match exacto con el HTML de la tarea) */
+    /* Bloques de Fórmulas Académicas */
     .formula-box { background-color: #0f172a; color: #f8fafc; padding: 18px; border-radius: 8px; border-left: 4px solid #8b5cf6; font-family: 'Courier New', Courier, monospace; margin: 12px 0; }
     .formula-title { font-size: 11px; text-transform: uppercase; color: #94a3b8; letter-spacing: 1px; font-weight: bold; margin-bottom: 6px; }
-    .formula-body { color: #38bdf8; font-size: 13px; line-height: 1.6; }
-    .formula-comment { color: #64748b; font-size: 11px; font-style: italic; }
     
     /* Indicadores de Métricas */
     div[data-testid="stMetricValue"] { font-size: 28px !important; color: #4c1d95; font-weight: 700; letter-spacing: -0.5px; }
     div[data-testid="stMetricLabel"] { font-size: 12px !important; color: #64748b; text-transform: uppercase; font-weight: 600; }
-    
-    /* Tablas de datos estilizadas */
-    .styled-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
-    .styled-table th { background-color: #4c1d95; color: white; text-align: left; padding: 10px 14px; font-weight: 600; }
-    .styled-table td { padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #334155; }
-    .styled-table tr:nth-of-type(even) { background-color: #f8fafc; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -80,13 +72,12 @@ def calcular_curvas(pd_v, ae_v, z_v):
         kt = np.sum(df_kt[col_c] * (j**df_kt['S (j)']) * (pd_v**df_kt['T (p/d)']) * (ae_v**df_kt['U (ae/ao)']) * (z_v**df_kt['V (z)']))
         kq = np.sum(df_kq[col_c] * (j**df_kq['S (j)']) * (pd_v**df_kq['T (p/d)']) * (ae_v**df_kq['U (ae/ao)']) * (z_v**df_kq['V (z)']))
         
-        # Validación de rango hidrodinámico útil
         if kt <= 0 or kq <= 0:
             kt_f, kq_f, eff = 0.0, 0.0, 0.0
         else:
             kt_f, kq_f = kt, kq
             eff = (j / (2 * np.pi)) * (kt_f / kq_f)
-            if eff > 0.85: # Límite físico real superior
+            if eff > 0.85: 
                 eff = 0.0
                 
         kt_l.append(kt_f)
@@ -106,7 +97,6 @@ if df_kt is not None:
         st.markdown("### 🛠️ Configuración del Sistema")
         st.write("Establezca los parámetros operativos de diseño.")
         
-        # Bloque 1: Datos Geométricos del Casco (Fieles al PDF entregado)
         with st.expander("📐 Dimensiones de la Carena (PDF)", expanded=False):
             eslora = st.number_input("Eslora entre Perpendiculares Lpp (m)", value=320.0, disabled=True)
             manga = st.number_input("Manga de Diseño B (m)", value=58.0, disabled=True)
@@ -115,7 +105,6 @@ if df_kt is not None:
             velocidad = st.number_input("Velocidad de Servicio V (nudos)", value=15.5, disabled=True)
             estela = st.number_input("Fracción de Estela (w)", value=0.351, disabled=True)
         
-        # Bloque 2: Parámetros del Propulsor (Fieles al PDF entregado)
         with st.expander("🌀 Geometría de la Hélice (PDF)", expanded=True):
             z_val = st.slider("Número de Palas (Z)", 3, 7, 4)
             diam_prop_m = st.number_input("Diámetro del Propulsor D (m)", value=9.86, step=0.01)
@@ -123,7 +112,6 @@ if df_kt is not None:
             ae_val = st.slider("Relación de Área Expandida (Ae/A0)", 0.3, 1.0, 0.431, 0.001)
             peso_helice_kg = st.number_input("Masa de la Hélice en Seco (kg)", value=18500.0, step=500.0)
             
-        # Bloque 3: Planta Motriz y Eje de Cola (Variables Interactivas de Control)
         with st.expander("⚙️ Planta Propulsora y Eje", expanded=True):
             potencia_kw = st.number_input("Potencia de Diseño MCR (kW)", value=22000.0, step=500.0)
             rpm_motor = st.number_input("RPM de Operación Continua (n)", value=75.0, step=1.0)
@@ -136,34 +124,33 @@ if df_kt is not None:
         st.caption("Lizeth H.F. · Jade F.J.C. · Vania A.N.Q. · Iris L.R.R. · Karla V.G. · José E.S. · Óscar G.B.")
 
     # ==============================================================================
-    # 4. DIVISION DE SECCIONES POR PESTAÑAS (TABS)
+    # 4. DIVISIÓN DE SECCIONES POR PESTAÑAS (RESTAURADA PESTAÑA DE RESULTADOS)
     # ==============================================================================
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab_res, tab2, tab3, tab4 = st.tabs([
         "📈 Hidrodinámica (Aguas Abiertas)", 
+        "📋 Reporte de Datos Numéricos", # <-- ¡Pestaña recuperada aquí!
         "💥 Entregable 1: Vibración Torsional", 
         "📊 Entregable 2: Vibración Lateral",
         "🗺️ Entregable 3: Diagrama de Campbell"
     ])
 
     # --------------------------------------------------------------------------
-    # TAB 1: MODELO HIDRODINÁMICO DE AGUAS ABIERTAS
+    # TAB 1: MODELO HIDRODINÁMICO DE AGUAS ABIERTAS (FÓRMULAS ARREGLADAS)
     # --------------------------------------------------------------------------
     with tab1:
         res = calcular_curvas(pd_val, ae_val, z_val)
         max_eff = res['nO'].max()
         j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
         
-        # Tarjetas de KPI profesionales
         kpi1, kpi2, kpi3 = st.columns(3)
         with kpi1:
-            st.metric("Eficiencia de Aguas Abiertas Máxima (η_O)", f"{max_eff*100:.2f} %")
+            st.metric("Eficiencia Máxima (η_O)", f"{max_eff*100:.2f} %")
         with kpi2:
             st.metric("Coeficiente de Avance Óptimo (J_opt)", f"{j_opt:.3f}")
         with kpi3:
-            st.metric("Diámetro de Diseño Propulsor", f"{diam_prop_m:.2f} m")
+            st.metric("Diámetro del Propulsor", f"{diam_prop_m:.2f} m")
             
-        # Gráfica de Aguas Abiertas Optimizada
-        fig, ax = plt.subplots(figsize=(10, 4.5))
+        fig, ax = plt.subplots(figsize=(10, 4.2))
         ax.plot(res['J'], res['KT'], color='#0284c7', label=r'Empuje ($K_T$)', lw=2.5)
         ax.plot(res['J'], res['KQ']*10, color='#10b981', label=r'Torque ($10 \cdot K_Q$)', lw=2.5)
         ax.plot(res['J'], res['nO'], color='#4c1d95', label=r'Eficiencia ($\eta_O$)', lw=3.5, ls='--')
@@ -181,16 +168,41 @@ if df_kt is not None:
         ax.legend(loc='upper right', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0')
         st.pyplot(fig)
         
-        # Fórmulas teóricas de Aguas Abiertas expuestas dinámicamente
         st.markdown("""
         <div class="tech-card">
-            <h4>🧠 Formulación Hidrodinámica Aplicada</h4>
-            <p>La evaluación numérica se fundamenta en los desarrollos polinomiales para la Serie B de Wageningen:</p>
+            <h4>🧠 Formulación Hidrodinámica Aplicada (Wageningen Series)</h4>
+            <p>La evaluación numérica se fundamenta en las ecuaciones polinomiales multivariables para hélices de la Serie B:</p>
         </div>
         """, unsafe_allow_html=True)
-        st.latex(r"K_T = \sum_{n=1}^{39} C_n \cdot J^{s_n} \cdot \left(\frac{P}{D}\right)^{t_n} \cdot \left(\frac{A_E}{A_O}\right)^{u_n} \cdot Z^{v_n}")
-        st.latex(r"K_Q = \sum_{n=1}^{47} C_n \cdot J^{s_n} \cdot \left(\frac{P}{D}\right)^{t_n} \cdot \left(\frac{A_E/A_O}\right)^{u_n} \cdot Z^{v_n}")
+        
+        # Corregido el renderizado LaTeX separando las ecuaciones individualmente
+        st.latex(r"K_T = \sum (C_n \cdot J^{S_n} \cdot (P/D)^{T_n} \cdot (A_E/A_O)^{U_n} \cdot Z^{V_n})")
+        st.latex(r"K_Q = \sum (C_m \cdot J^{S_m} \cdot (P/D)^{T_m} \cdot (A_E/A_O)^{U_m} \cdot Z^{V_m})")
         st.latex(r"\eta_O = \frac{J}{2\pi} \cdot \frac{K_T}{K_Q}")
+
+    # --------------------------------------------------------------------------
+    # PESTAÑA RECUPERADA: TABLA DE DATOS Y EXCEL
+    # --------------------------------------------------------------------------
+    with tab_res:
+        st.subheader("📋 Matriz Completa de Resultados de la Hélice")
+        st.write("A continuación se muestra el dataframe generado en tiempo real. Los valores se detienen físicamente en 0 cuando la hélice entra en pérdida de empuje.")
+        
+        res_display = res.copy()
+        res_display['ηO (%)'] = res_display['nO'] * 100
+        
+        # Despliegue del Dataframe interactivo con scroll y formato limpio
+        st.dataframe(
+            res_display.style.highlight_max(subset=['nO'], color='#f3e8ff').format("{:.4f}"), 
+            use_container_width=True,
+            height=400
+        )
+        
+        st.download_button(
+            label="📂 Descargar Hoja de Resultados (CSV para Excel)", 
+            data=res_display.to_csv(index=False), 
+            file_name="datos_propulsion_buquetanque_equipo4.csv",
+            mime="text/csv"
+        )
 
     # --------------------------------------------------------------------------
     # TAB 2: ENTREGABLE 1 - VERIFICACIÓN TORSIONAL (IACS UR M68)
@@ -198,19 +210,15 @@ if df_kt is not None:
     with tab2:
         st.subheader("Análisis de Esfuerzos de Torsión Cíclicos en el Eje de Cola")
         
-        # Cálculos mecánicos basados estrictamente en las fórmulas del archivo de la tarea
         omega = (2.0 * math.pi * rpm_motor) / 60.0
         torque_nominal = (potencia_kw * 1000.0) / omega
-        torque_dinamico_alternante = torque_nominal * 0.15 # Estimación reglamentaria de fluctuación
+        torque_dinamico_alternante = torque_nominal * 0.15 
         
         diametro_m = diametro_eje_mm / 1000.0
         wt_modulo_torsional = (math.pi * (diametro_m**3)) / 16.0
         esfuerzo_real_mpa = (torque_dinamico_alternante / wt_modulo_torsional) / 1e6
-        
-        # Fórmula exacta del archivo de la tarea (IACS UR M68)
         tau_admisible_mpa = 0.35 * (sigma_uts / 3.0)
         
-        # Despliegue de fórmulas académicas como exige el maestro en el HTML
         st.markdown(f"""
         <div class="formula t4">
             <div class="formula-title">Tensión torsional alternante — límite admisible (IACS UR M68)</div>
@@ -244,27 +252,23 @@ if df_kt is not None:
     with tab3:
         st.subheader("Cálculo de la Primera Velocidad Crítica Lateral por Flexión (Whirling)")
         
-        # Constantes estructurales indicadas en el archivo HTML de la tarea
-        E_acero = 2.06e11  # 206 GPa
-        densidad_acero = 7850.0  # kg/m^3
+        E_acero = 2.06e11  
+        densidad_acero = 7850.0  
         
         r_eje = diametro_m / 2.0
         area_eje = math.pi * (r_eje**2)
         I_inercia = (math.pi * (diametro_m**4)) / 64.0
         peso_lineal_eje = area_eje * densidad_acero
         
-        # Flexiones estáticas aplicando Dunkerley para masas acopladas
         peso_helice_n = peso_helice_kg * 9.81
         delta_helice = (peso_helice_n * (longitud_volado_m**3)) / (3.0 * E_acero * I_inercia)
         
         peso_eje_n = peso_lineal_eje * longitud_volado_m * 9.81
         delta_eje = (peso_eje_n * (longitud_volado_m**3)) / (8.0 * E_acero * I_inercia)
         
-        # Frecuencia natural fundamental mediante Dunkerley Simplificado
         f_natural_hz = 1.0 / (2.0 * math.pi * math.sqrt(delta_helice + delta_eje))
         rpm_critica_lateral = f_natural_hz * 60.0
         
-        # Margen del +-20% exigido formalmente en el entregable del profesor
         margen_inf = rpm_critica_lateral * 0.80
         margen_sup = rpm_critica_lateral * 1.20
         
@@ -310,25 +314,19 @@ if df_kt is not None:
         </div>
         """, unsafe_allow_html=True)
         
-        # Construcción del espectro dinámico
         rpm_eje_x = np.linspace(0, rpm_motor * 1.5, 300)
-        
         orden_1p = (1 * rpm_eje_x) / 60.0
         orden_zp = (z_val * rpm_eje_x) / 60.0
         orden_2zp = ((z_val * 2) * rpm_eje_x) / 60.0
         
-        fig_c, ax_c = plt.subplots(figsize=(10, 5))
-        
-        # Modos estructurales naturales calculados
+        fig_c, ax_c = plt.subplots(figsize=(10, 4.5))
         ax_c.axhline(y=f_natural_hz, color='#4c1d95', linestyle='--', lw=2, label=f'Frecuencia Natural Lateral ({f_natural_hz:.1f} Hz)')
         ax_c.axhline(y=f_natural_hz * 1.4, color='#b45309', linestyle='--', lw=1.8, label=r'Frecuencia Natural Torsional Estimada')
         
-        # Líneas de Excitación Cinemática por órdenes
         ax_c.plot(rpm_eje_x, orden_1p, color='#64748b', lw=1.2, label='Orden 1P (Desbalanceo Mecánico)')
         ax_c.plot(rpm_eje_x, orden_zp, color='#d97706', lw=2.5, label=f'Orden {z_val}P (Paso de Palas Fundamental)')
         ax_c.plot(rpm_eje_x, orden_2zp, color='#db2777', lw=1.5, ls=':', label=f'Orden {z_val*2}P (Segundo Armónico)')
         
-        # Línea de Operación Real e Ilustración de la Zona Excluida (Barred Speed Range)
         ax_c.axvline(x=rpm_motor, color='#4c1d95', lw=2.5, label=f'RPM Operativa Real ({rpm_motor:.1f} RPM)')
         ax_c.axvspan(margen_inf, margen_sup, color='#ef4444', alpha=0.12, label='Banda de Velocidad Prohibida (BSR)')
         
@@ -339,9 +337,8 @@ if df_kt is not None:
         ax_c.set_ylim(0, max(f_natural_hz * 2.0, 35))
         ax_c.grid(True, linestyle=':', alpha=0.5)
         ax_c.legend(loc='upper left', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0', fontsize=9)
-        
         st.pyplot(fig_c)
-        st.info("💡 **Guía de Defensa Académica:** Los puntos de intersección entre las líneas diagonales (órdenes de excitación) y las líneas horizontales (frecuencias naturales) representan condiciones de resonancia pura. El objetivo de diseño es que la línea vertical gruesa de tu motor nunca cruce un punto crítico dentro de la banda sombreada en rojo.")
+        st.info("💡 **Guía de Defensa Académica:** Los puntos de intersección representan las condiciones de resonancia. Tu objetivo de diseño es que las RPM de tu motor (línea vertical) se mantengan fuera del área roja.")
 
 else:
     st.error("⚠️ Archivo de Coeficientes Inexistente: Asegúrese de posicionar 'Tabla 1.xlsx' en el mismo directorio de ejecución.")
