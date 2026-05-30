@@ -55,7 +55,6 @@ def load_coefficients():
         kq_df = pd.read_excel('Tabla 1.xlsx', sheet_name='KQ')
         for df in [kt_df, kq_df]:
             df.columns = [c.strip().capitalize() for c in df.columns]
-        return kt_df, df_kq
         return kt_df, kq_df
     except Exception as e:
         st.error(f"Error crítico al cargar los polinomios desde 'Tabla 1.xlsx': {e}")
@@ -197,7 +196,7 @@ if df_kt is not None:
         st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#f3e8ff').format("{:.4f}"), use_container_width=True, height=350)
 
     # --------------------------------------------------------------------------
-    # TAB 2: ENTREGABLE 1 - VIBRACIÓN TORSIONAL
+    # TAB 2: ENTRIGABLE 1 - VIBRACIÓN TORSIONAL
     # --------------------------------------------------------------------------
     with tab2:
         st.subheader("Análisis de Esfuerzos de Torsión Cíclicos en el Eje de Cola")
@@ -243,24 +242,21 @@ if df_kt is not None:
             st.pyplot(fig_l)
 
     # --------------------------------------------------------------------------
-    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL (¡CON NUEVO LETRERO DINÁMICO!)
+    # TAB 4: ENTREGABLE 3 - DIAGRAMA DE CAMPBELL
     # --------------------------------------------------------------------------
     with tab4:
         st.subheader("🗺️ Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
         
-        # Lógica de verificación para el letrero verde/rojo
         is_campbell_safe = True
         motivo_riesgo = ""
         
         rpm_cruce_lat_zp = f_natural_hz * 60.0 / z_val
         rpm_cruce_tor_zp = f_torsional_est * 60.0 / z_val
         
-        # Verificar si las RPM operativas caen en la banda de velocidad prohibida lateral
         if margen_inf <= rpm_motor <= margen_sup:
             is_campbell_safe = False
             motivo_riesgo = "La velocidad de operación continua coincide con la Banda de Velocidad Prohibida por Whirling Lateral."
             
-        # Desplegar Letrero dinámico de estatus superior
         if is_campbell_safe:
             st.markdown(f"""
             <div class="status-box-safe">
