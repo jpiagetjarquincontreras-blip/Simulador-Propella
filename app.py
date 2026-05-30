@@ -36,21 +36,35 @@ def load_coefficients():
 
 df_kt, df_kq = load_coefficients()
 
+# --- FUNCIÓN DE CÁLCULO CORREGIDA Y BLINDADA ---
 def calcular_curvas(pd_v, ae_v, z_v):
     j_vals = np.linspace(0.001, 1.2, 100)
-    kt_l, kq_l = [], []
+    kt_l, kq_l, no_l = [], [], []
     col_c = 'Coeficiente'
     
     for j in j_vals:
+        # Evaluación polinomial de las series de Wageningen B
         kt = np.sum(df_kt[col_c] * (j**df_kt['S (j)']) * (pd_v**df_kt['T (p/d)']) * (ae_v**df_kt['U (ae/ao)']) * (z_v**df_kt['V (z)']))
         kq = np.sum(df_kq[col_c] * (j**df_kq['S (j)']) * (pd_v**df_kq['T (p/d)']) * (ae_v**df_kq['U (ae/ao)']) * (z_v**df_kq['V (z)']))
-        kt_l.append(max(0, kt))
-        kq_l.append(max(0, kq))
+        
+        # Filtro físico: Si el empuje o el torque caen a cero o menos, la hélice ya entró en pérdida libre
+        if kt <= 0 or kq <= 0:
+            kt_f = 0.0
+            kq_f = 0.0
+            eff = 0.0
+        else:
+            kt_f = kt
+            kq_f = kq
+            eff = (j / (2 * np.pi)) * (kt_f / kq_f)
+            # Freno de seguridad física para evitar asíntotas o errores numéricos atípicos
+            if eff > 0.85:
+                eff = 0.0
+                
+        kt_l.append(kt_f)
+        kq_l.append(kq_f)
+        no_l.append(eff)
     
-    temp_df = pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l})
-    temp_df['nO'] = (temp_df['J'] / (2 * np.pi)) * (temp_df['KT'] / temp_df['KQ'])
-    temp_df['nO'] = temp_df['nO'].fillna(0).clip(0, 1)
-    temp_df.loc[temp_df['KT'] <= 0, 'nO'] = 0
+    temp_df = pd.DataFrame({'J': j_vals, 'KT': kt_l, 'KQ': kq_l, 'nO': no_l})
     return temp_df
 
 # --- ESTRUCTURA VISUAL ---
@@ -76,7 +90,7 @@ if df_kt is not None:
             z_val = st.select_slider("Número de Palas (Z)", options=[3, 4, 5, 6, 7], value=4)
             diam_prop_m = st.number_input("Diámetro de Hélice Real D_prop (m)", value=9.86, step=0.01)
         
-        # Planta propulsora interactiva para vibraciones (adaptable)
+        # Planta propulsora interactiva para vibraciones
         with st.expander("⚙️ Planta Motriz y Eje de Cola", expanded=True):
             potencia_kw = st.number_input("Potencia MCR del Motor (kW)", value=22000.0, step=500.0)
             rpm_motor = st.number_input("RPM de Servicio de Operación (n)", value=75.0, step=1.0)
@@ -106,11 +120,16 @@ if df_kt is not None:
         "🧠 Fundamentos Teóricos"
     ])
 
-    # TAB 1: GRÁFICA DE RENDIMIENTO (Wageningen Serie B con tus datos del PDF)
+    # TAB 1: GRÁFICA DE RENDIMIENTO (Corregida)
     with tab1:
         res = calcular_curvas(pd_val, ae_val, z_val)
+        
+        # Encontrar el punto de máxima eficiencia real donde J entrega trabajo positivo
         max_eff = res['nO'].max()
-        j_opt = res.loc[res['nO'].idxmax(), 'J']
+        if max_eff > 0:
+            j_opt = res.loc[res['nO'].idxmax(), 'J']
+        else:
+            j_opt = 0.0
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Eficiencia Máx (ηO)", f"{max_eff*100:.2f}%")
@@ -119,11 +138,13 @@ if df_kt is not None:
 
         fig, ax = plt.subplots(figsize=(11, 5.5))
         ax.plot(res['J'], res['KT'], color='#004c6d', label='KT (Empuje)', lw=2.5)
+        # Multiplicamos por 10 a efectos de escalado visual estándar en diagramas de aguas abiertas
         ax.plot(res['J'], res['KQ']*10, color='#2ca02c', label='10*KQ (Torque)', lw=2.5)
         ax.plot(res['J'], res['nO'], color='#6b2d7a', label='ηO (Eficiencia)', lw=3.5, ls='--')
         
         ax.fill_between(res['J'], 0, res['nO'], color='#6b2d7a', alpha=0.1)
-        ax.axvline(x=j_opt, color='gray', linestyle=':', alpha=0.5)
+        if max_eff > 0:
+            ax.axvline(x=j_opt, color='gray', linestyle=':', alpha=0.6)
         
         ax.set_title(f"Diagrama de Aguas Abiertas - Serie B (P/D={pd_val:.3f})", fontsize=14, fontweight='bold')
         ax.set_xlabel('Coeficiente de Avance (J)')
