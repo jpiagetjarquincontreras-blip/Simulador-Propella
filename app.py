@@ -147,7 +147,6 @@ if df_kt is not None:
             material_seleccionado = st.selectbox("Material del Sistema Interno:", list(dict_materiales.keys()))
             sigma_uts = dict_materiales[material_seleccionado]
 
-        # Datos fijos del buque base acoplados al backend matemático
         peso_helice_kg = base["peso_helice_kg"]
         potencia_kw = base["potencia_kw"] * (1.0 + (margen_servicio / 100.0)) 
         rpm_motor = base["rpm_motor"]
@@ -199,7 +198,6 @@ if df_kt is not None:
     with tab1:
         max_eff = res['nO'].max()
         j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
-        
         kpi1, kpi2, kpi3 = st.columns(3)
         with kpi1: st.metric("Eficiencia de Aguas Abiertas (η_O)", f"{max_eff*100:.2f} %")
         with kpi2: st.metric("Avance Óptimo Operativo (J_opt)", f"{j_opt:.3f}")
@@ -210,10 +208,8 @@ if df_kt is not None:
         ax.plot(res['J'], res['KQ']*10, color='#10b981', label=r'Torque ($10 \cdot K_Q$)', lw=2.5)
         ax.plot(res['J'], res['nO'], color='#4c1d95', label=r'Eficiencia ($\eta_O$)', lw=3.5, ls='--')
         ax.fill_between(res['J'], 0, res['nO'], color='#4c1d95', alpha=0.06)
-        
         if max_eff > 0:
             ax.axvline(x=j_opt, color='#64748b', linestyle=':', alpha=0.7)
-            
         ax.set_title("Características Operativas en Aguas Abiertas - Wageningen Serie B", fontsize=11, fontweight='bold')
         ax.set_xlim(0, 1.2); ax.set_ylim(0, 1.1); ax.grid(True, linestyle=':', alpha=0.5)
         ax.legend(loc='upper right')
@@ -241,10 +237,8 @@ if df_kt is not None:
             st.metric("Torque de Diseño (Con Margen de Servicio)", f"{torque_nominal/1000:.2f} kN·m")
             st.metric("Esfuerzo Real de Operación (τ)", f"{esfuerzo_real_mpa:.2f} MPa")
             st.metric("Límite Admisible IACS UR M68", f"{tau_admisible_mpa:.2f} MPa")
-            if esfuerzo_real_mpa <= tau_admisible_mpa: 
-                st.success("✅ **CUMPLE SATISFACTORIAMENTE (IACS UR M68)**")
-            else: 
-                st.error("❌ **RECHAZADO POR FATIGA TORSIONAL STRUCTURAL**")
+            if esfuerzo_real_mpa <= tau_admisible_mpa: st.success("✅ **CUMPLE SATISFACTORIAMENTE (IACS UR M68)**")
+            else: st.error("❌ **RECHAZADO POR FATIGA TORSIONAL STRUCTURAL**")
         with c_t2:
             fig_t, ax_t = plt.subplots(figsize=(6, 2.5))
             ax_t.barh(['Esfuerzo Real', 'Límite Admisible'], [esfuerzo_real_mpa, tau_admisible_mpa], color=['#10b981', '#4c1d95'], height=0.45)
@@ -259,10 +253,8 @@ if df_kt is not None:
             st.metric("Frecuencia de Whirling", f"{f_natural_hz:.2f} Hz")
             st.metric("Velocidad Crítica Lateral", f"{rpm_critica_lateral:.1f} RPM")
             st.metric("Banda Prohibida Excluida (±20%)", f"{margen_inf:.1f} - {margen_sup:.1f} RPM")
-            if rpm_motor < margen_inf or rpm_motor > margen_sup: 
-                st.success("✅ **DISEÑO SEGURO: OPERACIÓN FUERA DE RESONANCIA**")
-            else: 
-                st.error("❌ **ALERTA: OPERACIÓN DENTRO DE ZONA CRÍTICA**")
+            if rpm_motor < margen_inf or rpm_motor > margen_sup: st.success("✅ **DISEÑO SEGURO: OPERACIÓN FUERA DE RESONANCIA**")
+            else: st.error("❌ **ALERTA: OPERACIÓN DENTRO DE ZONA CRÍTICA**")
         with c_l2:
             fig_l, ax_l = plt.subplots(figsize=(6, 2.5))
             ax_l.axvline(x=rpm_critica_lateral, color='red', linestyle='--')
@@ -272,7 +264,7 @@ if df_kt is not None:
             ax_l.grid(True, linestyle=':', alpha=0.5)
             st.pyplot(fig_l)
 
-    # PESTAÑA 5: DIAGRAMA DE CAMPBELL
+    # PESTAÑA 5: DIAGRAMA DE CAMPBELL (CON MATRIZ DE INTERSECCIONES INTEGRADA)
     with tab4:
         st.subheader("🗺️ Mapa Dinámico de Intersección de Frecuencias (Diagrama de Campbell)")
         max_rpm_grafica = rpm_motor * 1.6
@@ -289,11 +281,51 @@ if df_kt is not None:
         ax_c.grid(True, linestyle=':')
         ax_c.legend(loc='upper left')
         st.pyplot(fig_c)
+        
+        st.markdown("---")
+        st.subheader("📊 Matriz de Intersecciones y Puntos de Resonancia Críticos")
+        
+        # Generación analítica de la tabla de intersección idéntica a la solicitada
+        intersecciones_datos = [
+            {
+                "Línea de Excitación": "Orden 1P (Excentricidad)",
+                "Frecuencia Natural Coincidente": f"Frecuencia Lateral ({f_natural_hz:.2f} Hz)",
+                "RPM de Cruce": f_natural_hz * 60.0,
+                "Estado Operativo": "Seguro" if abs((f_natural_hz * 60.0) - rpm_motor) > 15 else "Riesgo de Resonancia"
+            },
+            {
+                "Línea de Excitación": f"Orden {z_val}P (Palas de Hélice)",
+                "Frecuencia Natural Coincidente": f"Frecuencia Lateral ({f_natural_hz:.2f} Hz)",
+                "RPM de Cruce": (f_natural_hz * 60.0) / z_val,
+                "Estado Operativo": "Seguro" if abs(((f_natural_hz * 60.0) / z_val) - rpm_motor) > 15 else "Riesgo de Resonancia"
+            },
+            {
+                "Línea de Excitación": "Orden 1P (Excentricidad)",
+                "Frecuencia Natural Coincidente": f"Frecuencia Torsional Est. ({f_torsional_est:.2f} Hz)",
+                "RPM de Cruce": f_torsional_est * 60.0,
+                "Estado Operativo": "Seguro" if abs((f_torsional_est * 60.0) - rpm_motor) > 15 else "Riesgo de Resonancia"
+            },
+            {
+                "Línea de Excitación": f"Orden {z_val}P (Palas de Hélice)",
+                "Frecuencia Natural Coincidente": f"Frecuencia Torsional Est. ({f_torsional_est:.2f} Hz)",
+                "RPM de Cruce": (f_torsional_est * 60.0) / z_val,
+                "Estado Operativo": "Seguro" if abs(((f_torsional_est * 60.0) / z_val) - rpm_motor) > 15 else "Riesgo de Resonancia"
+            }
+        ]
+        
+        df_intersecciones = pd.DataFrame(intersecciones_datos)
+        
+        # Renderizado estético y claro de la matriz de datos
+        st.dataframe(
+            df_intersecciones.style.format({"RPM de Cruce": "{:.2f} RPM"}).map(
+                lambda val: 'background-color: #fef2f2; color: #dc2626; font-weight: bold;' if val == "Riesgo de Resonancia" else None
+            ),
+            use_container_width=True
+        )
 
-    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS (RESTAURADA EXACTAMENTE COMO LA IMAGEN)
+    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS 
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico de Fluidos y Pérdida de Sustentación")
-        
         v_m_s = velocidad * 0.514444
         v_avance = v_m_s * (1.0 - estela)
         p_hidrostatica = p_atmosferica + (densidad_agua * gravedad * inmersion_eje_m) - p_vapor
@@ -303,22 +335,15 @@ if df_kt is not None:
         eta_propulsiva_cuasi = eta_open_water * eta_casco * eta_r  
         
         empuje_t_n = (potencia_kw * 1000.0 * eta_propulsiva_cuasi) / (v_avance if v_avance > 0 else 1.0)
-        
         factor_estela_no_uniforme = 1.0 + (wake_adj_percent / 100.0)
         ae_ao_keller = (((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03) * factor_estela_no_uniforme
         
-        if lwl > 0:
-            fn_froude = v_m_s / math.sqrt(gravedad * lwl)
-        else:
-            fn_froude = 0.0
-
-        # Cuadro de validación dinámico de fluidos
         if ae_val >= ae_ao_keller:
             st.markdown(f"""
             <div class="status-box-safe">
                 <h4 style='color: #15803d; margin: 0;'>🟢 COMPORTAMIENTO DE FLUIDOS: CORRECTO Y ESTABLE</h4>
                 <p style='color: #166534; margin: 5px 0 0 0; font-size: 14.5px;'>
-                    <b>Validación Exitosa:</b> El área expandida real (<b>{ae_val:.3f}</b>) supera el límite crítico de Keller de <b>{ae_ao_keller:.3f}</b>, el cual ha sido penalizado correctamente con un <b>{wake_adj_percent:.1f}%</b> por irregularidades de estela en popa. El flujo es inmune ante picaduras erosivas.
+                    <b>Validación Exitosa:</b> El área expandida real (<b>{ae_val:.3f}</b>) supera el límite crítico de Keller de <b>{ae_ao_keller:.3f}</b>. El flujo es inmune ante picaduras erosivas.
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -333,27 +358,16 @@ if df_kt is not None:
             """, unsafe_allow_html=True)
             
         col_f1, col_f2 = st.columns(2)
-        
         with col_f1:
             st.markdown("##### 📊 Criterio de Cavitación de Keller (Área Mínima)")
-            
-            # Gráfico de barras idéntico al original de la imagen
             fig_kel, ax_kel = plt.subplots(figsize=(6, 3.8))
-            barras = ax_kel.bar(
-                ['Mínimo Keller', 'Diseño Real'], 
-                [ae_ao_keller, ae_val], 
-                color=['#ef4444' if ae_val < ae_ao_keller else '#64748b', '#4c1d95'], 
-                width=0.4
-            )
+            barras = ax_kel.bar(['Mínimo Keller', 'Diseño Real'], [ae_ao_keller, ae_val], color=['#ef4444' if ae_val < ae_ao_keller else '#64748b', '#4c1d95'], width=0.4)
             ax_kel.set_ylabel("Relación de Área Expandida ($Ae/A0$)")
             ax_kel.set_ylim(0, max(ae_ao_keller, ae_val) * 1.3)
             ax_kel.grid(True, linestyle=':', alpha=0.5)
-            
-            # Agregar etiquetas numéricas sobre las barras
             for barra in barras:
                 yval = barra.get_height()
                 ax_kel.text(barra.get_x() + barra.get_width()/2.0, yval + 0.02, f"{yval:.3f}", ha='center', va='bottom', fontweight='bold')
-                
             st.pyplot(fig_kel)
             
         with col_f2:
@@ -361,7 +375,6 @@ if df_kt is not None:
             radios_r_R = np.linspace(0.2, 0.95, 10)
             viscosidad_cinematica = 1.188e-6
             reynolds_vals = []
-            
             for r_R in radios_r_R:
                 radio_local = r_R * (diam_prop_m / 2.0)
                 velocidad_tangencial = (2.0 * math.pi * (rpm_motor / 60.0)) * radio_local
