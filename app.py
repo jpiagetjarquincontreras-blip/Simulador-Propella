@@ -149,13 +149,13 @@ if df_kt is not None:
 
         # Datos fijos del buque base acoplados al backend matemático
         peso_helice_kg = base["peso_helice_kg"]
-        potencia_kw = base["potencia_kw"] * (1.0 + (margen_servicio / 100.0)) # Afectado directamente por el margen de servicio
+        potencia_kw = base["potencia_kw"] * (1.0 + (margen_servicio / 100.0)) 
         rpm_motor = base["rpm_motor"]
         diametro_eje_mm = base["diametro_eje_mm"]
         longitud_volado_m = base["longitud_volado_m"]
 
     # ==============================================================================
-    # 4. PROCESAMIENTO MATEMÁTICO REAL (CON TODAS LAS VARIABLES VINCULADAS)
+    # 4. PROCESAMIENTO MATEMÁTICO REAL
     # ==============================================================================
     p_atmosferica = 101325.0
     p_vapor = 1705.0
@@ -164,7 +164,6 @@ if df_kt is not None:
 
     res = calcular_curvas(pd_val, ae_val, z_val)
     
-    # Análisis de Rigidez y Vibraciones del Eje
     diametro_m = diametro_eje_mm / 1000.0
     E_acero = 2.06e11  
     densidad_acero = 7850.0  
@@ -291,7 +290,7 @@ if df_kt is not None:
         ax_c.legend(loc='upper left')
         st.pyplot(fig_c)
 
-    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS (GRAFICAS SIMPLIFICADAS Y VINCULADAS)
+    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS (RESTAURADA EXACTAMENTE COMO LA IMAGEN)
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico de Fluidos y Pérdida de Sustentación")
         
@@ -336,7 +335,29 @@ if df_kt is not None:
         col_f1, col_f2 = st.columns(2)
         
         with col_f1:
-            st.markdown("##### 📊 Distribución del Número de Reynolds ($Rn$)")
+            st.markdown("##### 📊 Criterio de Cavitación de Keller (Área Mínima)")
+            
+            # Gráfico de barras idéntico al original de la imagen
+            fig_kel, ax_kel = plt.subplots(figsize=(6, 3.8))
+            barras = ax_kel.bar(
+                ['Mínimo Keller', 'Diseño Real'], 
+                [ae_ao_keller, ae_val], 
+                color=['#ef4444' if ae_val < ae_ao_keller else '#64748b', '#4c1d95'], 
+                width=0.4
+            )
+            ax_kel.set_ylabel("Relación de Área Expandida ($Ae/A0$)")
+            ax_kel.set_ylim(0, max(ae_ao_keller, ae_val) * 1.3)
+            ax_kel.grid(True, linestyle=':', alpha=0.5)
+            
+            # Agregar etiquetas numéricas sobre las barras
+            for barra in barras:
+                yval = barra.get_height()
+                ax_kel.text(barra.get_x() + barra.get_width()/2.0, yval + 0.02, f"{yval:.3f}", ha='center', va='bottom', fontweight='bold')
+                
+            st.pyplot(fig_kel)
+            
+        with col_f2:
+            st.markdown("##### 📈 Distribución del Número de Reynolds ($Rn$)")
             radios_r_R = np.linspace(0.2, 0.95, 10)
             viscosidad_cinematica = 1.188e-6
             reynolds_vals = []
@@ -357,27 +378,6 @@ if df_kt is not None:
             ax_rn.grid(True, linestyle=':', alpha=0.6)
             ax_rn.legend()
             st.pyplot(fig_rn)
-            
-        with col_f2:
-            st.markdown("##### 📉 Criterio de Cavitación Estática de Burrill")
-            sigma_cav = np.linspace(0.1, 1.5, 50)
-            tau_c_5percent = 0.12 * (sigma_cav**0.5)
-            tau_c_back = 0.16 * (sigma_cav**0.5)
-            
-            punto_sigma = p_hidrostatica / (0.5 * densidad_agua * (v_avance**2 if v_avance > 0 else 1.0))
-            punto_sigma = min(max(punto_sigma, 0.2), 1.4)
-            punto_tau = empuje_t_n / (0.5 * densidad_agua * (v_avance**2 if v_avance > 0 else 1.0) * (diam_prop_m**2 * ae_val))
-            punto_tau = min(max(punto_tau, 0.02), 0.22)
-            
-            fig_bu, ax_bu = plt.subplots(figsize=(6, 3.8))
-            ax_bu.plot(sigma_cav, tau_c_5percent, color='#64748b', linestyle='--', label='Límite 5% Burrill')
-            ax_bu.plot(sigma_cav, tau_c_back, color='#ef4444', label='Cavitación Dorsal')
-            ax_bu.scatter([punto_sigma], [punto_tau], color='#4c1d95', s=140, zorder=5, label=f'Operación (Fn_LWL={fn_froude:.3f})')
-            ax_bu.set_xlabel(r"Número de Cavitación ($\sigma_R$)")
-            ax_bu.set_ylabel(r"Coeficiente de Carga ($\tau_C$)")
-            ax_bu.grid(True, linestyle=':', alpha=0.6)
-            ax_bu.legend()
-            st.pyplot(fig_bu)
 
 else:
     st.error("⚠️ Archivo 'Tabla 1.xlsx' requerido en el mismo directorio de ejecución.")
