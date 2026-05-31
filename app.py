@@ -1122,7 +1122,7 @@ with tab_clase:
         return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
 
     st.dataframe(
-        cumplimiento.style.applymap(color_resultado, subset=["Resultado"]),
+        cumplimiento.style.map(color_resultado, subset=["Resultado"]),
         use_container_width=True,
         height=250
     )
