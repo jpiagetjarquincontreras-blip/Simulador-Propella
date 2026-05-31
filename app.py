@@ -431,45 +431,25 @@ with st.sidebar:
     margen_servicio = st.slider("Margen de servicio requerido [%]", 0.0, 30.0, 15.0, 0.5)
 
     st.markdown("---")
-    st.subheader("🔩 Sistema mecánico")
-
-    potencia_kw_base = st.number_input(
-        "Potencia MCR base [kW]",
-        value=22000.0,
-        min_value=1.0,
-        step=100.0,
-        help="Potencia máxima continua instalada antes de aplicar margen de servicio."
+    st.subheader("⚙️ Material del sistema propulsivo")
+    st.info(
+        "Selecciona el material de referencia para evaluar el límite admisible de esfuerzo. "
+        "Los demás parámetros mecánicos se mantienen internamente como valores de referencia "
+        "para no saturar la interfaz del usuario."
     )
 
+    # ==========================================================
+    # PARÁMETROS MECÁNICOS INTERNOS DE REFERENCIA
+    # ==========================================================
+    # Se ocultan en el sidebar para mantener la app limpia y didáctica.
+    # Si más adelante deseas hacerlos editables, basta con convertirlos
+    # nuevamente en st.number_input().
+    potencia_kw_base = 22000.0
     potencia_kw = potencia_kw_base * (1 + margen_servicio / 100)
-
-    rpm_motor = st.number_input(
-        "RPM del eje / motor principal [rpm]",
-        value=75.0,
-        min_value=1.0,
-        step=1.0
-    )
-
-    diametro_eje_mm = st.number_input(
-        "Diámetro del eje [mm]",
-        value=680.0,
-        min_value=10.0,
-        step=5.0
-    )
-
-    peso_helice_kg = st.number_input(
-        "Peso de la hélice [kg]",
-        value=52000.0,
-        min_value=1.0,
-        step=100.0
-    )
-
-    longitud_volado_m = st.number_input(
-        "Longitud en voladizo del eje [m]",
-        value=3.5,
-        min_value=0.1,
-        step=0.1
-    )
+    rpm_motor = 75.0
+    diametro_eje_mm = 680.0
+    peso_helice_kg = 52000.0
+    longitud_volado_m = 3.5
 
     dict_materiales = {
         "Bronce de Níquel-Aluminio (Cu3)": 590.0,
@@ -750,7 +730,7 @@ def generar_pdf():
 # TABS
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📈 Hidrodinámica",
@@ -761,6 +741,7 @@ tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_
     "🔍 Cavitación",
     "📋 Clase",
     "📄 Exportar",
+    "🧮 Fórmulas",
     "📚 Guía"
 ])
 
@@ -901,6 +882,18 @@ with tab_hidro:
         "la coherencia preliminar de la geometría P/D, Ae/A0 y Z."
     )
 
+
+    with st.expander("🧮 Fórmulas hidrodinámicas usadas", expanded=False):
+        st.latex(r"J = \frac{V_A}{nD}")
+        st.latex(r"K_T = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
+        st.latex(r"K_Q = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
+        st.latex(r"\eta_O = \frac{J}{2\pi}\frac{K_T}{K_Q}")
+        st.markdown("""
+        Donde **J** es el coeficiente de avance, **KT** el coeficiente de empuje,
+        **KQ** el coeficiente de torque y **ηO** la eficiencia en aguas abiertas.
+        Los coeficientes polinomiales se leen desde el archivo `Tabla 1.xlsx`.
+        """)
+
 # ==============================================================================
 # RESULTADOS NUMÉRICOS
 # ==============================================================================
@@ -940,6 +933,19 @@ with tab_torsion:
     </div>
     """, unsafe_allow_html=True)
 
+    with st.expander("🧮 Fórmulas de torsión usadas", expanded=False):
+        st.latex(r"\omega = \frac{2\pi n}{60}")
+        st.latex(r"T = \frac{P}{\omega}")
+        st.latex(r"T_{alt} = 0.15T")
+        st.latex(r"W_t = \frac{\pi d^3}{16}")
+        st.latex(r"\tau = \frac{T_{alt}}{W_t}")
+        st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
+        st.markdown("""
+        Estas expresiones se usan para estimar el esfuerzo torsional alternante
+        en el eje y compararlo contra un límite admisible preliminar basado en
+        la resistencia última del material seleccionado.
+        """)
+
     c1, c2 = st.columns([1, 1.3])
 
     with c1:
@@ -975,6 +981,17 @@ with tab_lateral:
     con la zona ±20% alrededor de la primera velocidad crítica lateral.
     </div>
     """, unsafe_allow_html=True)
+
+    with st.expander("🧮 Fórmulas de vibración lateral usadas", expanded=False):
+        st.latex(r"I = \frac{\pi d^4}{64}")
+        st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
+        st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
+        st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
+        st.latex(r"n_{crit} = 60 f_n")
+        st.markdown("""
+        El cálculo considera el peso de la hélice y el peso propio del tramo en voladizo
+        del eje. La zona crítica se evalúa como ±20% alrededor de la velocidad crítica.
+        """)
 
     c1, c2 = st.columns([1, 1.35])
 
@@ -1057,6 +1074,16 @@ with tab_cav:
     c1.metric("Velocidad efectiva Va", f"{v_ms:.2f} m/s")
     c2.metric("Número de Reynolds", f"{reynolds:.2e}")
     c3.metric("Coef. cavitación σ", f"{sigma_n:.3f}")
+
+    with st.expander("🧮 Fórmulas de Reynolds y cavitación usadas", expanded=False):
+        st.latex(r"V_A = V_s(1-w)")
+        st.latex(r"Re = \frac{V_A D}{\nu}")
+        st.latex(r"\sigma = \frac{P_{atm} + \rho g h - P_v}{\frac{1}{2}\rho V_A^2}")
+        st.markdown("""
+        **VA** es la velocidad efectiva que entra a la hélice, **Re** indica el régimen
+        de flujo, y **σ** estima la tendencia preliminar a cavitación. Un valor bajo de σ
+        implica mayor riesgo de formación de vapor sobre las palas.
+        """)
 
     st.markdown("---")
 
@@ -1223,6 +1250,81 @@ with tab_export:
         "streamlit\npandas\nnumpy\nmatplotlib\nopenpyxl\nxlsxwriter\nreportlab",
         language="text"
     )
+
+# ==============================================================================
+# FÓRMULAS DEL MODELO
+# ==============================================================================
+
+with tab_formulas:
+    st.subheader("🧮 Formulario Técnico del Modelo")
+
+    st.markdown("""
+    <div class="section-card">
+    Esta pestaña reúne las principales expresiones matemáticas utilizadas por la aplicación.
+    Su objetivo es que, durante la presentación, se pueda justificar de forma clara qué
+    ecuaciones se emplearon para obtener los resultados de hidrodinámica, cavitación,
+    vibración torsional, vibración lateral y dictamen preliminar.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 1. Velocidad efectiva de avance hacia la hélice")
+    st.latex(r"V_A = V_s(1-w)")
+    st.markdown("Donde **Vs** es la velocidad del buque en m/s y **w** es la fracción de estela.")
+
+    st.markdown("### 2. Coeficiente de avance")
+    st.latex(r"J = \frac{V_A}{nD}")
+    st.markdown("Donde **n** es la velocidad de giro en rev/s y **D** es el diámetro de la hélice.")
+
+    st.markdown("### 3. Polinomios Wageningen Serie B")
+    st.latex(r"K_T = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
+    st.latex(r"K_Q = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
+    st.markdown("Los coeficientes **Ci, si, ti, ui, vi** se leen del archivo `Tabla 1.xlsx`.")
+
+    st.markdown("### 4. Eficiencia en aguas abiertas")
+    st.latex(r"\eta_O = \frac{J}{2\pi}\frac{K_T}{K_Q}")
+
+    st.markdown("### 5. Número de Reynolds")
+    st.latex(r"Re = \frac{V_A D}{\nu}")
+    st.markdown("Se usa para identificar si el flujo se encuentra en régimen laminar, transicional o turbulento.")
+
+    st.markdown("### 6. Coeficiente de cavitación")
+    st.latex(r"\sigma = \frac{P_{atm} + \rho g h - P_v}{\frac{1}{2}\rho V_A^2}")
+    st.markdown("Valores bajos de σ indican mayor riesgo de cavitación.")
+
+    st.markdown("### 7. Torque nominal")
+    st.latex(r"\omega = \frac{2\pi n}{60}")
+    st.latex(r"T = \frac{P}{\omega}")
+
+    st.markdown("### 8. Esfuerzo torsional alternante")
+    st.latex(r"T_{alt} = 0.15T")
+    st.latex(r"W_t = \frac{\pi d^3}{16}")
+    st.latex(r"\tau = \frac{T_{alt}}{W_t}")
+    st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
+
+    st.markdown("### 9. Deflexión y frecuencia lateral")
+    st.latex(r"I = \frac{\pi d^4}{64}")
+    st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
+    st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
+    st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
+    st.latex(r"n_{crit} = 60 f_n")
+
+    st.markdown("### 10. Órdenes del Diagrama de Campbell")
+    st.latex(r"f_{orden} = k\frac{n}{60}")
+    st.latex(r"f_{ZP} = Z\frac{n}{60}")
+
+    st.markdown("### 11. Índice global de diseño")
+    st.markdown("""
+    El índice global se calcula con ponderaciones preliminares:
+
+    - Hidrodinámica: 15 puntos
+    - Reynolds: 10 puntos
+    - Cavitación: 25 puntos
+    - Torsión: 25 puntos
+    - Vibración lateral: 25 puntos
+
+    Este índice no sustituye una aprobación oficial de una sociedad de clasificación,
+    pero permite generar un dictamen preliminar de ingeniería.
+    """)
 
 # ==============================================================================
 # GUÍA DIDÁCTICA
