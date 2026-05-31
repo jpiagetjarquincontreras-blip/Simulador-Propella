@@ -291,7 +291,7 @@ if df_kt is not None:
         ax_c.legend(loc='upper left')
         st.pyplot(fig_c)
 
-    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS (VARIABLES COMPLETAMENTE VINCULADAS)
+    # PESTAÑA 6: CAVITACIÓN Y REYNOLDS (GRAFICAS SIMPLIFICADAS Y VINCULADAS)
     with tab5:
         st.subheader("🧼 Análisis Hidrodinámico de Fluidos y Pérdida de Sustentación")
         
@@ -299,18 +299,15 @@ if df_kt is not None:
         v_avance = v_m_s * (1.0 - estela)
         p_hidrostatica = p_atmosferica + (densidad_agua * gravedad * inmersion_eje_m) - p_vapor
         
-        # 1. USO REAL DE LA EFICIENCIA ROTATIVA RELATIVA (eta_r) Y LA DEDUCCIÓN DE EMPUJE (t_fraction)
         eta_open_water = max_eff if max_eff > 0 else 0.55
         eta_casco = (1.0 - t_fraction) / (1.0 - estela) if (1.0 - estela) > 0 else 1.0
-        eta_propulsiva_cuasi = eta_open_water * eta_casco * eta_r  # Vinculación de eta_r
+        eta_propulsiva_cuasi = eta_open_water * eta_casco * eta_r  
         
         empuje_t_n = (potencia_kw * 1000.0 * eta_propulsiva_cuasi) / (v_avance if v_avance > 0 else 1.0)
         
-        # 2. USO REAL DEL AJUSTE PORCENTUAL DE ESTELA NO UNIFORME
         factor_estela_no_uniforme = 1.0 + (wake_adj_percent / 100.0)
         ae_ao_keller = (((1.3 + 0.3 * z_val) * empuje_t_n) / (p_hidrostatica * (diam_prop_m**2)) + 0.03) * factor_estela_no_uniforme
         
-        # 3. USO REAL DE LA ESLORA A LA LÍNEA DE AGUA (LWL) -> NÚMERO DE FROUDE (Fn)
         if lwl > 0:
             fn_froude = v_m_s / math.sqrt(gravedad * lwl)
         else:
@@ -339,21 +336,27 @@ if df_kt is not None:
         col_f1, col_f2 = st.columns(2)
         
         with col_f1:
-            st.markdown("##### 🌊 Dinámica de Ola del Casco (Uso de LWL)")
+            st.markdown("##### 📊 Distribución del Número de Reynolds ($Rn$)")
+            radios_r_R = np.linspace(0.2, 0.95, 10)
+            viscosidad_cinematica = 1.188e-6
+            reynolds_vals = []
             
-            # Gráfico interactivo que demuestra la utilidad de LWL mediante la zona operativa de Froude
-            fn_eje_x = np.linspace(0.01, 0.5, 100)
-            resistencia_wave = fn_eje_x**4 * 100 # Curva cualitativa de resistencia por ola
-            
-            fig_fn, ax_fn = plt.subplots(figsize=(6, 3.8))
-            ax_fn.plot(fn_eje_x, resistencia_wave, color='#64748b', linestyle='--', label='Tendencia de Resistencia por Ola')
-            ax_fn.scatter([fn_froude], [fn_froude**4 * 100], color='#4c1d95', s=160, zorder=5, label=f'Operación Real (Fn = {fn_froude:.3f})')
-            ax_fn.axvspan(0.1, 0.3, color='#3b82f6', alpha=0.1, label='Zona de Desplazamiento Duro')
-            ax_fn.set_xlabel("Número de Froude ($Fn$) obtenido mediante LWL")
-            ax_fn.set_ylabel("Magnitud de Interferencia de Ola")
-            ax_fn.grid(True, linestyle=':', alpha=0.6)
-            ax_fn.legend()
-            st.pyplot(fig_fn)
+            for r_R in radios_r_R:
+                radio_local = r_R * (diam_prop_m / 2.0)
+                velocidad_tangencial = (2.0 * math.pi * (rpm_motor / 60.0)) * radio_local
+                velocidad_relativa = math.sqrt(v_avance**2 + velocidad_tangencial**2)
+                cuerda_estimada = 0.5 * (diam_prop_m * math.pi / z_val) * (1.0 - r_R)
+                Rn = (velocidad_relativa * cuerda_estimada) / viscosidad_cinematica
+                reynolds_vals.append(Rn)
+                
+            fig_rn, ax_rn = plt.subplots(figsize=(6, 3.8))
+            ax_rn.plot(radios_r_R, reynolds_vals, marker='o', color='#10b981', lw=2, label='Rn Local')
+            ax_rn.axhline(y=2e5, color='red', linestyle=':', label='Límite Crítico (2×10⁵)')
+            ax_rn.set_xlabel("Radio Adimensional (r/R)")
+            ax_rn.set_ylabel("Número de Reynolds ($Rn$)")
+            ax_rn.grid(True, linestyle=':', alpha=0.6)
+            ax_rn.legend()
+            st.pyplot(fig_rn)
             
         with col_f2:
             st.markdown("##### 📉 Criterio de Cavitación Estática de Burrill")
@@ -369,7 +372,7 @@ if df_kt is not None:
             fig_bu, ax_bu = plt.subplots(figsize=(6, 3.8))
             ax_bu.plot(sigma_cav, tau_c_5percent, color='#64748b', linestyle='--', label='Límite 5% Burrill')
             ax_bu.plot(sigma_cav, tau_c_back, color='#ef4444', label='Cavitación Dorsal')
-            ax_bu.scatter([punto_sigma], [punto_tau], color='#4c1d95', s=140, zorder=5, label='Punto de Operación')
+            ax_bu.scatter([punto_sigma], [punto_tau], color='#4c1d95', s=140, zorder=5, label=f'Operación (Fn_LWL={fn_froude:.3f})')
             ax_bu.set_xlabel(r"Número de Cavitación ($\sigma_R$)")
             ax_bu.set_ylabel(r"Coeficiente de Carga ($\tau_C$)")
             ax_bu.grid(True, linestyle=':', alpha=0.6)
