@@ -654,7 +654,7 @@ def generar_excel():
     output = BytesIO()
     resumen_df = construir_resumen_dataframe()
 
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
         resumen_df.to_excel(writer, sheet_name="Resumen", index=False)
         res.to_excel(writer, sheet_name="Wageningen", index=False)
 
@@ -1040,190 +1040,86 @@ with tab_campbell:
 # CAVITACIÓN
 # ==============================================================================
 
-with tab_cav:with tab_cav:
-
+with tab_cav:
     st.subheader("🔍 Análisis de Cavitación y Número de Reynolds")
 
     st.markdown("""
-    Esta sección evalúa el comportamiento hidrodinámico del propulsor
-    mediante el análisis del número de Reynolds y del coeficiente de
-    cavitación.
+    <div class="section-card">
+    Esta sección evalúa el comportamiento hidrodinámico del propulsor mediante dos
+    indicadores fundamentales: el <b>número de Reynolds</b>, asociado al régimen de flujo,
+    y el <b>coeficiente de cavitación σ</b>, asociado a la tendencia de formación de vapor
+    sobre las palas. Estos resultados son preliminares y sirven para orientar decisiones
+    de diseño como inmersión del eje, área expandida y carga de la hélice.
+    </div>
+    """, unsafe_allow_html=True)
 
-    Estos parámetros permiten estimar:
-
-    • Régimen de flujo alrededor de la hélice.
-
-    • Riesgo de cavitación.
-
-    • Condiciones de operación seguras.
-
-    • Calidad hidrodinámica preliminar del diseño.
-    """)
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric(
-        "Número de Reynolds",
-        f"{reynolds:.2e}"
-    )
-
-    col2.metric(
-        "Coeficiente σ",
-        f"{sigma_n:.3f}"
-    )
-
-    col3.metric(
-        "Velocidad efectiva",
-        f"{v_ms:.2f} m/s"
-    )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Velocidad efectiva Va", f"{v_ms:.2f} m/s")
+    c2.metric("Número de Reynolds", f"{reynolds:.2e}")
+    c3.metric("Coef. cavitación σ", f"{sigma_n:.3f}")
 
     st.markdown("---")
 
-    st.markdown("## 🌊 Evaluación del Número de Reynolds")
+    col_re, col_cav = st.columns(2)
 
-    fig_re, ax_re = plt.subplots(figsize=(10,4))
+    with col_re:
+        st.markdown("### 🌊 Gráfica del Número de Reynolds")
+        fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
+        etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
+        valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
+        ax_re.barh(etiquetas_re, valores_re)
+        ax_re.set_xscale("log")
+        ax_re.set_xlabel("Número de Reynolds Re [escala log]")
+        ax_re.set_title("Comparación de régimen de flujo")
+        ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
+        st.pyplot(fig_re)
 
-    referencias_re = [
-        2e3,
-        4e3,
-        1e6,
-        reynolds
-    ]
+        if reynolds_ok:
+            st.success("✅ El flujo se encuentra en régimen turbulento típico de hélices navales.")
+        else:
+            st.warning("⚠️ Reynolds bajo para escala naval. Revisar velocidad efectiva, diámetro o escala de análisis.")
 
-    etiquetas_re = [
-        "Laminar",
-        "Transición",
-        "Turbulento",
-        "Diseño"
-    ]
+    with col_cav:
+        st.markdown("### ⚠️ Gráfica del Coeficiente de Cavitación")
+        fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
+        etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
+        valores_sig = [0.20, 0.50, 1.00, sigma_n]
+        ax_sig.barh(etiquetas_sig, valores_sig)
+        ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite crítico σ = 0.20")
+        ax_sig.set_xlabel("Coeficiente de cavitación σ")
+        ax_sig.set_title("Comparación de riesgo de cavitación")
+        ax_sig.grid(True, linestyle=":", alpha=0.55)
+        ax_sig.legend(fontsize=8)
+        st.pyplot(fig_sig)
 
-    ax_re.barh(
-        etiquetas_re,
-        referencias_re
-    )
-
-    ax_re.set_xscale("log")
-
-    ax_re.set_title(
-        "Comparación del Número de Reynolds"
-    )
-
-    ax_re.set_xlabel(
-        "Número de Reynolds (escala logarítmica)"
-    )
-
-    ax_re.grid(
-        True,
-        linestyle=":"
-    )
-
-    st.pyplot(fig_re)
-
-    st.info("""
-    Valores superiores a 10⁷ son habituales en hélices navales
-    y representan flujo completamente turbulento.
-    """)
-
-    st.markdown("---")
-
-    st.markdown("## ⚠️ Evaluación del Riesgo de Cavitación")
-
-    fig_sigma, ax_sigma = plt.subplots(figsize=(10,4))
-
-    niveles_sigma = [
-        0.20,
-        0.50,
-        1.00,
-        sigma_n
-    ]
-
-    etiquetas_sigma = [
-        "Riesgo Alto",
-        "Precaución",
-        "Seguro",
-        "Diseño"
-    ]
-
-    ax_sigma.barh(
-        etiquetas_sigma,
-        niveles_sigma
-    )
-
-    ax_sigma.axvline(
-        0.20,
-        color="red",
-        linestyle="--",
-        label="Límite crítico"
-    )
-
-    ax_sigma.legend()
-
-    ax_sigma.grid(
-        True,
-        linestyle=":"
-    )
-
-    ax_sigma.set_title(
-        "Comparación del Coeficiente de Cavitación"
-    )
-
-    ax_sigma.set_xlabel(
-        "σ"
-    )
-
-    st.pyplot(fig_sigma)
-
-    if sigma_n < 0.20:
-
-        st.error("""
-        🔴 Riesgo elevado de cavitación.
-
-        Se recomienda revisar:
-        - Área expandida Ae/A0
-        - Inmersión del eje
-        - Velocidad efectiva
-        - Diámetro de hélice
-        """)
-
-    elif sigma_n < 0.50:
-
-        st.warning("""
-        🟡 Zona de precaución.
-
-        El diseño puede operar adecuadamente, pero se recomienda
-        una evaluación más detallada.
-        """)
-
-    else:
-
-        st.success("""
-        🟢 Diseño favorable frente a cavitación.
-
-        El coeficiente σ se encuentra dentro de rangos aceptables
-        para análisis preliminar.
-        """)
+        if sigma_n < 0.20:
+            st.error("""
+            🔴 Riesgo elevado de cavitación. Se recomienda aumentar Ae/A0, aumentar
+            la inmersión del eje, reducir la velocidad efectiva o revisar el diámetro
+            y la carga de la hélice.
+            """)
+        elif sigma_n < 0.50:
+            st.warning("""
+            🟡 Zona de precaución. El diseño puede funcionar, pero conviene validar
+            con un análisis de cavitación más detallado y revisión de distribución de carga.
+            """)
+        else:
+            st.success("""
+            🟢 Condición preliminar favorable frente a cavitación. El valor de σ se
+            encuentra por encima del umbral crítico usado en esta evaluación.
+            """)
 
     st.markdown("---")
-
     st.markdown("""
-    ## 📖 Interpretación Técnica
+    ### 📖 Interpretación técnica
 
-    La cavitación ocurre cuando la presión local en la superficie
-    de las palas cae por debajo de la presión de vapor del agua.
-
-    Este fenómeno puede provocar:
-
-    • Pérdida de eficiencia.
-
-    • Incremento del ruido.
-
-    • Vibraciones.
-
-    • Erosión superficial de las palas.
-
-    El número de Reynolds permite verificar que el flujo se
-    encuentra dentro del régimen esperado para aplicaciones navales.
+    La cavitación aparece cuando la presión local en alguna región de la pala cae por debajo
+    de la presión de vapor del agua. En operación real puede provocar ruido, vibración,
+    erosión superficial y pérdida de eficiencia propulsiva. El número de Reynolds confirma
+    si el flujo alrededor de la hélice está dentro de un régimen representativo para análisis
+    hidrodinámico naval.
     """)
+
 # ==============================================================================
 # CLASE / CUMPLIMIENTO
 # ==============================================================================
