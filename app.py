@@ -981,9 +981,3 @@ with tab_guide:
 - σ < 0.20 → alto riesgo.
 - σ > 0.20 → diseño aceptable.
 """)
-
-else:
-
-    st.error(
-        "No se encontró el archivo Tabla 1.xlsx"
-    )
