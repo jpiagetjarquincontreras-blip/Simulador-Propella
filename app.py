@@ -933,9 +933,9 @@ with tab_torsion:
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Base teórica del profesor — vibración torsional", expanded=False):
+    with st.expander("📘 Base teórica de vibración del eje — vibración torsional", expanded=False):
         st.markdown("""
-        De acuerdo con la asignación del **Equipo 4 — Vibración en el Eje**, la vibración
+        De acuerdo con la asignación del **Vibración en el Eje Propulsor**, la vibración
         torsional corresponde a una variación cíclica del ángulo de giro relativo entre
         secciones del eje. Puede ser provocada por la irregularidad del par del motor y
         por el torque resistente variable de la hélice al trabajar dentro del campo de
@@ -1001,9 +1001,9 @@ with tab_lateral:
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Base teórica del profesor — vibración lateral / whirling", expanded=False):
+    with st.expander("📘 Base teórica de vibración del eje — vibración lateral / whirling", expanded=False):
         st.markdown("""
-        En el material del **Equipo 4**, la vibración lateral o *whirling* se describe como
+        En la guía técnica base, la vibración lateral o *whirling* se describe como
         la deflexión radial del eje. Su frecuencia natural depende de la rigidez a flexión
         **EI**, de la masa equivalente y de la longitud característica del sistema.
 
@@ -1114,11 +1114,11 @@ with tab_campbell:
             porcentaje = (diferencia / rpm_motor * 100.0) if rpm_motor > 0 else 0.0
 
             if porcentaje <= 10:
-                riesgo = "Alto: cruce muy cercano a operación"
+                riesgo = "⚠ Revisar resonancia potencial"
             elif porcentaje <= 20:
                 riesgo = "Precaución: revisar margen"
             else:
-                riesgo = "Bajo: cruce alejado"
+                riesgo = "Seguro: cruce alejado"
 
             intersecciones.append({
                 "Orden": nombre_orden,
@@ -1155,8 +1155,8 @@ with tab_campbell:
         - Si la diferencia es pequeña, existe mayor posibilidad de resonancia y debería definirse una
           zona de operación restringida o validarse con análisis torsional/lateral más completo.
         """)
-        st.latex(r"f_{orden}=krac{n}{60}")
-        st.latex(r"f_{kZ}=krac{Zn}{60}")
+        st.latex(r"f_{orden}=k\frac{n}{60}")
+        st.latex(r"f_{kZ}=k\frac{Zn}{60}")
 
 
 
@@ -1270,7 +1270,7 @@ with tab_clase:
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Relación con la teoría del Equipo 4", expanded=False):
+    with st.expander("📘 Relación con la teoría de vibración del eje", expanded=False):
         st.markdown("""
         El dictamen agrupa los tres enfoques principales de la asignación:
 
