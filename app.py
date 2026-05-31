@@ -80,6 +80,14 @@ st.markdown('<div class="main-subtitle">Análisis Hidrodinámico y Vibratorio Es
 
 if df_kt is not None:
     with st.sidebar:
+        st.markdown("### 🌍 Configuración Universal")
+        # Automatización de constantes
+        p_atm_auto = st.number_input("Presión Atmosférica (Pa)", value=101325.0, format="%.2f")
+        p_vap_auto = st.number_input("Presión Vapor (Pa)", value=1704.0, format="%.2f")
+        rho_auto = st.number_input("Densidad Agua (kg/m3)", value=1026.021, format="%.3f")
+        g_auto = st.number_input("Gravedad (m/s2)", value=9.80665, format="%.5f")
+        st.markdown("---")
+
         st.markdown("### 🛠️ Configuración de Diseño")
         
         with st.expander("📐 Geometría de la Carena", expanded=True):
@@ -123,12 +131,11 @@ if df_kt is not None:
         longitud_volado_m = 3.5
 
     # ==============================================================================
-    # 4. PROCESAMIENTO MATEMÁTICO (Incluye cálculos de Reynolds y Cavitación)
+    # 4. PROCESAMIENTO MATEMÁTICO (Automático con constantes del Sidebar)
     # ==============================================================================
-    gravedad = 9.81
     res = calcular_curvas(pd_val, ae_val, z_val)
     
-    # Cálculos previos
+    # Cálculos mecánicos originales
     diametro_m = diametro_eje_mm / 1000.0
     E_acero = 2.06e11  
     densidad_acero = 7850.0  
@@ -136,9 +143,9 @@ if df_kt is not None:
     area_eje = math.pi * (r_eje**2)
     I_inercia = (math.pi * (diametro_m**4)) / 64.0
     peso_lineal_eje = area_eje * densidad_acero
-    peso_helice_n = peso_helice_kg * gravedad
+    peso_helice_n = peso_helice_kg * g_auto
     delta_helice = (peso_helice_n * (longitud_volado_m**3)) / (3.0 * E_acero * I_inercia)
-    peso_eje_n = peso_lineal_eje * longitud_volado_m * gravedad
+    peso_eje_n = peso_lineal_eje * longitud_volado_m * g_auto
     delta_eje = (peso_eje_n * (longitud_volado_m**3)) / (8.0 * E_acero * I_inercia)
     f_natural_hz = 1.0 / (2.0 * math.pi * math.sqrt(delta_helice + delta_eje))
     rpm_critica_lateral = f_natural_hz * 60.0
@@ -146,14 +153,11 @@ if df_kt is not None:
     margen_sup = rpm_critica_lateral * 1.20
     f_torsional_est = f_natural_hz * 1.4
 
-    # --- NUEVOS CÁLCULOS: REYNOLDS Y CAVITACIÓN ---
-    v_ms = (velocidad * 0.5144) * (1 - estela) # Velocidad del fluido incidente (m/s)
-    nu = 1.188e-6 # Viscosidad cinemática agua de mar a 15°C
+    # --- Cálculos automatizados con constantes del sidebar ---
+    v_ms = (velocidad * 0.5144) * (1 - estela)
+    nu = 1.188e-6
     reynolds = (v_ms * diam_prop_m) / nu
-    rho_agua = 1025
-    p_atm = 101325
-    p_v = 2338
-    sigma_n = (p_atm + (rho_agua * gravedad * inmersion_eje_m) - p_v) / (0.5 * rho_agua * (v_ms**2))
+    sigma_n = (p_atm_auto + (rho_auto * g_auto * inmersion_eje_m) - p_vap_auto) / (0.5 * rho_auto * (v_ms**2))
 
     # ==============================================================================
     # 5. RENDERIZADO DE LOS ENTREGABLES
@@ -238,7 +242,6 @@ if df_kt is not None:
         ax_c.legend()
         st.pyplot(fig_c)
 
-    # --- NUEVA PESTAÑA: CAVITACIÓN Y REYNOLDS ---
     with tab_cav:
         st.subheader("🔍 Análisis de Cavitación (Criterio de Burrill) y Número de Reynolds")
         c_c1, c_c2 = st.columns(2)
