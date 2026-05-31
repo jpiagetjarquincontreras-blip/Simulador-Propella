@@ -181,6 +181,40 @@ if df_kt is not None:
     "📚 Guía Naval"
 
 ])
+with tab_dash:
+
+    st.subheader("📊 Dashboard Ejecutivo")
+
+    col1,col2,col3,col4 = st.columns(4)
+
+    col1.metric(
+        "Velocidad",
+        f"{velocidad:.1f} kn"
+    )
+
+    col2.metric(
+        "Diámetro Hélice",
+        f"{diam_prop_m:.2f} m"
+    )
+
+    col3.metric(
+        "Palas",
+        z_val
+    )
+
+    col4.metric(
+        "Potencia",
+        f"{potencia_kw/1000:.1f} MW"
+    )
+
+    st.markdown("---")
+
+    st.info(
+        """
+        Esta plataforma permite analizar cualquier embarcación mediante
+        parámetros definidos por el usuario.
+        """
+    )
     with tab1:
         max_eff = res['nO'].max()
         j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
