@@ -169,15 +169,18 @@ if df_kt is not None:
     # ==============================================================================
     # 5. RENDERIZADO DE LOS ENTREGABLES
     # ==============================================================================
-    tab1, tab_res, tab2, tab3, tab4, tab_cav = st.tabs([
-        "📈 Hidrodinámica (Aguas Abiertas)", 
-        "📋 Reporte Numérico",
-        "💥 Entregable 1: Vibración Torsional", 
-        "📊 Entregable 2: Vibración Lateral",
-        "🗺️ Entregable 3: Diagrama de Campbell",
-        "🔍 Cavitación y Reynolds"
-    ])
+   tab_dash, tab1, tab_res, tab2, tab3, tab4, tab_cav, tab_guide = st.tabs([
 
+    "🏠 Dashboard",
+    "📈 Hidrodinámica",
+    "📋 Reporte Numérico",
+    "💥 Vibración Torsional",
+    "📊 Vibración Lateral",
+    "🗺️ Campbell",
+    "🔍 Cavitación",
+    "📚 Guía Naval"
+
+])
     with tab1:
         max_eff = res['nO'].max()
         j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
