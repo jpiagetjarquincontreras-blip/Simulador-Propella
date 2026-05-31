@@ -730,7 +730,7 @@ def generar_pdf():
 # TABS
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_equipo4, tab_formulas, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📈 Hidrodinámica",
@@ -741,7 +741,6 @@ tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_
     "🔍 Cavitación",
     "📋 Clase",
     "📄 Exportar",
-    "📘 Equipo 4",
     "🧮 Fórmulas",
     "📚 Guía"
 ])
@@ -934,6 +933,25 @@ with tab_torsion:
     </div>
     """, unsafe_allow_html=True)
 
+    with st.expander("📘 Base teórica del profesor — vibración torsional", expanded=False):
+        st.markdown("""
+        De acuerdo con la asignación del **Equipo 4 — Vibración en el Eje**, la vibración
+        torsional corresponde a una variación cíclica del ángulo de giro relativo entre
+        secciones del eje. Puede ser provocada por la irregularidad del par del motor y
+        por el torque resistente variable de la hélice al trabajar dentro del campo de
+        estela no uniforme del casco.
+
+        En esta aplicación se representa de forma preliminar mediante un torque alternante
+        estimado y se compara el esfuerzo torsional obtenido contra un límite admisible
+        asociado al material seleccionado. Esta revisión se conecta con el criterio didáctico
+        de **IACS UR M68**, usado como referencia para análisis torsional.
+        """)
+        st.markdown("""
+        **Instrumentación relacionada:** torsiógrafo óptico o magnético, sensores de velocidad
+        angular y software de TVA/Shafting para modelos de masas discretas, inercias, rigideces
+        y amortiguamiento.
+        """)
+
     with st.expander("🧮 Fórmulas de torsión usadas", expanded=False):
         st.latex(r"\omega = \frac{2\pi n}{60}")
         st.latex(r"T = \frac{P}{\omega}")
@@ -982,6 +1000,22 @@ with tab_lateral:
     con la zona ±20% alrededor de la primera velocidad crítica lateral.
     </div>
     """, unsafe_allow_html=True)
+
+    with st.expander("📘 Base teórica del profesor — vibración lateral / whirling", expanded=False):
+        st.markdown("""
+        En el material del **Equipo 4**, la vibración lateral o *whirling* se describe como
+        la deflexión radial del eje. Su frecuencia natural depende de la rigidez a flexión
+        **EI**, de la masa equivalente y de la longitud característica del sistema.
+
+        Si la frecuencia de excitación asociada al giro del eje coincide con una frecuencia
+        natural lateral, aparece una velocidad crítica. Por eso la aplicación compara la
+        velocidad de operación contra una zona de seguridad de **±20%** alrededor de la
+        velocidad crítica estimada.
+        """)
+        st.markdown("""
+        **Instrumentación relacionada:** sensores de proximidad inductivos (*eddy current*)
+        para medir órbitas del eje, acelerómetros en apoyos y mediciones durante pruebas de mar.
+        """)
 
     with st.expander("🧮 Fórmulas de vibración lateral usadas", expanded=False):
         st.latex(r"I = \frac{\pi d^4}{64}")
@@ -1053,6 +1087,78 @@ with tab_campbell:
     ax_c.grid(True, linestyle=":", alpha=0.62)
     ax_c.legend(loc="upper left", fontsize=8)
     st.pyplot(fig_c)
+
+    st.markdown("### 📋 Tabla de intersecciones e interpretación")
+    st.markdown("""
+    La tabla siguiente calcula dónde se cruzaría cada orden de excitación con las frecuencias
+    naturales mostradas en el diagrama. Cuando una intersección cae cerca de la RPM de operación,
+    se considera una posible zona de resonancia que debería revisarse con mayor detalle.
+    """)
+
+    intersecciones = []
+    ordenes_para_tabla = [(f"{i}P", i) for i in range(1, 6)]
+    ordenes_para_tabla.append((f"{z_val}P — paso de pala", z_val))
+
+    for nombre_orden, multiplicador in ordenes_para_tabla:
+        if multiplicador <= 0:
+            continue
+
+        rpm_cruce_lateral = (f_natural_hz * 60.0) / multiplicador
+        rpm_cruce_torsional = (f_torsional_est * 60.0) / multiplicador
+
+        for modo, freq, rpm_cruce in [
+            ("Frecuencia lateral / whirling", f_natural_hz, rpm_cruce_lateral),
+            ("Frecuencia torsional estimada", f_torsional_est, rpm_cruce_torsional),
+        ]:
+            diferencia = abs(rpm_motor - rpm_cruce)
+            porcentaje = (diferencia / rpm_motor * 100.0) if rpm_motor > 0 else 0.0
+
+            if porcentaje <= 10:
+                riesgo = "Alto: cruce muy cercano a operación"
+            elif porcentaje <= 20:
+                riesgo = "Precaución: revisar margen"
+            else:
+                riesgo = "Bajo: cruce alejado"
+
+            intersecciones.append({
+                "Orden": nombre_orden,
+                "Modo evaluado": modo,
+                "Frecuencia natural [Hz]": round(freq, 3),
+                "RPM de intersección": round(rpm_cruce, 1),
+                "RPM operación": round(rpm_motor, 1),
+                "Diferencia [%]": round(porcentaje, 1),
+                "Interpretación": riesgo,
+            })
+
+    tabla_intersecciones = pd.DataFrame(intersecciones)
+
+    def color_interpretacion(val):
+        if isinstance(val, str) and val.startswith("Alto"):
+            return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
+        if isinstance(val, str) and val.startswith("Precaución"):
+            return "background-color: #fef3c7; color: #92400e; font-weight: bold"
+        return "background-color: #dcfce7; color: #166534; font-weight: bold"
+
+    st.dataframe(
+        tabla_intersecciones.style.map(color_interpretacion, subset=["Interpretación"]),
+        use_container_width=True,
+        hide_index=True,
+        height=420
+    )
+
+    with st.expander("📘 Cómo leer la tabla de Campbell", expanded=False):
+        st.markdown("""
+        - **Orden 1P, 2P, 3P...:** son excitaciones proporcionales a la velocidad de giro del eje.
+        - **ZP o paso de pala:** corresponde al número de palas multiplicado por la velocidad de giro.
+        - **RPM de intersección:** velocidad a la que ese orden igualaría una frecuencia natural.
+        - **Diferencia [%]:** distancia entre la RPM de operación y la RPM de intersección.
+        - Si la diferencia es pequeña, existe mayor posibilidad de resonancia y debería definirse una
+          zona de operación restringida o validarse con análisis torsional/lateral más completo.
+        """)
+        st.latex(r"f_{orden}=krac{n}{60}")
+        st.latex(r"f_{kZ}=krac{Zn}{60}")
+
+
 
 # ==============================================================================
 # CAVITACIÓN
@@ -1164,6 +1270,21 @@ with tab_clase:
     </div>
     """, unsafe_allow_html=True)
 
+    with st.expander("📘 Relación con la teoría del Equipo 4", expanded=False):
+        st.markdown("""
+        El dictamen agrupa los tres enfoques principales de la asignación:
+
+        - **Torsional:** variaciones cíclicas de torque y esfuerzo alternante del eje.
+        - **Lateral / whirling:** separación entre la velocidad de servicio y velocidades críticas.
+        - **Axial:** asociada a fluctuaciones de empuje de la hélice en órdenes **kZ**; en esta versión
+          se documenta como criterio teórico y se relaciona con el Diagrama de Campbell, aunque no se
+          modela dinámicamente como sistema empuje-casco.
+
+        También se incluyen las referencias técnicas mencionadas en la guía: **IACS UR M68**, notas de
+        **ABS** para vibración de shafting, recomendaciones **DNV/ISO** e instrumentación como torsiógrafo,
+        sensor de proximidad y acelerómetro axial.
+        """)
+
     cumplimiento = pd.DataFrame({
         "Área evaluada": [
             "Hidrodinámica de aguas abiertas",
@@ -1252,144 +1373,6 @@ with tab_export:
         language="text"
     )
 
-
-# ==============================================================================
-# BASE TEÓRICA EQUIPO 4
-# ==============================================================================
-
-with tab_equipo4:
-    st.subheader("📘 Base teórica del Equipo 4: Vibración en el Eje")
-
-    st.markdown("""
-    <div class="section-card">
-    Esta sección integra la teoría base de la asignación del <b>Equipo 4 — Vibración en el Eje</b>.
-    Su propósito es que la aplicación no sólo entregue resultados numéricos, sino que también muestre
-    el fundamento técnico utilizado para interpretar la vibración torsional, axial y lateral del sistema
-    propulsivo.
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("## 1. Fundamento general")
-    st.markdown("""
-    El eje propulsor puede experimentar simultáneamente tres fenómenos vibratorios principales:
-
-    - **Vibración torsional:** variación cíclica del ángulo de giro del eje por fluctuaciones de par.
-    - **Vibración axial:** oscilación longitudinal asociada a fluctuaciones de empuje de la hélice.
-    - **Vibración lateral o whirling:** deflexión radial del eje, relacionada con desbalanceo, peso propio,
-      rigidez a flexión y condiciones de apoyo.
-
-    En un diseño preliminar, la aplicación evalúa principalmente la torsión alternante, la velocidad crítica
-    lateral y los órdenes de excitación en el Diagrama de Campbell.
-    """)
-
-    st.markdown("## 2. Comparativa de tipos de vibración")
-    tabla_vib = pd.DataFrame({
-        "Tipo": ["Torsional", "Axial", "Lateral / Whirling"],
-        "Excitación principal": [
-            "Irregularidad del par del motor y torque resistente variable de la hélice",
-            "Fluctuación de empuje de la hélice, especialmente en órdenes kZ",
-            "Desbalanceo estático/dinámico, peso de hélice y flexibilidad del eje"
-        ],
-        "Frecuencia característica": [
-            "Órdenes de motor y hélice",
-            "k·Z·n/60",
-            "n/60 y frecuencia natural lateral"
-        ],
-        "Consecuencia de resonancia": [
-            "Fatiga torsional y posible daño del eje",
-            "Ruido, vibración del casco y fatiga de cimentaciones",
-            "Daño de cojinetes, desgaste de sello y amplitudes radiales elevadas"
-        ],
-        "Control preliminar": [
-            "Verificación de esfuerzo alternante y margen admisible",
-            "Revisión de órdenes de pala y respuesta del sistema de empuje",
-            "Separación de velocidad de servicio respecto a la velocidad crítica"
-        ]
-    })
-    st.dataframe(tabla_vib, use_container_width=True, hide_index=True)
-
-    st.markdown("## 3. Fórmulas de diseño tomadas como base")
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("### Velocidad crítica lateral")
-        st.latex(r"\omega_{n,lateral} \approx C\sqrt{\frac{EI}{mL^3}}")
-        st.latex(r"n_{crit}=\frac{60\omega_n}{2\pi}")
-        st.caption("E: módulo de elasticidad, I: segundo momento de área, m: masa equivalente, L: longitud característica.")
-
-        st.markdown("### Segundo momento de área del eje")
-        st.latex(r"I=\frac{\pi d^4}{64}")
-        st.caption("La rigidez lateral del eje depende fuertemente del diámetro, porque I varía con d⁴.")
-
-    with col_b:
-        st.markdown("### Esfuerzo torsional alternante")
-        st.latex(r"\tau=\frac{M_T}{W_t}")
-        st.latex(r"W_t=\frac{\pi d^3}{16}")
-        st.latex(r"\tau_{adm}=0.35\left(\frac{\sigma_{UTS}}{3}\right)")
-        st.caption("La aplicación compara el esfuerzo torsional real contra un límite admisible preliminar.")
-
-        st.markdown("### Frecuencia de excitación de la hélice")
-        st.latex(r"f_{kZ}=\frac{kZn}{60}")
-        st.caption("Z es el número de palas, n las rpm del eje y k el orden armónico.")
-
-    st.markdown("## 4. Relación directa con los módulos de la aplicación")
-    st.markdown("""
-    - En la pestaña **Torsional**, la aplicación calcula el torque nominal, estima una componente alternante
-      y la compara con un esfuerzo admisible relacionado con la resistencia última del material.
-    - En la pestaña **Lateral**, se estima la frecuencia natural de whirling y la velocidad crítica lateral.
-    - En la pestaña **Campbell**, se grafican los órdenes de excitación para identificar posibles cruces con
-      frecuencias naturales.
-    - En la pestaña **Clase**, estos resultados se resumen en un dictamen preliminar de cumplimiento.
-    """)
-
-    st.markdown("## 5. Normas y referencias técnicas mencionadas en la asignación")
-    normas_df = pd.DataFrame({
-        "Referencia": [
-            "IACS UR M68",
-            "ABS Guidance Note on Propulsion Shafting Vibration",
-            "ISO 19902 / DNV-RP-C205",
-            "MIL-STD-167-1A"
-        ],
-        "Aplicación dentro del tema": [
-            "Análisis de vibración torsional y criterio de esfuerzo alternante admisible",
-            "Guía para TVA, vibración axial y lateral del sistema de ejes",
-            "Fuerzas fluctuantes, respuesta axial e interacción hidrodinámica",
-            "Límites de vibración para maquinaria naval y procedimientos de verificación"
-        ]
-    })
-    st.dataframe(normas_df, use_container_width=True, hide_index=True)
-
-    st.markdown("## 6. Instrumentación asociada")
-    st.markdown("""
-    - **Torsiógrafo óptico o magnético:** mide variaciones instantáneas de velocidad angular para estimar
-      vibración torsional.
-    - **Sensor de proximidad inductivo:** permite observar desplazamientos laterales y órbitas del eje.
-    - **Acelerómetro axial:** se emplea en la cimentación del cojinete de empuje para detectar vibración longitudinal.
-    - **Software TVA / Shafting:** modela inercias, rigideces, amortiguamientos y respuesta vibratoria.
-    """)
-
-    st.markdown("## 7. Reglas de diseño usadas como criterio educativo")
-    reglas_df = pd.DataFrame({
-        "Regla": [
-            "Mantener velocidades críticas fuera del rango ±20% de la velocidad de servicio",
-            "Verificar que el esfuerzo torsional alternante no exceda el límite admisible",
-            "Revisar los órdenes de pala en el Diagrama de Campbell",
-            "Documentar zonas prohibidas de velocidad si existieran cruces resonantes"
-        ],
-        "Finalidad": [
-            "Evitar resonancia lateral prolongada",
-            "Reducir riesgo de fatiga torsional",
-            "Identificar excitaciones relacionadas con el número de palas",
-            "Prevenir operación continua en zonas de alta respuesta vibratoria"
-        ]
-    })
-    st.dataframe(reglas_df, use_container_width=True, hide_index=True)
-
-    st.info(
-        "Nota: esta sección resume la base conceptual de la asignación del Equipo 4 y la conecta con los cálculos "
-        "automatizados de la aplicación. El dictamen sigue siendo preliminar y debe complementarse con análisis "
-        "de sociedad de clasificación para un diseño final."
-    )
 
 # ==============================================================================
 # FÓRMULAS DEL MODELO
