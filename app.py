@@ -730,7 +730,7 @@ def generar_pdf():
 # TABS
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_equipo4, tab_formulas, tab_guia = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📈 Hidrodinámica",
@@ -741,6 +741,7 @@ tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_
     "🔍 Cavitación",
     "📋 Clase",
     "📄 Exportar",
+    "📘 Equipo 4",
     "🧮 Fórmulas",
     "📚 Guía"
 ])
@@ -1249,6 +1250,145 @@ with tab_export:
     st.code(
         "streamlit\npandas\nnumpy\nmatplotlib\nopenpyxl\nxlsxwriter\nreportlab",
         language="text"
+    )
+
+
+# ==============================================================================
+# BASE TEÓRICA EQUIPO 4
+# ==============================================================================
+
+with tab_equipo4:
+    st.subheader("📘 Base teórica del Equipo 4: Vibración en el Eje")
+
+    st.markdown("""
+    <div class="section-card">
+    Esta sección integra la teoría base de la asignación del <b>Equipo 4 — Vibración en el Eje</b>.
+    Su propósito es que la aplicación no sólo entregue resultados numéricos, sino que también muestre
+    el fundamento técnico utilizado para interpretar la vibración torsional, axial y lateral del sistema
+    propulsivo.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("## 1. Fundamento general")
+    st.markdown("""
+    El eje propulsor puede experimentar simultáneamente tres fenómenos vibratorios principales:
+
+    - **Vibración torsional:** variación cíclica del ángulo de giro del eje por fluctuaciones de par.
+    - **Vibración axial:** oscilación longitudinal asociada a fluctuaciones de empuje de la hélice.
+    - **Vibración lateral o whirling:** deflexión radial del eje, relacionada con desbalanceo, peso propio,
+      rigidez a flexión y condiciones de apoyo.
+
+    En un diseño preliminar, la aplicación evalúa principalmente la torsión alternante, la velocidad crítica
+    lateral y los órdenes de excitación en el Diagrama de Campbell.
+    """)
+
+    st.markdown("## 2. Comparativa de tipos de vibración")
+    tabla_vib = pd.DataFrame({
+        "Tipo": ["Torsional", "Axial", "Lateral / Whirling"],
+        "Excitación principal": [
+            "Irregularidad del par del motor y torque resistente variable de la hélice",
+            "Fluctuación de empuje de la hélice, especialmente en órdenes kZ",
+            "Desbalanceo estático/dinámico, peso de hélice y flexibilidad del eje"
+        ],
+        "Frecuencia característica": [
+            "Órdenes de motor y hélice",
+            "k·Z·n/60",
+            "n/60 y frecuencia natural lateral"
+        ],
+        "Consecuencia de resonancia": [
+            "Fatiga torsional y posible daño del eje",
+            "Ruido, vibración del casco y fatiga de cimentaciones",
+            "Daño de cojinetes, desgaste de sello y amplitudes radiales elevadas"
+        ],
+        "Control preliminar": [
+            "Verificación de esfuerzo alternante y margen admisible",
+            "Revisión de órdenes de pala y respuesta del sistema de empuje",
+            "Separación de velocidad de servicio respecto a la velocidad crítica"
+        ]
+    })
+    st.dataframe(tabla_vib, use_container_width=True, hide_index=True)
+
+    st.markdown("## 3. Fórmulas de diseño tomadas como base")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("### Velocidad crítica lateral")
+        st.latex(r"\omega_{n,lateral} \approx C\sqrt{\frac{EI}{mL^3}}")
+        st.latex(r"n_{crit}=\frac{60\omega_n}{2\pi}")
+        st.caption("E: módulo de elasticidad, I: segundo momento de área, m: masa equivalente, L: longitud característica.")
+
+        st.markdown("### Segundo momento de área del eje")
+        st.latex(r"I=\frac{\pi d^4}{64}")
+        st.caption("La rigidez lateral del eje depende fuertemente del diámetro, porque I varía con d⁴.")
+
+    with col_b:
+        st.markdown("### Esfuerzo torsional alternante")
+        st.latex(r"\tau=\frac{M_T}{W_t}")
+        st.latex(r"W_t=\frac{\pi d^3}{16}")
+        st.latex(r"\tau_{adm}=0.35\left(\frac{\sigma_{UTS}}{3}\right)")
+        st.caption("La aplicación compara el esfuerzo torsional real contra un límite admisible preliminar.")
+
+        st.markdown("### Frecuencia de excitación de la hélice")
+        st.latex(r"f_{kZ}=\frac{kZn}{60}")
+        st.caption("Z es el número de palas, n las rpm del eje y k el orden armónico.")
+
+    st.markdown("## 4. Relación directa con los módulos de la aplicación")
+    st.markdown("""
+    - En la pestaña **Torsional**, la aplicación calcula el torque nominal, estima una componente alternante
+      y la compara con un esfuerzo admisible relacionado con la resistencia última del material.
+    - En la pestaña **Lateral**, se estima la frecuencia natural de whirling y la velocidad crítica lateral.
+    - En la pestaña **Campbell**, se grafican los órdenes de excitación para identificar posibles cruces con
+      frecuencias naturales.
+    - En la pestaña **Clase**, estos resultados se resumen en un dictamen preliminar de cumplimiento.
+    """)
+
+    st.markdown("## 5. Normas y referencias técnicas mencionadas en la asignación")
+    normas_df = pd.DataFrame({
+        "Referencia": [
+            "IACS UR M68",
+            "ABS Guidance Note on Propulsion Shafting Vibration",
+            "ISO 19902 / DNV-RP-C205",
+            "MIL-STD-167-1A"
+        ],
+        "Aplicación dentro del tema": [
+            "Análisis de vibración torsional y criterio de esfuerzo alternante admisible",
+            "Guía para TVA, vibración axial y lateral del sistema de ejes",
+            "Fuerzas fluctuantes, respuesta axial e interacción hidrodinámica",
+            "Límites de vibración para maquinaria naval y procedimientos de verificación"
+        ]
+    })
+    st.dataframe(normas_df, use_container_width=True, hide_index=True)
+
+    st.markdown("## 6. Instrumentación asociada")
+    st.markdown("""
+    - **Torsiógrafo óptico o magnético:** mide variaciones instantáneas de velocidad angular para estimar
+      vibración torsional.
+    - **Sensor de proximidad inductivo:** permite observar desplazamientos laterales y órbitas del eje.
+    - **Acelerómetro axial:** se emplea en la cimentación del cojinete de empuje para detectar vibración longitudinal.
+    - **Software TVA / Shafting:** modela inercias, rigideces, amortiguamientos y respuesta vibratoria.
+    """)
+
+    st.markdown("## 7. Reglas de diseño usadas como criterio educativo")
+    reglas_df = pd.DataFrame({
+        "Regla": [
+            "Mantener velocidades críticas fuera del rango ±20% de la velocidad de servicio",
+            "Verificar que el esfuerzo torsional alternante no exceda el límite admisible",
+            "Revisar los órdenes de pala en el Diagrama de Campbell",
+            "Documentar zonas prohibidas de velocidad si existieran cruces resonantes"
+        ],
+        "Finalidad": [
+            "Evitar resonancia lateral prolongada",
+            "Reducir riesgo de fatiga torsional",
+            "Identificar excitaciones relacionadas con el número de palas",
+            "Prevenir operación continua en zonas de alta respuesta vibratoria"
+        ]
+    })
+    st.dataframe(reglas_df, use_container_width=True, hide_index=True)
+
+    st.info(
+        "Nota: esta sección resume la base conceptual de la asignación del Equipo 4 y la conecta con los cálculos "
+        "automatizados de la aplicación. El dictamen sigue siendo preliminar y debe complementarse con análisis "
+        "de sociedad de clasificación para un diseño final."
     )
 
 # ==============================================================================
