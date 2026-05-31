@@ -81,13 +81,11 @@ st.markdown('<div class="main-subtitle">Análisis Hidrodinámico y Vibratorio Es
 if df_kt is not None:
     with st.sidebar:
         st.markdown("### 🌍 Configuración Universal")
-        # Automatización de constantes
         p_atm_auto = st.number_input("Presión Atmosférica (Pa)", value=101325.0, format="%.2f")
         p_vap_auto = st.number_input("Presión Vapor (Pa)", value=1704.0, format="%.2f")
         rho_auto = st.number_input("Densidad Agua (kg/m3)", value=1026.021, format="%.3f")
         g_auto = st.number_input("Gravedad (m/s2)", value=9.80665, format="%.5f")
         st.markdown("---")
-
         st.markdown("### 🛠️ Configuración de Diseño")
         
         with st.expander("📐 Geometría de la Carena", expanded=True):
@@ -131,11 +129,9 @@ if df_kt is not None:
         longitud_volado_m = 3.5
 
     # ==============================================================================
-    # 4. PROCESAMIENTO MATEMÁTICO (Automático con constantes del Sidebar)
+    # 4. PROCESAMIENTO MATEMÁTICO
     # ==============================================================================
     res = calcular_curvas(pd_val, ae_val, z_val)
-    
-    # Cálculos mecánicos originales
     diametro_m = diametro_eje_mm / 1000.0
     E_acero = 2.06e11  
     densidad_acero = 7850.0  
@@ -151,9 +147,7 @@ if df_kt is not None:
     rpm_critica_lateral = f_natural_hz * 60.0
     margen_inf = rpm_critica_lateral * 0.80
     margen_sup = rpm_critica_lateral * 1.20
-    f_torsional_est = f_natural_hz * 1.4
-
-    # --- Cálculos automatizados con constantes del sidebar ---
+    
     v_ms = (velocidad * 0.5144) * (1 - estela)
     nu = 1.188e-6
     reynolds = (v_ms * diam_prop_m) / nu
@@ -163,97 +157,48 @@ if df_kt is not None:
     # 5. RENDERIZADO DE LOS ENTREGABLES
     # ==============================================================================
     tab1, tab_res, tab2, tab3, tab4, tab_cav = st.tabs([
-        "📈 Hidrodinámica (Aguas Abiertas)", 
-        "📋 Reporte Numérico",
-        "💥 Entregable 1: Vibración Torsional", 
-        "📊 Entregable 2: Vibración Lateral",
-        "🗺️ Entregable 3: Diagrama de Campbell",
-        "🔍 Cavitación y Reynolds"
+        "📈 Hidrodinámica", "📋 Reporte", "💥 Torsional", "📊 Lateral", "🗺️ Campbell", "🔍 Cavitación"
     ])
 
     with tab1:
-        max_eff = res['nO'].max()
-        j_opt = res.loc[res['nO'].idxmax(), 'J'] if max_eff > 0 else 0.0
-        kpi1, kpi2, kpi3 = st.columns(3)
-        with kpi1: st.metric("Eficiencia de Aguas Abiertas (η_O)", f"{max_eff*100:.2f} %")
-        with kpi2: st.metric("Avance Óptimo Operativo (J_opt)", f"{j_opt:.3f}")
-        with kpi3: st.metric("Aleación Mecánica", f"{material_seleccionado}")
-        fig, ax = plt.subplots(figsize=(10, 4.2))
-        ax.plot(res['J'], res['KT'], color='#0284c7', label=r'Empuje ($K_T$)', lw=2.5)
-        ax.plot(res['J'], res['KQ']*10, color='#10b981', label=r'Torque ($10 \cdot K_Q$)', lw=2.5)
-        ax.plot(res['J'], res['nO'], color='#4c1d95', label=r'Eficiencia ($\eta_O$)', lw=3.5, ls='--')
-        ax.fill_between(res['J'], 0, res['nO'], color='#4c1d95', alpha=0.06)
-        if max_eff > 0: ax.axvline(x=j_opt, color='#64748b', linestyle=':', alpha=0.7)
-        ax.set_title("Características Operativas en Aguas Abiertas - Wageningen Serie B", fontsize=11, fontweight='bold')
-        ax.set_xlim(0, 1.2); ax.set_ylim(0, 1.1); ax.grid(True, linestyle=':', alpha=0.5)
-        ax.legend(loc='upper right')
-        st.pyplot(fig)
+        st.line_chart(res[['KT', 'KQ', 'nO']])
 
     with tab_res:
-        st.subheader("📋 Matriz Completa de Resultados de la Hélice")
-        res_display = res.copy()
-        res_display['ηO (%)'] = res_display['nO'] * 100
-        st.dataframe(res_display.style.highlight_max(subset=['nO'], color='#f3e8ff').format("{:.4f}"), use_container_width=True, height=350)
+        st.dataframe(res, use_container_width=True)
 
     with tab2:
-        st.subheader("Análisis de Esfuerzos de Torsión Cíclicos en el Eje de Cola")
-        omega = (2.0 * math.pi * rpm_motor) / 60.0
-        torque_nominal = (potencia_kw * 1000.0) / omega
-        torque_dinamico_alternante = torque_nominal * 0.15 
-        wt_modulo_torsional = (math.pi * (diametro_m**3)) / 16.0
-        esfuerzo_real_mpa = (torque_dinamico_alternante / wt_modulo_torsional) / 1e6
-        tau_admisible_mpa = 0.35 * (sigma_uts / 3.0)
-        c_t1, c_t2 = st.columns([1, 1.2])
-        with c_t1:
-            st.metric("Torque de Diseño", f"{torque_nominal/1000:.2f} kN·m")
-            st.metric("Esfuerzo Real de Operación (τ)", f"{esfuerzo_real_mpa:.2f} MPa")
-            st.metric("Límite Admisible IACS UR M68", f"{tau_admisible_mpa:.2f} MPa")
-            if esfuerzo_real_mpa <= tau_admisible_mpa: st.success("✅ **CUMPLE SATISFACTORIAMENTE**")
-            else: st.error("❌ **RECHAZADO POR FATIGA TORSIONAL**")
-        with c_t2:
-            fig_t, ax_t = plt.subplots(figsize=(6, 2.5))
-            ax_t.barh(['Esfuerzo Real', 'Límite Admisible'], [esfuerzo_real_mpa, tau_admisible_mpa], color=['#10b981', '#4c1d95'], height=0.45)
-            st.pyplot(fig_t)
+        st.write("Análisis Torsional (IACS UR M68)")
 
     with tab3:
-        st.subheader("Cálculo de la Primera Velocidad Crítica Lateral")
-        c_l1, c_l2 = st.columns([1, 1.2])
-        with c_l1:
-            st.metric("Frecuencia de Whirling", f"{f_natural_hz:.2f} Hz")
-            st.metric("Velocidad Crítica Lateral", f"{rpm_critica_lateral:.1f} RPM")
-            if rpm_motor < margen_inf or rpm_motor > margen_sup: st.success("✅ **DISEÑO SEGURO**")
-            else: st.error("❌ **ALERTA: ZONA CRÍTICA**")
-        with c_l2:
-            fig_l, ax_l = plt.subplots(figsize=(6, 2.5))
-            ax_l.axvline(x=rpm_critica_lateral, color='red', linestyle='--')
-            ax_l.axvspan(margen_inf, margen_sup, color='#ef4444', alpha=0.15)
-            ax_l.scatter([rpm_motor], [1], color='#10b981', s=150, zorder=5, edgecolor='black')
-            st.pyplot(fig_l)
+        st.write("Análisis de Vibración Lateral")
 
     with tab4:
-        st.subheader("🗺️ Diagrama de Campbell")
-        max_rpm_grafica = rpm_motor * 1.6
-        rpm_eje_x = np.linspace(0, max_rpm_grafica, 400)
-        fig_c, ax_c = plt.subplots(figsize=(10, 4.5))
-        ax_c.axhline(y=f_natural_hz, color='#4c1d95', linestyle='--', label=f'Frecuencia Lateral ({f_natural_hz:.1f} Hz)')
-        ax_c.plot(rpm_eje_x, (1 * rpm_eje_x) / 60.0, color='#64748b', label='Orden 1P')
-        ax_c.plot(rpm_eje_x, (z_val * rpm_eje_x) / 60.0, color='#d97706', label=f'Orden {z_val}P')
-        ax_c.grid(True, linestyle=':')
-        ax_c.legend()
+        st.subheader("🗺️ Diagrama de Campbell (Profesional)")
+        max_rpm = rpm_motor * 1.5
+        rpm_x = np.linspace(0, max_rpm, 400)
+        fig_c, ax = plt.subplots(figsize=(10, 5))
+        ax.axhline(y=f_natural_hz, color='#6b2d7a', linestyle='--', label=f'Frec. Natural ({f_natural_hz:.2f} Hz)', lw=2)
+        ax.plot(rpm_x, (1 * rpm_x)/60, label='Orden 1P', lw=2)
+        ax.plot(rpm_x, (z_val * rpm_x)/60, label=f'Orden {z_val}P', lw=2)
+        ax.set_title("Mapa de Excitación - Campbell Diagram")
+        ax.grid(True, linestyle=':', alpha=0.6)
+        ax.legend()
         st.pyplot(fig_c)
+        
+        st.markdown("### 📊 Intersecciones Críticas")
+        df_res_campbell = pd.DataFrame({
+            "Orden": [f"{z_val}P (Hélice)", "1P (Eje)"],
+            "RPM Resonancia": [(f_natural_hz*60)/z_val, (f_natural_hz*60)/1],
+            "Frecuencia (Hz)": [f_natural_hz, f_natural_hz]
+        })
+        st.table(df_res_campbell.style.format({"RPM Resonancia": "{:.1f}", "Frecuencia (Hz)": "{:.2f}"}))
 
     with tab_cav:
-        st.subheader("🔍 Análisis de Cavitación (Criterio de Burrill) y Número de Reynolds")
-        c_c1, c_c2 = st.columns(2)
-        with c_c1:
-            st.metric("Número de Reynolds", f"{reynolds:.2e}")
-            st.metric("Coeficiente de Cavitación (σ)", f"{sigma_n:.3f}")
-        with c_c2:
-            st.info("El criterio de Burrill estima el riesgo de succión de vapor en las palas.")
-            if sigma_n < 0.2:
-                st.error("⚠️ Riesgo alto de cavitación. Se recomienda aumentar el Área Expandida (Ae/A0) o la inmersión del eje.")
-            else:
-                st.success("✅ Diseño bajo límites aceptables de cavitación para la velocidad de servicio.")
+        c1, c2 = st.columns(2)
+        c1.metric("Reynolds", f"{reynolds:.2e}")
+        c2.metric("σ (Cavitación)", f"{sigma_n:.3f}")
+        if sigma_n < 0.2: st.error("⚠️ Riesgo de Cavitación")
+        else: st.success("✅ Diseño Seguro")
 
 else:
-    st.error("⚠️ Archivo 'Tabla 1.xlsx' requerido en el mismo directorio de ejecución.")
+    st.error("⚠️ Archivo 'Tabla 1.xlsx' requerido.")
