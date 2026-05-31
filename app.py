@@ -75,8 +75,15 @@ def calcular_curvas(pd_v, ae_v, z_v):
 # ==============================================================================
 # 3. INTERFAZ DE USUARIO E INPUTS
 # ==============================================================================
-st.markdown('<div class="main-title">🚢 Propulsion & Shafting Dynamics Suite</div>', unsafe_allow_html=True)
-st.markdown('<div class="main-subtitle">Análisis Hidrodinámico y Vibratorio Estructural del Eje de Cola — Equipo 4 | Universidad Veracruzana</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="main-title">⚓ Universal Ship Propulsion & Shafting Analysis Suite</div>',
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    '<div class="main-subtitle">Plataforma Universal para Análisis Hidrodinámico, Cavitación, Vibraciones y Cumplimiento de Sistemas Propulsivos Navales</div>',
+    unsafe_allow_html=True
+)
 
 if df_kt is not None:
     with st.sidebar:
