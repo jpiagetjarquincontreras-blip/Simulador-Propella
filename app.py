@@ -550,9 +550,13 @@ desbalance_ok = riesgo_desbalance != "Alto"
 
 
 def clasificar_riesgo_por_separacion(separacion_pct):
-    if separacion_pct < 10:
+    # Criterio didáctico más realista:
+    # Alto: muy cerca de resonancia (<5%).
+    # Medio: zona de precaución (5% a 12%).
+    # Bajo: separación suficiente (>12%).
+    if separacion_pct < 5:
         return "Alto"
-    if separacion_pct < 20:
+    if separacion_pct < 12:
         return "Medio"
     return "Bajo"
 
@@ -1173,8 +1177,10 @@ with tab_axial:
     a3.metric("Rigidez axial equivalente", f"{rigidez_axial_equivalente_n_m/1e9:.2f} GN/m")
     a4.metric("Desplazamiento axial est.", f"{desplazamiento_axial_est_m*1000:.4f} mm")
 
-    if axial_ok:
+    if riesgo_axial_global == "Bajo":
         estado_html(f"✅ Condición axial aceptable: riesgo global {riesgo_axial_global}.", "good")
+    elif riesgo_axial_global == "Medio":
+        estado_html(f"⚠️ Condición axial en zona de precaución: riesgo global {riesgo_axial_global}. No se considera falla, pero conviene revisarlo.", "warn")
     else:
         estado_html(f"❌ Revisar diseño: existe al menos una excitación axial con riesgo {riesgo_axial_global}.", "bad")
 
@@ -1524,6 +1530,91 @@ with tab_cav:
     si el flujo alrededor de la hélice está dentro de un régimen representativo para análisis
     hidrodinámico naval.
     """)
+
+# ==============================================================================
+# NORMATIVA APLICABLE
+# ==============================================================================
+
+with tab_normativa:
+    st.subheader("📚 Normativa aplicable al sistema de eje y vibraciones")
+
+    st.markdown("""
+    <div class="section-card">
+    Esta sección reúne las normas y guías relacionadas con el sistema de eje propulsor,
+    vibraciones, alineación, materiales, inspección y criterios de aceptación preliminar.
+    Se usan como referencia didáctica; para un proyecto real se debe consultar la edición
+    vigente de la sociedad clasificadora correspondiente.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 🧾 Resumen de normas y criterios")
+
+    normativa_df = pd.DataFrame({
+        "Norma / Sociedad": [
+            "ABS",
+            "DNV",
+            "Bureau Veritas",
+            "Lloyd's Register",
+            "ISO 10816 / ISO 20816",
+            "ISO 1940",
+            "SOLAS"
+        ],
+        "Aplicación en la app": [
+            "Sistema de eje, materiales, inspección, arreglo de eje y revisión de esfuerzos.",
+            "Dimensionamiento de ejes, vibración torsional, alineación y cargas en cojinetes.",
+            "Criterios de arreglo de propulsión, eje de cola, bocina y chumaceras.",
+            "Revisión de shafting, aceptación de maquinaria y vibraciones en servicio.",
+            "Evaluación general de vibración mecánica medida en máquinas rotativas.",
+            "Balanceo de rotores rígidos y calidad de balanceo.",
+            "Seguridad de maquinaria propulsora y continuidad operacional del buque."
+        ],
+        "Relación con resultados": [
+            "Comparación de esfuerzo torsional y recomendaciones de diseño.",
+            "Campbell, resonancia, torsión, alineación y velocidad crítica.",
+            "Geometría del eje, apoyos, bocina y chumaceras.",
+            "Criterios de aceptación de vibraciones y monitoreo.",
+            "Medición de vibración axial, lateral y torsional.",
+            "Pestaña de balanceo y desbalance del eje.",
+            "Marco general de seguridad y confiabilidad del sistema propulsor."
+        ]
+    })
+
+    st.dataframe(normativa_df, use_container_width=True, height=330)
+
+    st.markdown("### ⚙️ Cómo se conecta con la aplicación")
+    col_n1, col_n2 = st.columns(2)
+
+    with col_n1:
+        st.markdown("""
+        **Cálculos directamente relacionados:**
+
+        - Esfuerzo torsional del eje.
+        - Frecuencia lateral o whirling.
+        - Frecuencia axial natural.
+        - Diagrama de Campbell.
+        - Desbalance dinámico.
+        - Cavitación y condiciones hidrodinámicas.
+        """)
+
+    with col_n2:
+        st.markdown("""
+        **Lo que debe revisarse en un diseño real:**
+
+        - Diámetro mínimo del eje según clase.
+        - Material y esfuerzo admisible.
+        - Cargas en chumaceras y bocina.
+        - Alineación del eje.
+        - Resonancias dentro del rango de operación.
+        - Balanceo de hélice y eje.
+        """)
+
+    st.markdown("### 📌 Nota para presentación")
+    st.info(
+        "La app no sustituye una aprobación de clase. Funciona como una herramienta "
+        "preliminar para visualizar parámetros críticos del sistema propulsivo y justificar "
+        "decisiones de diseño antes de un análisis formal con ABS, DNV, BV o LR."
+    )
+
 
 # ==============================================================================
 # CLASE / CUMPLIMIENTO
