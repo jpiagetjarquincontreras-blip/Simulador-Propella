@@ -501,6 +501,91 @@ margen_inf = rpm_critica_lateral * 0.80
 margen_sup = rpm_critica_lateral * 1.20
 f_torsional_est = f_natural_hz * 1.4
 
+# ==============================================================================
+# CÁLCULO PRELIMINAR DE VIBRACIÓN AXIAL
+# ==============================================================================
+# La vibración axial se asocia a fluctuaciones periódicas del empuje de la hélice.
+# Para una revisión didáctica, se modela el sistema como una masa equivalente axial
+# conectada a una rigidez axial equivalente del eje y del cojinete de empuje.
+# El objetivo es comparar la frecuencia natural axial contra las excitaciones kZP.
+
+longitud_eje_axial_m = max(eslora * 0.18, 8.0)
+masa_eje_axial_kg = peso_lineal_eje * longitud_eje_axial_m
+masa_equivalente_axial_kg = max(peso_helice_kg + 0.35 * masa_eje_axial_kg, 1.0)
+rigidez_axial_eje_n_m = safe_div(E_acero * area_eje, longitud_eje_axial_m, default=1e9)
+rigidez_cojinete_empuje_n_m = 3.0e9
+rigidez_axial_equivalente_n_m = 1.0 / ((1.0 / rigidez_axial_eje_n_m) + (1.0 / rigidez_cojinete_empuje_n_m))
+f_axial_natural_hz = (1.0 / (2.0 * math.pi)) * math.sqrt(rigidez_axial_equivalente_n_m / masa_equivalente_axial_kg)
+rpm_critica_axial_zp = safe_div(f_axial_natural_hz * 60.0, z_val, default=0.0)
+
+# Empuje preliminar a partir de la potencia efectiva al avance.
+# Se usa como indicador didáctico, no como cálculo final de hélice.
+velocidad_buque_ms = velocidad * 0.5144
+empuje_estimado_n = safe_div(potencia_kw * 1000.0 * max(eta_r, 0.01), max(velocidad_buque_ms, 0.1))
+amplitud_empuje_axial_n = 0.08 * empuje_estimado_n
+desplazamiento_axial_est_m = safe_div(amplitud_empuje_axial_n, rigidez_axial_equivalente_n_m)
+
+
+def clasificar_riesgo_por_separacion(separacion_pct):
+    if separacion_pct < 10:
+        return "Alto"
+    if separacion_pct < 20:
+        return "Medio"
+    return "Bajo"
+
+
+def construir_tabla_axial():
+    filas = []
+    rev_s = rpm_motor / 60.0
+    ordenes = [("1P", 1), ("ZP", z_val), ("2ZP", 2 * z_val), ("3ZP", 3 * z_val)]
+    for nombre, mult in ordenes:
+        f_exc = mult * rev_s
+        separacion = abs(f_axial_natural_hz - f_exc)
+        separacion_pct = safe_div(separacion, max(f_axial_natural_hz, 1e-9)) * 100.0
+        filas.append({
+            "Orden de excitación": nombre,
+            "Multiplicador": mult,
+            "Frecuencia excitante [Hz]": f_exc,
+            "Frecuencia natural axial [Hz]": f_axial_natural_hz,
+            "Separación [%]": separacion_pct,
+            "Riesgo axial": clasificar_riesgo_por_separacion(separacion_pct)
+        })
+    return pd.DataFrame(filas)
+
+axial_df = construir_tabla_axial()
+axial_ok = not (axial_df["Riesgo axial"] == "Alto").any()
+riesgo_axial_global = "Alto" if (axial_df["Riesgo axial"] == "Alto").any() else ("Medio" if (axial_df["Riesgo axial"] == "Medio").any() else "Bajo")
+
+
+def construir_tabla_campbell():
+    filas = []
+    ordenes = [("1P", 1), ("2P", 2), ("3P", 3), ("4P", 4), ("5P", 5), ("ZP", z_val), ("2ZP", 2 * z_val), ("3ZP", 3 * z_val)]
+    modos = [
+        ("Lateral / whirling", f_natural_hz),
+        ("Torsional estimada", f_torsional_est),
+        ("Axial", f_axial_natural_hz),
+    ]
+    for nombre_orden, mult in ordenes:
+        if mult <= 0:
+            continue
+        for modo, freq in modos:
+            rpm_cruce = safe_div(freq * 60.0, mult, default=0.0)
+            diferencia = abs(rpm_motor - rpm_cruce)
+            separacion_pct = safe_div(diferencia, max(rpm_motor, 1e-9)) * 100.0
+            riesgo = clasificar_riesgo_por_separacion(separacion_pct)
+            filas.append({
+                "Orden": nombre_orden,
+                "Modo natural": modo,
+                "Frecuencia natural [Hz]": freq,
+                "RPM de intersección": rpm_cruce,
+                "RPM operación": rpm_motor,
+                "Separación [%]": separacion_pct,
+                "Riesgo": riesgo
+            })
+    return pd.DataFrame(filas)
+
+campbell_df = construir_tabla_campbell()
+
 v_ms = (velocidad * 0.5144) * (1.0 - estela)
 nu = 1.188e-6
 reynolds = safe_div(v_ms * diam_prop_m, nu)
@@ -524,12 +609,15 @@ cavitacion_ok = sigma_n >= 0.20
 reynolds_ok = reynolds > 1e7
 hidro_ok = max_eff > 0.40
 
-# Score global ponderado
+# Score global ponderado actualizado para Equipo 4:
+# se incluye axial porque la asignación pide vibración del eje completa
+# en sus componentes torsional, lateral y axial.
 score = 0
-score += 25 if torsion_ok else 0
-score += 25 if lateral_ok else 0
-score += 20 if cavitacion_ok else 0
-score += 15 if reynolds_ok else 0
+score += 20 if torsion_ok else 0
+score += 20 if lateral_ok else 0
+score += 20 if axial_ok else 0
+score += 15 if cavitacion_ok else 0
+score += 10 if reynolds_ok else 0
 score += 15 if hidro_ok else 0
 
 dictamen, dictamen_tipo, dictamen_icono = diagnostico_score(score)
@@ -557,6 +645,8 @@ if not cavitacion_ok:
     recomendaciones.append("Aumentar Ae/A0, incrementar inmersión del eje o reducir carga de la hélice para mitigar cavitación.")
 if not lateral_ok:
     recomendaciones.append("Modificar diámetro del eje, longitud en voladizo, apoyos o régimen de operación para alejarse de la velocidad crítica lateral.")
+if not axial_ok:
+    recomendaciones.append("Revisar vibración axial: separar la frecuencia natural axial de las excitaciones 1P, ZP, 2ZP y 3ZP; aumentar rigidez axial o modificar RPM de operación.")
 if not torsion_ok:
     recomendaciones.append("Aumentar diámetro del eje, cambiar material o revisar excitaciones torsionales del sistema propulsivo.")
 if max_eff < 0.45:
@@ -595,6 +685,9 @@ def construir_resumen_dataframe():
             "Límite admisible [MPa]",
             "Frecuencia lateral [Hz]",
             "RPM crítica lateral",
+            "Frecuencia axial [Hz]",
+            "RPM crítica axial ZP",
+            "Riesgo axial global",
             "Score global [%]",
             "Dictamen"
         ],
@@ -623,6 +716,9 @@ def construir_resumen_dataframe():
             tau_admisible_mpa,
             f_natural_hz,
             rpm_critica_lateral,
+            f_axial_natural_hz,
+            rpm_critica_axial_zp,
+            riesgo_axial_global,
             score,
             dictamen
         ]
@@ -644,17 +740,21 @@ def generar_excel():
                 "Reynolds",
                 "Cavitación",
                 "Vibración torsional",
-                "Vibración lateral"
+                "Vibración lateral",
+                "Vibración axial"
             ],
             "Resultado": [
                 "Cumple" if hidro_ok else "Observación",
                 "Cumple" if reynolds_ok else "Observación",
                 "Cumple" if cavitacion_ok else "No cumple",
                 "Cumple" if torsion_ok else "No cumple",
-                "Cumple" if lateral_ok else "No cumple"
+                "Cumple" if lateral_ok else "No cumple",
+                "Cumple" if axial_ok else "No cumple"
             ]
         })
         cumplimiento.to_excel(writer, sheet_name="Cumplimiento", index=False)
+        axial_df.to_excel(writer, sheet_name="Vibracion_Axial", index=False)
+        campbell_df.to_excel(writer, sheet_name="Campbell", index=False)
 
     output.seek(0)
     return output
@@ -730,12 +830,13 @@ def generar_pdf():
 # TABS
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📈 Hidrodinámica",
     "📋 Resultados",
     "💥 Torsional",
+    "↔️ Axial",
     "📊 Lateral",
     "🗺️ Campbell",
     "🔍 Cavitación",
@@ -756,7 +857,7 @@ with tab_dash:
     <div class="section-card">
     Este panel resume el estado general del sistema propulsivo analizado.
     Los indicadores combinan desempeño hidrodinámico, vibración torsional,
-    vibración lateral, cavitación, régimen de Reynolds y consistencia geométrica.
+    vibración axial, vibración lateral, cavitación, régimen de Reynolds y consistencia geométrica.
     </div>
     """, unsafe_allow_html=True)
 
@@ -771,12 +872,14 @@ with tab_dash:
     st.progress(score / 100)
     estado_html(f"{dictamen_icono} {dictamen} — Cumplimiento global estimado: {score:.0f}%", dictamen_tipo)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         estado_html("✅ Torsión aceptable" if torsion_ok else "❌ Torsión fuera de límite", "good" if torsion_ok else "bad")
     with c2:
-        estado_html("✅ Lateral seguro" if lateral_ok else "❌ Riesgo de velocidad crítica", "good" if lateral_ok else "bad")
+        estado_html("✅ Axial aceptable" if axial_ok else "❌ Riesgo axial", "good" if axial_ok else "bad")
     with c3:
+        estado_html("✅ Lateral seguro" if lateral_ok else "❌ Riesgo de velocidad crítica", "good" if lateral_ok else "bad")
+    with c4:
         estado_html("✅ Cavitación aceptable" if cavitacion_ok else "⚠️ Riesgo de cavitación", "good" if cavitacion_ok else "warn")
 
     st.markdown("### Observaciones automáticas")
@@ -987,6 +1090,106 @@ with tab_torsion:
         st.pyplot(fig_t)
 
 # ==============================================================================
+# AXIAL
+# ==============================================================================
+
+with tab_axial:
+    st.subheader("↔️ Análisis de Vibración Axial")
+
+    st.markdown("""
+    <div class="section-card">
+    La vibración axial corresponde al movimiento longitudinal del eje propulsor.
+    En buques, suele estar asociada a fluctuaciones del empuje de la hélice y a la
+    interacción hélice-casco. Para el Equipo 4, esta sección completa el análisis de
+    vibración del eje junto con la parte torsional y lateral.
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("📘 Base teórica de vibración axial", expanded=True):
+        st.markdown("""
+        La hélice no entrega un empuje perfectamente constante. Al girar detrás del casco,
+        cada pala entra en zonas de estela diferente, por lo que el empuje puede fluctuar.
+        Esa fluctuación genera una fuerza alternante en dirección longitudinal del eje.
+
+        En análisis preliminar, la vibración axial puede estudiarse como un sistema
+        **masa-resorte**, donde la masa equivalente incluye hélice y parte del eje, y la
+        rigidez axial representa la rigidez del eje más la rigidez del cojinete de empuje.
+
+        Las excitaciones más importantes se revisan por órdenes:
+        - **1P:** una excitación por revolución del eje.
+        - **ZP:** frecuencia de paso de pala, donde Z es el número de palas.
+        - **2ZP y 3ZP:** armónicos superiores del paso de pala.
+        """)
+
+    with st.expander("🧮 Fórmulas de vibración axial usadas", expanded=True):
+        st.latex(r"k_{eje}=\frac{EA}{L}")
+        st.latex(r"k_{eq}=\left(\frac{1}{k_{eje}}+\frac{1}{k_{cojinete}}\right)^{-1}")
+        st.latex(r"m_{eq}=m_{helice}+0.35m_{eje}")
+        st.latex(r"f_{n,axial}=\frac{1}{2\pi}\sqrt{\frac{k_{eq}}{m_{eq}}}")
+        st.latex(r"f_{exc}=k\frac{n}{60}")
+        st.latex(r"f_{ZP}=Z\frac{n}{60}")
+        st.latex(r"x_{axial}=\frac{F_{alt}}{k_{eq}}")
+        st.markdown("""
+        Donde **E** es el módulo de elasticidad, **A** es el área transversal del eje,
+        **L** es la longitud axial equivalente, **Z** es el número de palas y **n** es la RPM.
+        """)
+
+    a1, a2, a3, a4 = st.columns(4)
+    a1.metric("Frecuencia natural axial", f"{f_axial_natural_hz:.2f} Hz")
+    a2.metric("RPM crítica axial ZP", f"{rpm_critica_axial_zp:.1f} rpm")
+    a3.metric("Rigidez axial equivalente", f"{rigidez_axial_equivalente_n_m/1e9:.2f} GN/m")
+    a4.metric("Desplazamiento axial est.", f"{desplazamiento_axial_est_m*1000:.4f} mm")
+
+    if axial_ok:
+        estado_html(f"✅ Condición axial aceptable: riesgo global {riesgo_axial_global}.", "good")
+    else:
+        estado_html(f"❌ Revisar diseño: existe al menos una excitación axial con riesgo {riesgo_axial_global}.", "bad")
+
+    st.markdown("### 📋 Tabla de órdenes axiales")
+
+    def color_riesgo_axial(val):
+        if val == "Bajo":
+            return "background-color: #dcfce7; color: #166534; font-weight: bold"
+        if val == "Medio":
+            return "background-color: #fef3c7; color: #92400e; font-weight: bold"
+        return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
+
+    st.dataframe(
+        axial_df.style
+        .format({
+            "Frecuencia excitante [Hz]": "{:.3f}",
+            "Frecuencia natural axial [Hz]": "{:.3f}",
+            "Separación [%]": "{:.2f}"
+        })
+        .map(color_riesgo_axial, subset=["Riesgo axial"]),
+        use_container_width=True,
+        height=230
+    )
+
+    st.markdown("### 📈 Excitaciones axiales vs frecuencia natural")
+    fig_a, ax_a = plt.subplots(figsize=(10, 4.5))
+    ordenes_plot = axial_df["Orden de excitación"].tolist()
+    frec_plot = axial_df["Frecuencia excitante [Hz]"].tolist()
+    ax_a.bar(ordenes_plot, frec_plot, label="Frecuencia excitante")
+    ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.4, label="Frecuencia natural axial")
+    ax_a.set_ylabel("Frecuencia [Hz]")
+    ax_a.set_title("Comparación de excitaciones axiales")
+    ax_a.grid(True, axis="y", linestyle=":", alpha=0.6)
+    ax_a.legend()
+    st.pyplot(fig_a)
+
+    st.markdown("### 🧰 Instrumentación recomendada")
+    st.markdown("""
+    Para medir o validar vibración axial en un sistema real se pueden usar:
+
+    - **Acelerómetro axial** sobre chumaceras o carcasa del cojinete de empuje.
+    - **Sensor de proximidad axial** para medir desplazamiento longitudinal del eje.
+    - **Tacómetro** para sincronizar la señal con la RPM del eje.
+    - **Galgas extensométricas** para estimar esfuerzo alternante en el eje.
+    - **Monitoreo FFT** para identificar picos en 1P, ZP, 2ZP y 3ZP.
+    """)
+
+# ==============================================================================
 # LATERAL
 # ==============================================================================
 
@@ -1061,104 +1264,67 @@ with tab_campbell:
 
     st.markdown("""
     <div class="section-card">
-    El diagrama de Campbell compara las frecuencias de excitación generadas por la rotación
-    del eje y la hélice con las frecuencias naturales del sistema. Los cruces entre líneas
-    de orden y frecuencias naturales indican posibles zonas de resonancia.
+    El diagrama de Campbell compara las frecuencias naturales del sistema contra las
+    frecuencias de excitación producidas por el giro del eje y por el paso de palas.
+    En esta versión se incluyen los órdenes **1P, 2P, 3P, ZP, 2ZP y 3ZP**, además de los
+    modos lateral, torsional estimado y axial.
     </div>
     """, unsafe_allow_html=True)
 
-    max_rpm_grafica = max(rpm_motor * 1.8, rpm_critica_lateral * 1.2)
+    max_rpm_grafica = max(rpm_motor * 2.0, rpm_critica_lateral * 1.25, rpm_critica_axial_zp * 1.35, 120)
     rpm_x = np.linspace(0, max_rpm_grafica, 500)
 
-    fig_c, ax_c = plt.subplots(figsize=(11, 5.4))
+    fig_c, ax_c = plt.subplots(figsize=(11, 5.6))
 
-    ax_c.axhline(y=f_natural_hz, linestyle="--", linewidth=2.4, label=f"Frecuencia lateral = {f_natural_hz:.2f} Hz")
-    ax_c.axhline(y=f_torsional_est, linestyle="-.", linewidth=2.0, label=f"Frecuencia torsional est. = {f_torsional_est:.2f} Hz")
+    ax_c.axhline(y=f_natural_hz, linestyle="--", linewidth=2.4, label=f"Modo lateral = {f_natural_hz:.2f} Hz")
+    ax_c.axhline(y=f_torsional_est, linestyle="-.", linewidth=2.0, label=f"Modo torsional est. = {f_torsional_est:.2f} Hz")
+    ax_c.axhline(y=f_axial_natural_hz, linestyle=":", linewidth=3.0, label=f"Modo axial = {f_axial_natural_hz:.2f} Hz")
 
-    for orden in range(1, 6):
-        ax_c.plot(rpm_x, orden * rpm_x / 60.0, linewidth=1.6, label=f"{orden}P")
+    ordenes_campbell = [("1P", 1), ("2P", 2), ("3P", 3), ("ZP", z_val), ("2ZP", 2 * z_val), ("3ZP", 3 * z_val)]
+    for nombre, mult in ordenes_campbell:
+        ax_c.plot(rpm_x, mult * rpm_x / 60.0, linewidth=1.7, label=nombre)
 
-    ax_c.plot(rpm_x, z_val * rpm_x / 60.0, linewidth=3.0, label=f"{z_val}P — paso de pala")
-
-    ax_c.axvline(x=rpm_motor, linestyle=":", linewidth=2.4, label=f"RPM operación = {rpm_motor:.0f}")
+    ax_c.axvline(x=rpm_motor, linestyle="-", linewidth=2.4, label=f"RPM operación = {rpm_motor:.0f}")
     ax_c.set_xlabel("Velocidad de giro [rpm]")
     ax_c.set_ylabel("Frecuencia [Hz]")
-    ax_c.set_title("Diagrama de Campbell — órdenes de excitación y frecuencias naturales")
+    ax_c.set_title("Diagrama de Campbell — órdenes 1P/ZP y modos naturales")
     ax_c.grid(True, linestyle=":", alpha=0.62)
-    ax_c.legend(loc="upper left", fontsize=8)
+    ax_c.legend(loc="upper left", fontsize=8, ncols=2)
     st.pyplot(fig_c)
 
-    st.markdown("### 📋 Tabla de intersecciones e interpretación")
+    st.markdown("### 📋 Tabla de resonancias e intersecciones")
     st.markdown("""
-    La tabla siguiente calcula dónde se cruzaría cada orden de excitación con las frecuencias
-    naturales mostradas en el diagrama. Cuando una intersección cae cerca de la RPM de operación,
-    se considera una posible zona de resonancia que debería revisarse con mayor detalle.
+    La tabla calcula en qué RPM se cruzaría cada orden de excitación con cada modo natural.
+    Si la intersección queda cerca de la RPM de operación, aumenta el riesgo de resonancia.
     """)
 
-    intersecciones = []
-    ordenes_para_tabla = [(f"{i}P", i) for i in range(1, 6)]
-    ordenes_para_tabla.append((f"{z_val}P — paso de pala", z_val))
-
-    for nombre_orden, multiplicador in ordenes_para_tabla:
-        if multiplicador <= 0:
-            continue
-
-        rpm_cruce_lateral = (f_natural_hz * 60.0) / multiplicador
-        rpm_cruce_torsional = (f_torsional_est * 60.0) / multiplicador
-
-        for modo, freq, rpm_cruce in [
-            ("Frecuencia lateral / whirling", f_natural_hz, rpm_cruce_lateral),
-            ("Frecuencia torsional estimada", f_torsional_est, rpm_cruce_torsional),
-        ]:
-            diferencia = abs(rpm_motor - rpm_cruce)
-            porcentaje = (diferencia / rpm_motor * 100.0) if rpm_motor > 0 else 0.0
-
-            if porcentaje <= 10:
-                riesgo = "⚠ Revisar resonancia potencial"
-            elif porcentaje <= 20:
-                riesgo = "Precaución: revisar margen"
-            else:
-                riesgo = "Seguro: cruce alejado"
-
-            intersecciones.append({
-                "Orden": nombre_orden,
-                "Modo evaluado": modo,
-                "Frecuencia natural [Hz]": round(freq, 3),
-                "RPM de intersección": round(rpm_cruce, 1),
-                "RPM operación": round(rpm_motor, 1),
-                "Diferencia [%]": round(porcentaje, 1),
-                "Interpretación": riesgo,
-            })
-
-    tabla_intersecciones = pd.DataFrame(intersecciones)
-
-    def color_interpretacion(val):
-        if isinstance(val, str) and val.startswith("Alto"):
-            return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
-        if isinstance(val, str) and val.startswith("Precaución"):
+    def color_riesgo_campbell(val):
+        if val == "Bajo":
+            return "background-color: #dcfce7; color: #166534; font-weight: bold"
+        if val == "Medio":
             return "background-color: #fef3c7; color: #92400e; font-weight: bold"
-        return "background-color: #dcfce7; color: #166534; font-weight: bold"
+        return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
 
     st.dataframe(
-        tabla_intersecciones.style.map(color_interpretacion, subset=["Interpretación"]),
+        campbell_df.style
+        .format({
+            "Frecuencia natural [Hz]": "{:.3f}",
+            "RPM de intersección": "{:.2f}",
+            "RPM operación": "{:.2f}",
+            "Separación [%]": "{:.2f}"
+        })
+        .map(color_riesgo_campbell, subset=["Riesgo"]),
         use_container_width=True,
-        hide_index=True,
-        height=420
+        height=460
     )
 
-    with st.expander("📘 Cómo leer la tabla de Campbell", expanded=False):
-        st.markdown("""
-        - **Orden 1P, 2P, 3P...:** son excitaciones proporcionales a la velocidad de giro del eje.
-        - **ZP o paso de pala:** corresponde al número de palas multiplicado por la velocidad de giro.
-        - **RPM de intersección:** velocidad a la que ese orden igualaría una frecuencia natural.
-        - **Diferencia [%]:** distancia entre la RPM de operación y la RPM de intersección.
-        - Si la diferencia es pequeña, existe mayor posibilidad de resonancia y debería definirse una
-          zona de operación restringida o validarse con análisis torsional/lateral más completo.
-        """)
-        st.latex(r"f_{orden}=k\frac{n}{60}")
-        st.latex(r"f_{kZ}=k\frac{Zn}{60}")
-
-
+    st.markdown("### 🧾 Lectura rápida")
+    st.markdown(f"""
+    - **1P** representa una excitación por cada vuelta del eje.
+    - **ZP** representa el paso de pala: con **Z = {z_val} palas**, la excitación principal ocurre {z_val} veces por revolución.
+    - **2ZP y 3ZP** son armónicos superiores; suelen aparecer por estela no uniforme, cavitación, desbalance o interacción casco-hélice.
+    - Si el riesgo aparece como **Alto**, conviene modificar RPM de operación, rigidez, diámetro del eje, distribución de apoyos o revisar el diseño de hélice.
+    """)
 
 # ==============================================================================
 # CAVITACIÓN
@@ -1276,9 +1442,9 @@ with tab_clase:
 
         - **Torsional:** variaciones cíclicas de torque y esfuerzo alternante del eje.
         - **Lateral / whirling:** separación entre la velocidad de servicio y velocidades críticas.
-        - **Axial:** asociada a fluctuaciones de empuje de la hélice en órdenes **kZ**; en esta versión
-          se documenta como criterio teórico y se relaciona con el Diagrama de Campbell, aunque no se
-          modela dinámicamente como sistema empuje-casco.
+        - **Axial:** asociada a fluctuaciones de empuje de la hélice en órdenes **1P, ZP, 2ZP y 3ZP**;
+          en esta versión sí se evalúa con frecuencia natural axial, rigidez equivalente,
+          tabla de separación y riesgo de resonancia.
 
         También se incluyen las referencias técnicas mencionadas en la guía: **IACS UR M68**, notas de
         **ABS** para vibración de shafting, recomendaciones **DNV/ISO** e instrumentación como torsiógrafo,
@@ -1292,20 +1458,23 @@ with tab_clase:
             "Cavitación",
             "Vibración torsional",
             "Vibración lateral",
+            "Vibración axial",
         ],
         "Criterio usado": [
             "ηO máxima > 40%",
             "Re > 1.0E7",
             "σ ≥ 0.20",
             "τ real ≤ τ admisible",
-            "RPM operación fuera de ±20% de RPM crítica"
+            "RPM operación fuera de ±20% de RPM crítica",
+            "Sin órdenes axiales en zona de alto riesgo"
         ],
         "Valor": [
             f"{max_eff*100:.2f}%",
             f"{reynolds:.2e}",
             f"{sigma_n:.3f}",
             f"{esfuerzo_real_mpa:.2f} / {tau_admisible_mpa:.2f} MPa",
-            f"{rpm_motor:.1f} rpm vs {margen_inf:.1f}-{margen_sup:.1f} rpm"
+            f"{rpm_motor:.1f} rpm vs {margen_inf:.1f}-{margen_sup:.1f} rpm",
+            f"Riesgo axial {riesgo_axial_global}"
         ],
         "Resultado": [
             "Cumple" if hidro_ok else "Observación",
@@ -1313,6 +1482,7 @@ with tab_clase:
             "Cumple" if cavitacion_ok else "No cumple",
             "Cumple" if torsion_ok else "No cumple",
             "Cumple" if lateral_ok else "No cumple",
+            "Cumple" if axial_ok else "No cumple",
         ]
     })
 
@@ -1441,9 +1611,10 @@ with tab_formulas:
 
     - Hidrodinámica: 15 puntos
     - Reynolds: 10 puntos
-    - Cavitación: 25 puntos
-    - Torsión: 25 puntos
-    - Vibración lateral: 25 puntos
+    - Cavitación: 15 puntos
+    - Torsión: 20 puntos
+    - Vibración axial: 20 puntos
+    - Vibración lateral: 20 puntos
 
     Este índice no sustituye una aprobación oficial de una sociedad de clasificación,
     pero permite generar un dictamen preliminar de ingeniería.
