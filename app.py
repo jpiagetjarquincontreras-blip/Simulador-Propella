@@ -513,7 +513,7 @@ longitud_eje_axial_m = max(eslora * 0.18, 8.0)
 masa_eje_axial_kg = peso_lineal_eje * longitud_eje_axial_m
 masa_equivalente_axial_kg = max(peso_helice_kg + 0.35 * masa_eje_axial_kg, 1.0)
 rigidez_axial_eje_n_m = safe_div(E_acero * area_eje, longitud_eje_axial_m, default=1e9)
-rigidez_cojinete_empuje_n_m = 3.0e9
+rigidez_cojinete_empuje_n_m = 8.0e9
 rigidez_axial_equivalente_n_m = 1.0 / ((1.0 / rigidez_axial_eje_n_m) + (1.0 / rigidez_cojinete_empuje_n_m))
 f_axial_natural_hz = (1.0 / (2.0 * math.pi)) * math.sqrt(rigidez_axial_equivalente_n_m / masa_equivalente_axial_kg)
 rpm_critica_axial_zp = safe_div(f_axial_natural_hz * 60.0, z_val, default=0.0)
@@ -524,6 +524,27 @@ velocidad_buque_ms = velocidad * 0.5144
 empuje_estimado_n = safe_div(potencia_kw * 1000.0 * max(eta_r, 0.01), max(velocidad_buque_ms, 0.1))
 amplitud_empuje_axial_n = 0.08 * empuje_estimado_n
 desplazamiento_axial_est_m = safe_div(amplitud_empuje_axial_n, rigidez_axial_equivalente_n_m)
+
+# ==============================================================================
+# CÁLCULO PRELIMINAR DE BALANCEO Y DESBALANCE
+# ==============================================================================
+# El desbalance se representa como una masa equivalente que gira con una
+# excentricidad respecto al centro del eje. Esta fuerza periódica puede excitar
+# vibración lateral y aumentar cargas en chumaceras.
+
+masa_desbalance_kg = max(peso_helice_kg * 0.001, 1.0)  # 0.1% de la masa de la hélice como caso didáctico
+excentricidad_desbalance_m = 0.001  # 1 mm
+fuerza_desbalance_n = masa_desbalance_kg * excentricidad_desbalance_m * omega**2
+fuerza_desbalance_rel_pct = safe_div(fuerza_desbalance_n, max(peso_helice_n, 1e-9)) * 100.0
+
+if fuerza_desbalance_rel_pct < 1.0:
+    riesgo_desbalance = "Bajo"
+elif fuerza_desbalance_rel_pct < 3.0:
+    riesgo_desbalance = "Medio"
+else:
+    riesgo_desbalance = "Alto"
+
+desbalance_ok = riesgo_desbalance != "Alto"
 
 
 def clasificar_riesgo_por_separacion(separacion_pct):
@@ -609,16 +630,17 @@ cavitacion_ok = sigma_n >= 0.20
 reynolds_ok = reynolds > 1e7
 hidro_ok = max_eff > 0.40
 
-# Score global ponderado actualizado para Equipo 4:
-# se incluye axial porque la asignación pide vibración del eje completa
-# en sus componentes torsional, lateral y axial.
+# Score global ponderado actualizado actualizado:
+# se incluye axial porque el análisis de vibración del eje incluye
+# componentes torsional, lateral y axial.
 score = 0
 score += 20 if torsion_ok else 0
 score += 20 if lateral_ok else 0
 score += 20 if axial_ok else 0
-score += 15 if cavitacion_ok else 0
+score += 10 if desbalance_ok else 0
+score += 10 if cavitacion_ok else 0
 score += 10 if reynolds_ok else 0
-score += 15 if hidro_ok else 0
+score += 10 if hidro_ok else 0
 
 dictamen, dictamen_tipo, dictamen_icono = diagnostico_score(score)
 
@@ -647,6 +669,8 @@ if not lateral_ok:
     recomendaciones.append("Modificar diámetro del eje, longitud en voladizo, apoyos o régimen de operación para alejarse de la velocidad crítica lateral.")
 if not axial_ok:
     recomendaciones.append("Revisar vibración axial: separar la frecuencia natural axial de las excitaciones 1P, ZP, 2ZP y 3ZP; aumentar rigidez axial o modificar RPM de operación.")
+if not desbalance_ok:
+    recomendaciones.append("Revisar balanceo dinámico: reducir masa excéntrica, excentricidad o verificar balanceo de hélice y eje en taller/pruebas.")
 if not torsion_ok:
     recomendaciones.append("Aumentar diámetro del eje, cambiar material o revisar excitaciones torsionales del sistema propulsivo.")
 if max_eff < 0.45:
@@ -688,6 +712,8 @@ def construir_resumen_dataframe():
             "Frecuencia axial [Hz]",
             "RPM crítica axial ZP",
             "Riesgo axial global",
+            "Fuerza por desbalance [N]",
+            "Riesgo de desbalance",
             "Score global [%]",
             "Dictamen"
         ],
@@ -719,6 +745,8 @@ def construir_resumen_dataframe():
             f_axial_natural_hz,
             rpm_critica_axial_zp,
             riesgo_axial_global,
+            fuerza_desbalance_n,
+            riesgo_desbalance,
             score,
             dictamen
         ]
@@ -741,7 +769,8 @@ def generar_excel():
                 "Cavitación",
                 "Vibración torsional",
                 "Vibración lateral",
-                "Vibración axial"
+                "Vibración axial",
+                "Balanceo/desbalance"
             ],
             "Resultado": [
                 "Cumple" if hidro_ok else "Observación",
@@ -749,7 +778,8 @@ def generar_excel():
                 "Cumple" if cavitacion_ok else "No cumple",
                 "Cumple" if torsion_ok else "No cumple",
                 "Cumple" if lateral_ok else "No cumple",
-                "Cumple" if axial_ok else "No cumple"
+                "Cumple" if axial_ok else "No cumple",
+                "Cumple" if desbalance_ok else "No cumple"
             ]
         })
         cumplimiento.to_excel(writer, sheet_name="Cumplimiento", index=False)
@@ -830,7 +860,7 @@ def generar_pdf():
 # TABS
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_campbell, tab_cav, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📈 Hidrodinámica",
@@ -838,8 +868,10 @@ tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_axial, tab_la
     "💥 Torsional",
     "↔️ Axial",
     "📊 Lateral",
+    "⚖️ Balanceo",
     "🗺️ Campbell",
     "🔍 Cavitación",
+    "📚 Normativa",
     "📋 Clase",
     "📄 Exportar",
     "🧮 Fórmulas",
@@ -1100,7 +1132,7 @@ with tab_axial:
     <div class="section-card">
     La vibración axial corresponde al movimiento longitudinal del eje propulsor.
     En buques, suele estar asociada a fluctuaciones del empuje de la hélice y a la
-    interacción hélice-casco. Para el Equipo 4, esta sección completa el análisis de
+    interacción hélice-casco. Esta sección completa el análisis de
     vibración del eje junto con la parte torsional y lateral.
     </div>
     """, unsafe_allow_html=True)
@@ -1254,6 +1286,78 @@ with tab_lateral:
         ax_l.grid(True, axis="x", linestyle=":", alpha=0.6)
         ax_l.legend()
         st.pyplot(fig_l)
+
+# ==============================================================================
+# BALANCEO Y DESBALANCE
+# ==============================================================================
+
+with tab_balanceo:
+    st.subheader("⚖️ Balanceo y Desbalance del Eje")
+
+    st.markdown("""
+    <div class="section-card">
+    El desbalance aparece cuando el centro de masa de la hélice o del eje no coincide
+    exactamente con el centro geométrico de rotación. Esto genera una fuerza centrífuga
+    periódica que actúa una vez por revolución y puede producir vibración lateral,
+    aumento de carga en cojinetes y desgaste prematuro.
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("📘 Base teórica de balanceo", expanded=True):
+        st.markdown("""
+        En un eje ideal, la masa gira de forma simétrica alrededor del centro. Cuando existe
+        una pequeña masa excéntrica, se produce una fuerza dinámica proporcional a la masa,
+        a la excentricidad y al cuadrado de la velocidad angular. Por eso un pequeño
+        desbalance puede volverse importante cuando aumentan las RPM.
+
+        En sistemas navales, el desbalance puede originarse por imperfecciones de fabricación,
+        daños en palas, incrustaciones marinas, reparación desigual de la hélice o montaje
+        incorrecto del conjunto eje-hélice.
+        """)
+
+    with st.expander("🧮 Fórmulas de desbalance usadas", expanded=True):
+        st.latex(r"\omega=\frac{2\pi n}{60}")
+        st.latex(r"F_u=m_u e \omega^2")
+        st.latex(r"\%F_u=\frac{F_u}{W_h}\times 100")
+        st.markdown("""
+        Donde **mᵤ** es la masa equivalente desbalanceada, **e** es la excentricidad,
+        **ω** es la velocidad angular y **Wₕ** es el peso de la hélice.
+        """)
+
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric("Masa desbalanceada est.", f"{masa_desbalance_kg:.2f} kg")
+    b2.metric("Excentricidad", f"{excentricidad_desbalance_m*1000:.2f} mm")
+    b3.metric("Fuerza dinámica", f"{fuerza_desbalance_n:,.1f} N")
+    b4.metric("Relación vs peso hélice", f"{fuerza_desbalance_rel_pct:.3f}%")
+
+    if desbalance_ok:
+        estado_html(f"✅ Desbalance estimado aceptable: riesgo {riesgo_desbalance}.", "good" if riesgo_desbalance == "Bajo" else "warn")
+    else:
+        estado_html("❌ Desbalance elevado: revisar balanceo dinámico de hélice y eje.", "bad")
+
+    st.markdown("### 📈 Fuerza de desbalance contra RPM")
+    rpm_bal = np.linspace(0, max(rpm_motor * 2.0, 150), 300)
+    omega_bal = 2.0 * np.pi * rpm_bal / 60.0
+    fuerza_bal = masa_desbalance_kg * excentricidad_desbalance_m * omega_bal**2
+    fig_b, ax_b = plt.subplots(figsize=(10, 4.5))
+    ax_b.plot(rpm_bal, fuerza_bal, linewidth=2.6, label="Fuerza por desbalance")
+    ax_b.axvline(x=rpm_motor, linestyle="--", linewidth=2, label=f"RPM operación = {rpm_motor:.0f}")
+    ax_b.scatter([rpm_motor], [fuerza_desbalance_n], s=120, zorder=5)
+    ax_b.set_xlabel("RPM")
+    ax_b.set_ylabel("Fuerza [N]")
+    ax_b.set_title("Crecimiento de la fuerza de desbalance con la velocidad")
+    ax_b.grid(True, linestyle=":", alpha=0.6)
+    ax_b.legend()
+    st.pyplot(fig_b)
+
+    st.markdown("### 🧰 Recomendaciones de control")
+    st.markdown("""
+    - Realizar **balanceo estático** de la hélice antes del montaje.
+    - Verificar **balanceo dinámico** del conjunto cuando sea posible.
+    - Revisar daños, incrustaciones o reparaciones desiguales en palas.
+    - Usar tacómetro y acelerómetros para identificar picos 1P asociados a desbalance.
+    - Si el pico 1P aumenta con la velocidad, revisar alineación, concentricidad y estado de cojinetes.
+    """)
 
 # ==============================================================================
 # CAMPBELL
