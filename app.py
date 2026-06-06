@@ -534,6 +534,8 @@ desplazamiento_axial_est_m = safe_div(amplitud_empuje_axial_n, rigidez_axial_equ
 
 masa_desbalance_kg = max(peso_helice_kg * 0.001, 1.0)  # 0.1% de la masa de la hélice como caso didáctico
 excentricidad_desbalance_m = 0.001  # 1 mm
+# omega debe calcularse antes de usarla en la fuerza de desbalance.
+omega = (2.0 * math.pi * rpm_motor) / 60.0
 fuerza_desbalance_n = masa_desbalance_kg * excentricidad_desbalance_m * omega**2
 fuerza_desbalance_rel_pct = safe_div(fuerza_desbalance_n, max(peso_helice_n, 1e-9)) * 100.0
 
@@ -616,7 +618,6 @@ sigma_n = safe_div(
     0.5 * rho_auto * max(v_ms**2, 1e-12)
 )
 
-omega = (2.0 * math.pi * rpm_motor) / 60.0
 torque_nominal = safe_div(potencia_kw * 1000.0, omega)
 torque_dinamico_alternante = torque_nominal * 0.15
 wt_modulo_torsional = math.pi * diametro_m**3 / 16.0
