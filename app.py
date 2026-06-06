@@ -532,8 +532,11 @@ desplazamiento_axial_est_m = safe_div(amplitud_empuje_axial_n, rigidez_axial_equ
 # excentricidad respecto al centro del eje. Esta fuerza periódica puede excitar
 # vibración lateral y aumentar cargas en chumaceras.
 
-masa_desbalance_kg = max(peso_helice_kg * 0.001, 1.0)  # 0.1% de la masa de la hélice como caso didáctico
-excentricidad_desbalance_m = 0.001  # 1 mm
+# Para una hélice naval correctamente balanceada se usa una fracción pequeña
+# de la masa total, no 0.1%. Esto evita mostrar valores poco realistas
+# como 52 kg de desbalance para una hélice de 52 toneladas.
+masa_desbalance_kg = max(peso_helice_kg * 0.00001, 0.10)  # 0.001% de la masa de la hélice
+excentricidad_desbalance_m = 0.0005  # 0.5 mm
 # omega debe calcularse antes de usarla en la fuerza de desbalance.
 omega = (2.0 * math.pi * rpm_motor) / 60.0
 fuerza_desbalance_n = masa_desbalance_kg * excentricidad_desbalance_m * omega**2
@@ -1330,9 +1333,14 @@ with tab_balanceo:
         Donde **mᵤ** es la masa equivalente desbalanceada, **e** es la excentricidad,
         **ω** es la velocidad angular y **Wₕ** es el peso de la hélice.
         """)
+        st.info("""
+        Para este análisis preliminar, la masa desbalanceada equivalente se toma como
+        una fracción muy pequeña de la masa total de la hélice. Esto representa una
+        condición de hélice correctamente balanceada y evita asumir desbalances excesivos.
+        """)
 
     b1, b2, b3, b4 = st.columns(4)
-    b1.metric("Masa desbalanceada est.", f"{masa_desbalance_kg:.2f} kg")
+    b1.metric("Masa desbalanceada equivalente", f"{masa_desbalance_kg:.2f} kg")
     b2.metric("Excentricidad", f"{excentricidad_desbalance_m*1000:.2f} mm")
     b3.metric("Fuerza dinámica", f"{fuerza_desbalance_n:,.1f} N")
     b4.metric("Relación vs peso hélice", f"{fuerza_desbalance_rel_pct:.3f}%")
