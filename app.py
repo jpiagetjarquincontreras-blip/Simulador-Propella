@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
+import re
 from io import BytesIO
 import matplotlib.pyplot as plt
 
@@ -204,6 +205,121 @@ def fig_to_bytes(fig):
     return buffer
 
 
+def extraer_texto_pdf(uploaded_file):
+    """Extrae texto básico de un PDF cargado por el usuario.
+    Funciona como asistente de lectura: los datos detectados siempre deben poder revisarse.
+    """
+    if uploaded_file is None:
+        return ""
+    try:
+        try:
+            from pypdf import PdfReader
+        except Exception:
+            from PyPDF2 import PdfReader
+        reader = PdfReader(uploaded_file)
+        partes = []
+        for page in reader.pages:
+            partes.append(page.extract_text() or "")
+        return "\n".join(partes)
+    except Exception as e:
+        st.warning(f"No se pudo leer automáticamente el PDF. Puedes ingresar los datos reales manualmente. Detalle: {e}")
+        return ""
+
+
+def _buscar_numero(texto, patrones):
+    if not texto:
+        return None
+    for patron in patrones:
+        m = re.search(patron, texto, flags=re.I | re.S)
+        if m:
+            val = m.group(1).replace(',', '').replace(' ', '')
+            try:
+                return float(val)
+            except Exception:
+                continue
+    return None
+
+
+def _buscar_texto(texto, patrones):
+    if not texto:
+        return ""
+    for patron in patrones:
+        m = re.search(patron, texto, flags=re.I | re.S)
+        if m:
+            return re.sub(r"\s+", " ", m.group(1)).strip()
+    return ""
+
+
+def parsear_ficha_tecnica(texto_pdf):
+    """Busca datos típicos en fichas técnicas navales. No sustituye revisión humana."""
+    d = {}
+    d["tipo_buque"] = "VLCC oil tanker" if re.search(r"VLCC|oil tanker|tanker", texto_pdf or "", re.I) else ""
+    d["loa_m"] = _buscar_numero(texto_pdf, [r"Length overall\s*([0-9.,]+)\s*m"])
+    d["lpp_m"] = _buscar_numero(texto_pdf, [r"Length between perpendiculars\s*([0-9.,]+)\s*m"])
+    d["manga_m"] = _buscar_numero(texto_pdf, [r"Breadth moulded\s*([0-9.,]+)\s*m"])
+    d["puntal_m"] = _buscar_numero(texto_pdf, [r"Depth moulded\s*([0-9.,]+)\s*m"])
+    d["calado_m"] = _buscar_numero(texto_pdf, [r"Draft at Summer freeboard\s*([0-9.,]+)\s*m"])
+    d["dwt_t"] = _buscar_numero(texto_pdf, [r"Deadweight\s*([0-9.,]+)\s*MT"])
+    d["velocidad_kn"] = _buscar_numero(texto_pdf, [r"Sea speed.*?([0-9.]+)\s*knots"])
+    d["sea_margin_pct"] = _buscar_numero(texto_pdf, [r"with\s*([0-9.]+)\s*%\s*sea margin"])
+    d["motor_modelo"] = _buscar_texto(texto_pdf, [r"Main Engine\s*([^\n]+)"])
+    m = re.search(r"MCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", texto_pdf or "", flags=re.I)
+    if m:
+        d["mcr_kw"] = float(m.group(1).replace(',', ''))
+        d["mcr_rpm"] = float(m.group(2).replace(',', ''))
+    else:
+        d["mcr_kw"] = None; d["mcr_rpm"] = None
+    m = re.search(r"NCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", texto_pdf or "", flags=re.I)
+    if m:
+        d["ncr_kw"] = float(m.group(1).replace(',', ''))
+        d["ncr_rpm"] = float(m.group(2).replace(',', ''))
+    else:
+        d["ncr_kw"] = None; d["ncr_rpm"] = None
+    z = _buscar_numero(texto_pdf, [r"Propeller.*?([0-9]+)\s*blades", r"([0-9]+)\s*blades\s*solid"])
+    d["prop_z"] = int(z) if z else None
+    d["prop_diam_m"] = None
+    diam_mm = _buscar_numero(texto_pdf, [r"Diam\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
+    if diam_mm:
+        d["prop_diam_m"] = diam_mm / 1000.0
+    pitch_mm = _buscar_numero(texto_pdf, [r"Pitch\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
+    d["prop_pitch_m"] = pitch_mm / 1000.0 if pitch_mm else None
+    d["prop_pd"] = safe_div(d.get("prop_pitch_m"), d.get("prop_diam_m"), default=None) if d.get("prop_pitch_m") and d.get("prop_diam_m") else None
+    d["prop_material"] = _buscar_texto(texto_pdf, [r"Material\s*([^\n]+)"])
+    return d
+
+
+def nvl(dato, default):
+    return default if dato is None or dato == "" else dato
+
+
+def error_pct(calculado, real):
+    try:
+        if real is None or real == 0:
+            return None
+        return abs(calculado - real) / abs(real) * 100.0
+    except Exception:
+        return None
+
+
+def optimizar_helice_wageningen():
+    filas = []
+    for z in range(3, 8):
+        for pdv in np.linspace(0.55, 1.25, 15):
+            for aev in np.linspace(0.40, 0.95, 12):
+                curvas = calcular_curvas(float(pdv), float(aev), int(z))
+                imax = curvas["nO"].idxmax()
+                filas.append({
+                    "Z": z,
+                    "P/D": float(pdv),
+                    "Ae/A0": float(aev),
+                    "J óptimo": float(curvas.loc[imax, "J"]),
+                    "KT": float(curvas.loc[imax, "KT"]),
+                    "KQ": float(curvas.loc[imax, "KQ"]),
+                    "ηO [%]": float(curvas.loc[imax, "nO"] * 100.0),
+                })
+    return pd.DataFrame(filas).sort_values("ηO [%]", ascending=False).reset_index(drop=True)
+
+
 # ==============================================================================
 # CARGA DEL ARCHIVO WAGENINGEN
 # ==============================================================================
@@ -324,6 +440,18 @@ with st.sidebar:
     )
 
     st.markdown("---")
+    st.subheader("📄 Ficha técnica del buque real")
+    pdf_buque = st.file_uploader(
+        "Subir PDF de ficha técnica para comparar",
+        type=["pdf"],
+        help="Opcional. La app intentará detectar datos reales como Lpp, velocidad, motor, MCR, hélice y RPM. Después podrás corregirlos manualmente."
+    )
+    texto_pdf = extraer_texto_pdf(pdf_buque) if pdf_buque is not None else ""
+    datos_pdf = parsear_ficha_tecnica(texto_pdf) if texto_pdf else {}
+    if pdf_buque is not None:
+        st.success("PDF leído. Revisa los datos detectados en la pestaña 📄 PDF / Comparación.")
+
+    st.markdown("---")
     st.subheader("🌎 Constantes físicas")
 
     p_atm_auto = st.number_input("Presión atmosférica [Pa]", value=101325.0, format="%.2f")
@@ -336,7 +464,7 @@ with st.sidebar:
 
     eslora = st.number_input(
         "Eslora entre perpendiculares Lpp [m]",
-        value=320.0,
+        value=float(nvl(datos_pdf.get("lpp_m"), 320.0)),
         min_value=1.0,
         step=1.0,
         help="Distancia longitudinal entre perpendicular de proa y popa. Remolcadores: 20–50 m; OSV: 60–100 m; buques tanque: 250–330 m; portacontenedores: 250–400 m."
@@ -344,7 +472,7 @@ with st.sidebar:
 
     lwl = st.number_input(
         "Eslora en flotación LWL [m]",
-        value=325.5,
+        value=float(nvl(datos_pdf.get("loa_m"), 325.5)),
         min_value=1.0,
         step=1.0,
         help="Longitud del buque sobre la línea de agua. Normalmente es igual o ligeramente mayor que Lpp."
@@ -352,7 +480,7 @@ with st.sidebar:
 
     manga = st.number_input(
         "Manga B [m]",
-        value=58.0,
+        value=float(nvl(datos_pdf.get("manga_m"), 58.0)),
         min_value=1.0,
         step=0.5,
         help="Ancho máximo del buque. Debe guardar proporción con Lpp según el tipo de embarcación."
@@ -360,7 +488,7 @@ with st.sidebar:
 
     puntal = st.number_input(
         "Puntal D [m]",
-        value=30.0,
+        value=float(nvl(datos_pdf.get("puntal_m"), 30.0)),
         min_value=1.0,
         step=0.5,
         help="Altura estructural desde la línea base hasta cubierta principal."
@@ -368,7 +496,7 @@ with st.sidebar:
 
     calado = st.number_input(
         "Calado T [m]",
-        value=20.8,
+        value=float(nvl(datos_pdf.get("calado_m"), 20.8)),
         min_value=0.1,
         step=0.1,
         help="Profundidad sumergida del casco. Debe ser menor que el puntal."
@@ -376,7 +504,7 @@ with st.sidebar:
 
     velocidad = st.number_input(
         "Velocidad de servicio [kn]",
-        value=15.5,
+        value=float(nvl(datos_pdf.get("velocidad_kn"), 15.5)),
         min_value=0.1,
         step=0.5,
         help="Velocidad de operación del buque. Buques mercantes usualmente operan entre 10 y 25 nudos."
@@ -424,11 +552,11 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("⚙️ Geometría de la hélice")
 
-    z_val = st.slider("Número de palas Z", 3, 7, 4)
-    diam_prop_m = st.number_input("Diámetro de hélice D [m]", value=9.86, min_value=0.1, step=0.01)
-    pd_val = st.slider("Relación paso/diámetro P/D [-]", 0.5, 1.4, 0.721, 0.001)
+    z_val = st.slider("Número de palas Z", 3, 7, int(nvl(datos_pdf.get("prop_z"), 4)))
+    diam_prop_m = st.number_input("Diámetro de hélice D [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 9.86)), min_value=0.1, step=0.01)
+    pd_val = st.slider("Relación paso/diámetro P/D [-]", 0.5, 1.4, float(nvl(datos_pdf.get("prop_pd"), 0.721)), 0.001)
     ae_val = st.slider("Relación de área expandida Ae/A0 [-]", 0.3, 1.0, 0.431, 0.001)
-    margen_servicio = st.slider("Margen de servicio requerido [%]", 0.0, 30.0, 15.0, 0.5)
+    margen_servicio = st.slider("Margen de servicio requerido [%]", 0.0, 30.0, float(nvl(datos_pdf.get("sea_margin_pct"), 15.0)), 0.5)
 
     st.markdown("---")
     st.subheader("⚙️ Material del sistema propulsivo")
@@ -438,18 +566,46 @@ with st.sidebar:
         "para no saturar la interfaz del usuario."
     )
 
-    # ==========================================================
-    # PARÁMETROS MECÁNICOS INTERNOS DE REFERENCIA
-    # ==========================================================
-    # Se ocultan en el sidebar para mantener la app limpia y didáctica.
-    # Si más adelante deseas hacerlos editables, basta con convertirlos
-    # nuevamente en st.number_input().
-    potencia_kw_base = 22000.0
+    st.markdown("---")
+    st.subheader("⚡ Cadena de potencias")
+    resistencia_total_kn = st.number_input("Resistencia total RT [kN]", value=2100.0, min_value=0.0, step=50.0, help="Si no tienes RT experimental, ingresa una estimación. Este valor alimenta PE=RT·Vs.")
+    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=0.985, min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
+    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=0.980, min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
+    eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", help="Normalmente 1.000 si no se considera una pérdida adicional.")
+
+    st.markdown("---")
+    st.subheader("🛠️ Motor y transmisión")
+    transmision_tipo = st.selectbox("Tipo de transmisión", ["Directa / sin caja reductora", "Con caja reductora"] )
+    motor_nombre_pdf = datos_pdf.get("motor_modelo") or "Hyundai – B&W 6S90MC-C MK7"
+    motor_nombre = st.text_input("Motor real seleccionado", value=motor_nombre_pdf)
+    motor_mcr_kw = st.number_input("Potencia MCR del motor [kW]", value=float(nvl(datos_pdf.get("mcr_kw"), 29340.0)), min_value=0.0, step=100.0)
+    motor_mcr_rpm = st.number_input("RPM MCR del motor [rpm]", value=float(nvl(datos_pdf.get("mcr_rpm"), 79.0)), min_value=0.0, step=1.0)
+    motor_ncr_kw = st.number_input("Potencia NCR / servicio real [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), motor_mcr_kw * 0.85)), min_value=0.0, step=100.0)
+    motor_ncr_rpm = st.number_input("RPM NCR / servicio real [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 75.0)), min_value=0.0, step=1.0)
+
+    if transmision_tipo == "Con caja reductora":
+        marca_caja = st.selectbox("Caja reductora real", ["Reintjes WAF/WGF", "ZF Marine", "Twin Disc", "Lufkin", "Otra"] )
+        relacion_reduccion = st.number_input("Relación de reducción i = RPM motor / RPM hélice", value=1.50, min_value=1.0, step=0.01, format="%.2f")
+    else:
+        marca_caja = "No aplica: motor lento acoplado directamente"
+        relacion_reduccion = safe_div(motor_ncr_rpm, motor_ncr_rpm, default=1.0)
+
+    st.markdown("---")
+    st.subheader("🔎 Datos reales para comparar")
+    pb_real_kw = st.number_input("PB real/NCR del buque [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 24939.0)), min_value=0.0, step=100.0)
+    rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 75.0)), min_value=0.0, step=1.0)
+    diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 10.0)), min_value=0.0, step=0.01)
+    z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 4)), min_value=0, step=1)
+    pd_real = st.number_input("P/D real", value=float(nvl(datos_pdf.get("prop_pd"), 0.706)), min_value=0.0, step=0.001, format="%.3f")
+
+    st.markdown("---")
+    st.subheader("⚙️ Parámetros mecánicos visibles")
+    potencia_kw_base = st.number_input("Potencia base para análisis de eje [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 22000.0)), min_value=0.0, step=100.0)
     potencia_kw = potencia_kw_base * (1 + margen_servicio / 100)
-    rpm_motor = 75.0
-    diametro_eje_mm = 680.0
-    peso_helice_kg = 52000.0
-    longitud_volado_m = 3.5
+    rpm_motor = st.number_input("RPM de operación para vibración [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 75.0)), min_value=0.1, step=1.0)
+    diametro_eje_mm = st.number_input("Diámetro del eje [mm]", value=680.0, min_value=50.0, step=10.0)
+    peso_helice_kg = st.number_input("Peso estimado de hélice [kg]", value=52000.0, min_value=1.0, step=500.0)
+    longitud_volado_m = st.number_input("Longitud en voladizo del eje [m]", value=3.5, min_value=0.1, step=0.1)
 
     dict_materiales = {
         "Bronce de Níquel-Aluminio (Cu3)": 590.0,
@@ -625,7 +781,62 @@ sigma_n = safe_div(
     0.5 * rho_auto * max(v_ms**2, 1e-12)
 )
 
-torque_nominal = safe_div(potencia_kw * 1000.0, omega)
+# ==============================================================================
+# CADENA DE POTENCIAS, MOTOR, REDUCTORA, BURRILL, KELLER Y COMPARACIÓN
+# ==============================================================================
+RT_N = resistencia_total_kn * 1000.0
+PE_kw_sin_margen = RT_N * velocidad_buque_ms / 1000.0
+PE_kw = PE_kw_sin_margen * (1 + margen_servicio / 100.0)
+VA_ms = v_ms
+thrust_req_N = safe_div(RT_N, max(1.0 - t_fraction, 1e-9))
+PT_kw = thrust_req_N * VA_ms / 1000.0
+eta_h = safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
+eta_b = max_eff * eta_r
+eta_d = eta_h * eta_b * eta_o_extra
+PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
+PS_kw = safe_div(PD_kw, max(eta_s, 1e-9))
+PB_kw_calc = safe_div(PS_kw, max(eta_g, 1e-9))
+MCR_requerido_kw = safe_div(PB_kw_calc, 0.85, default=0.0)
+potencia_85_mcr_kw = motor_mcr_kw * 0.85
+motor_cumple = potencia_85_mcr_kw >= PB_kw_calc and motor_mcr_kw > 0
+rpm_helice_requerida = safe_div(VA_ms, max(j_opt * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_opt > 0 else 0.0
+rpm_helice_por_caja = safe_div(motor_ncr_rpm, max(relacion_reduccion, 1e-9), default=0.0)
+if transmision_tipo == "Directa / sin caja reductora":
+    caja_cumple = abs(motor_ncr_rpm - rpm_helice_requerida) <= max(5.0, 0.08 * max(rpm_helice_requerida, 1.0))
+else:
+    caja_cumple = abs(rpm_helice_por_caja - rpm_helice_requerida) <= max(5.0, 0.08 * max(rpm_helice_requerida, 1.0))
+
+# Keller: área expandida mínima preliminar para evitar cavitación excesiva.
+p0_pv = (p_atm_auto + rho_auto * g_auto * inmersion_eje_m - p_vap_auto)
+keller_ae_min = safe_div((1.3 + 0.3 * z_val) * thrust_req_N, max(p0_pv * diam_prop_m**2, 1e-9), default=0.0) + 0.10
+keller_ok = ae_val >= keller_ae_min
+
+# Burrill preliminar: coeficiente de carga de empuje vs sigma.
+area_disco = math.pi * diam_prop_m**2 / 4.0
+tau_c_burrill = safe_div(thrust_req_N, 0.5 * rho_auto * max(VA_ms**2, 1e-9) * max(area_disco, 1e-9), default=0.0)
+tau_c_admisible = 0.22 + 0.18 * sigma_n
+burrill_ok = tau_c_burrill <= tau_c_admisible
+
+comparacion_df = pd.DataFrame([
+    {"Parámetro": "Potencia al freno PB [kW]", "Calculado": PB_kw_calc, "Real PDF/manual": pb_real_kw, "Error [%]": error_pct(PB_kw_calc, pb_real_kw)},
+    {"Parámetro": "RPM de hélice [rpm]", "Calculado": rpm_helice_requerida, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_helice_requerida, rpm_real)},
+    {"Parámetro": "Diámetro de hélice [m]", "Calculado": diam_prop_m, "Real PDF/manual": diam_real_m, "Error [%]": error_pct(diam_prop_m, diam_real_m)},
+    {"Parámetro": "Número de palas Z", "Calculado": z_val, "Real PDF/manual": z_real, "Error [%]": error_pct(z_val, z_real)},
+    {"Parámetro": "P/D", "Calculado": pd_val, "Real PDF/manual": pd_real, "Error [%]": error_pct(pd_val, pd_real)},
+])
+
+power_chain_df = pd.DataFrame([
+    {"Etapa": "RT", "Descripción": "Resistencia total", "Valor": resistencia_total_kn, "Unidad": "kN"},
+    {"Etapa": "PE", "Descripción": "Potencia efectiva sin margen", "Valor": PE_kw_sin_margen, "Unidad": "kW"},
+    {"Etapa": "PE + Sea Margin", "Descripción": f"Potencia efectiva con {margen_servicio:.1f}% de margen", "Valor": PE_kw, "Unidad": "kW"},
+    {"Etapa": "PT", "Descripción": "Potencia de empuje", "Valor": PT_kw, "Unidad": "kW"},
+    {"Etapa": "PD", "Descripción": "Potencia entregada a la hélice", "Valor": PD_kw, "Unidad": "kW"},
+    {"Etapa": "PS", "Descripción": "Potencia en el eje", "Valor": PS_kw, "Unidad": "kW"},
+    {"Etapa": "PB", "Descripción": "Potencia al freno requerida", "Valor": PB_kw_calc, "Unidad": "kW"},
+    {"Etapa": "MCR requerido", "Descripción": "MCR mínimo para operar PB al 85%", "Valor": MCR_requerido_kw, "Unidad": "kW"},
+])
+
+torque_nominal = safe_div(PB_kw_calc * 1000.0, omega)
 torque_dinamico_alternante = torque_nominal * 0.15
 wt_modulo_torsional = math.pi * diametro_m**3 / 16.0
 esfuerzo_real_mpa = safe_div(torque_dinamico_alternante, wt_modulo_torsional) / 1e6
@@ -701,6 +912,9 @@ def construir_resumen_dataframe():
             "Calado T [m]",
             "Velocidad [kn]",
             "Potencia con margen [kW]",
+            "PB calculada [kW]",
+            "MCR requerido [kW]",
+            "RPM hélice requerida [rpm]",
             "RPM [rpm]",
             "Diámetro hélice [m]",
             "Número de palas",
@@ -734,6 +948,9 @@ def construir_resumen_dataframe():
             calado,
             velocidad,
             potencia_kw,
+            PB_kw_calc,
+            MCR_requerido_kw,
+            rpm_helice_requerida,
             rpm_motor,
             diam_prop_m,
             z_val,
@@ -769,6 +986,8 @@ def generar_excel():
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         resumen_df.to_excel(writer, sheet_name="Resumen", index=False)
         res.to_excel(writer, sheet_name="Wageningen", index=False)
+        power_chain_df.to_excel(writer, sheet_name="Cadena_Potencias", index=False)
+        comparacion_df.to_excel(writer, sheet_name="Comparacion_Real", index=False)
 
         cumplimiento = pd.DataFrame({
             "Criterio": [
@@ -868,10 +1087,14 @@ def generar_pdf():
 # TABS
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
+    "📄 PDF / Comparación",
+    "⚡ Potencias",
+    "🛠️ Motor / Reductora",
     "📈 Hidrodinámica",
+    "⭐ Optimización",
     "📋 Resultados",
     "💥 Torsional",
     "↔️ Axial",
@@ -903,7 +1126,7 @@ with tab_dash:
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Velocidad", f"{velocidad:.1f} kn")
-    c2.metric("Potencia", f"{potencia_kw/1000:.2f} MW")
+    c2.metric("PB requerida", f"{PB_kw_calc/1000:.2f} MW")
     c3.metric("RPM", f"{rpm_motor:.0f}")
     c4.metric("D Hélice", f"{diam_prop_m:.2f} m")
     c5.metric("ηO máx.", f"{max_eff*100:.2f}%")
@@ -981,6 +1204,142 @@ with tab_resumen:
     st.markdown("### Resultados principales")
     resultado_df = construir_resumen_dataframe()
     st.dataframe(resultado_df, use_container_width=True, height=520)
+
+
+# ==============================================================================
+# PDF / COMPARACIÓN CON BUQUE REAL
+# ==============================================================================
+
+with tab_pdf_comp:
+    st.subheader("📄 Lectura de ficha técnica y comparación con buque real")
+    st.markdown("""
+    <div class="section-card">
+    Esta sección permite que la app funcione en dos modos: con un PDF de ficha técnica para extraer datos reales y comparar, o sin PDF usando datos manuales. La extracción automática es una ayuda; siempre se recomienda revisar los valores detectados.
+    </div>
+    """, unsafe_allow_html=True)
+
+    if datos_pdf:
+        st.markdown("### Datos detectados del PDF")
+        df_pdf = pd.DataFrame([{"Dato": k, "Valor detectado": v} for k, v in datos_pdf.items()])
+        st.dataframe(df_pdf, use_container_width=True, height=360)
+    else:
+        st.info("No se cargó PDF o no se detectaron datos. La app continuará con los parámetros manuales del panel lateral.")
+
+    st.markdown("### Comparación calculado vs real")
+    st.dataframe(comparacion_df.style.format({"Calculado":"{:.3f}", "Real PDF/manual":"{:.3f}", "Error [%]":"{:.2f}"}), use_container_width=True)
+
+    fig_cmp, ax_cmp = plt.subplots(figsize=(9,4.5))
+    df_err = comparacion_df.dropna(subset=["Error [%]"])
+    ax_cmp.bar(df_err["Parámetro"], df_err["Error [%]"])
+    ax_cmp.set_ylabel("Error porcentual [%]")
+    ax_cmp.set_title("Error de resultados calculados contra datos reales")
+    ax_cmp.tick_params(axis='x', rotation=30)
+    ax_cmp.grid(True, axis="y", linestyle=":", alpha=0.6)
+    st.pyplot(fig_cmp)
+
+# ==============================================================================
+# CADENA DE POTENCIAS
+# ==============================================================================
+
+with tab_potencias:
+    st.subheader("⚡ Cadena completa de potencias")
+    st.markdown("""
+    <div class="section-card">
+    Aquí se calcula el flujo completo pedido en el proyecto: resistencia total, potencia efectiva, potencia de empuje, potencia entregada, potencia en el eje y potencia al freno. También se muestra el efecto del Sea Margin y de las eficiencias adoptadas.
+    </div>
+    """, unsafe_allow_html=True)
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("PE con margen", f"{PE_kw:,.0f} kW")
+    c2.metric("PD", f"{PD_kw:,.0f} kW")
+    c3.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
+    c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+
+    st.dataframe(power_chain_df.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
+
+    st.markdown("### Eficiencias usadas")
+    eff_df = pd.DataFrame([
+        {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h},
+        {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas", "Valor": max_eff},
+        {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r},
+        {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b},
+        {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d},
+        {"Eficiencia": "ηS", "Descripción": "Eficiencia del eje", "Valor": eta_s},
+        {"Eficiencia": "ηG", "Descripción": "Eficiencia de caja/transmisión", "Valor": eta_g},
+    ])
+    st.dataframe(eff_df.style.format({"Valor":"{:.4f}"}), use_container_width=True)
+
+    with st.expander("🧮 Fórmulas de la cadena de potencias", expanded=False):
+        st.latex(r"P_E = R_T V_S")
+        st.latex(r"P_{E,SM}=P_E(1+SM)")
+        st.latex(r"T=\frac{R_T}{1-t}")
+        st.latex(r"P_T=T V_A")
+        st.latex(r"\eta_H=\frac{1-t}{1-w}")
+        st.latex(r"\eta_D=\eta_H\eta_O\eta_R")
+        st.latex(r"P_D=\frac{P_E}{\eta_D}")
+        st.latex(r"P_S=\frac{P_D}{\eta_S}")
+        st.latex(r"P_B=\frac{P_S}{\eta_G}")
+
+# ==============================================================================
+# MOTOR Y REDUCTORA
+# ==============================================================================
+
+with tab_motor:
+    st.subheader("🛠️ Selección de motor real y transmisión")
+    st.markdown("""
+    <div class="section-card">
+    El motor se valida contra la potencia al freno calculada. El criterio pedido por el proyecto es que la potencia de diseño trabaje aproximadamente al 85% del MCR, dejando 15% de reserva operativa.
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("PB calculada", f"{PB_kw_calc:,.0f} kW")
+    c2.metric("MCR motor", f"{motor_mcr_kw:,.0f} kW")
+    c3.metric("85% MCR", f"{potencia_85_mcr_kw:,.0f} kW")
+    c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+
+    if motor_cumple:
+        estado_html(f"✅ Motor compatible: {motor_nombre}. El 85% del MCR cubre la PB calculada.", "good")
+    else:
+        estado_html(f"❌ Motor insuficiente: {motor_nombre}. Se requiere un MCR mínimo aproximado de {MCR_requerido_kw:,.0f} kW.", "bad")
+
+    st.markdown("### Transmisión")
+    trans_df = pd.DataFrame([
+        {"Concepto":"Tipo", "Valor": transmision_tipo},
+        {"Concepto":"Caja/reductora", "Valor": marca_caja},
+        {"Concepto":"Relación de reducción", "Valor": relacion_reduccion},
+        {"Concepto":"RPM hélice requerida por hidrodinámica", "Valor": rpm_helice_requerida},
+        {"Concepto":"RPM hélice por transmisión", "Valor": rpm_helice_por_caja},
+        {"Concepto":"Compatibilidad", "Valor": "Compatible" if caja_cumple else "Revisar"},
+    ])
+    st.dataframe(trans_df, use_container_width=True)
+    if caja_cumple:
+        estado_html("✅ La transmisión/RPM es compatible dentro de una tolerancia preliminar.", "good")
+    else:
+        estado_html("⚠️ Revisar relación de reducción o RPM: la hélice requerida no coincide con la transmisión indicada.", "warn")
+
+    with st.expander("¿Qué significa esto?", expanded=False):
+        st.markdown("""
+        - Si el motor es lento y trabaja casi a las mismas RPM que la hélice, puede usarse **transmisión directa**.
+        - Si el motor gira más rápido que la hélice, se necesita una **caja reductora**.
+        - La relación se calcula como: **i = RPM motor / RPM hélice**.
+        """)
+
+# ==============================================================================
+# OPTIMIZACIÓN AUTOMÁTICA
+# ==============================================================================
+
+with tab_opt:
+    st.subheader("⭐ Optimización automática de hélice Wageningen")
+    st.markdown("""
+    <div class="section-card">
+    Esta tabla prueba combinaciones de Z, P/D y Ae/A0 dentro de rangos comerciales para encontrar la mayor eficiencia de aguas abiertas. Sirve para justificar que la hélice seleccionada no fue elegida al azar.
+    </div>
+    """, unsafe_allow_html=True)
+    with st.spinner("Calculando combinaciones de hélice..."):
+        opt_df = optimizar_helice_wageningen()
+    st.dataframe(opt_df.head(20).style.format({"P/D":"{:.3f}", "Ae/A0":"{:.3f}", "J óptimo":"{:.3f}", "KT":"{:.4f}", "KQ":"{:.4f}", "ηO [%]":"{:.2f}"}), use_container_width=True, height=520)
+    mejor = opt_df.iloc[0]
+    estado_html(f"Mejor combinación encontrada: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%.", "good")
 
 # ==============================================================================
 # HIDRODINÁMICA
@@ -1467,7 +1826,16 @@ with tab_cav:
     c2.metric("Número de Reynolds", f"{reynolds:.2e}")
     c3.metric("Coef. cavitación σ", f"{sigma_n:.3f}")
 
-    with st.expander("🧮 Fórmulas de Reynolds y cavitación usadas", expanded=False):
+    st.markdown("### Criterios Burrill y Keller")
+    k1,k2,k3,k4 = st.columns(4)
+    k1.metric("τc Burrill", f"{tau_c_burrill:.3f}")
+    k2.metric("τc admisible", f"{tau_c_admisible:.3f}")
+    k3.metric("Ae/A0 mínimo Keller", f"{keller_ae_min:.3f}")
+    k4.metric("Ae/A0 actual", f"{ae_val:.3f}")
+    estado_html("✅ Cumple Burrill preliminar" if burrill_ok else "⚠️ Revisar Burrill: carga de pala elevada", "good" if burrill_ok else "warn")
+    estado_html("✅ Cumple Keller preliminar" if keller_ok else "❌ No cumple Keller: aumentar Ae/A0", "good" if keller_ok else "bad")
+
+    with st.expander("🧮 Fórmulas de Reynolds, Burrill y Keller usadas", expanded=False):
         st.latex(r"V_A = V_s(1-w)")
         st.latex(r"Re = \frac{V_A D}{\nu}")
         st.latex(r"\sigma = \frac{P_{atm} + \rho g h - P_v}{\frac{1}{2}\rho V_A^2}")
