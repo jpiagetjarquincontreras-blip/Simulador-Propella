@@ -1332,14 +1332,35 @@ with tab_opt:
     st.subheader("⭐ Optimización automática de hélice Wageningen")
     st.markdown("""
     <div class="section-card">
-    Esta tabla prueba combinaciones de Z, P/D y Ae/A0 dentro de rangos comerciales para encontrar la mayor eficiencia de aguas abiertas. Sirve para justificar que la hélice seleccionada no fue elegida al azar.
+    Esta tabla prueba combinaciones de Z, P/D y Ae/A0 dentro de rangos comerciales para encontrar la mayor eficiencia de aguas abiertas.
+    Para evitar que la app se quede cargando y bloquee las pestañas siguientes, la optimización se ejecuta solo cuando el usuario presiona el botón.
     </div>
     """, unsafe_allow_html=True)
-    with st.spinner("Calculando combinaciones de hélice..."):
-        opt_df = optimizar_helice_wageningen()
-    st.dataframe(opt_df.head(20).style.format({"P/D":"{:.3f}", "Ae/A0":"{:.3f}", "J óptimo":"{:.3f}", "KT":"{:.4f}", "KQ":"{:.4f}", "ηO [%]":"{:.2f}"}), use_container_width=True, height=520)
-    mejor = opt_df.iloc[0]
-    estado_html(f"Mejor combinación encontrada: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%.", "good")
+
+    ejecutar_opt = st.button("▶️ Ejecutar optimización automática", key="btn_opt_helice")
+
+    if ejecutar_opt:
+        with st.spinner("Calculando combinaciones de hélice..."):
+            st.session_state["opt_df"] = optimizar_helice_wageningen()
+
+    if "opt_df" in st.session_state:
+        opt_df = st.session_state["opt_df"]
+        st.dataframe(
+            opt_df.head(20).style.format({
+                "P/D":"{:.3f}",
+                "Ae/A0":"{:.3f}",
+                "J óptimo":"{:.3f}",
+                "KT":"{:.4f}",
+                "KQ":"{:.4f}",
+                "ηO [%]":"{:.2f}"
+            }),
+            use_container_width=True,
+            height=520
+        )
+        mejor = opt_df.iloc[0]
+        estado_html(f"Mejor combinación encontrada: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%.", "good")
+    else:
+        st.info("Presiona el botón para iniciar la optimización. Mientras no lo hagas, la app seguirá cargando rápido y todas las pestañas estarán disponibles.")
 
 # ==============================================================================
 # HIDRODINÁMICA
