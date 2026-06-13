@@ -269,15 +269,39 @@ def crear_figura_burrill(sigma_actual, tau_actual, tau_adm_actual):
 
 
 def crear_figura_keller(ae_min, ae_actual):
-    fig, ax = plt.subplots(figsize=(8.2, 4.8))
-    labels = ["Ae/A0 mínimo Keller", "Ae/A0 actual"]
-    vals = [ae_min, ae_actual]
-    ax.bar(labels, vals)
-    ax.axhline(ae_min, linestyle="--", linewidth=2, label=f"Mínimo = {ae_min:.3f}")
-    ax.set_ylabel("Ae/A0 [-]")
-    ax.set_title("Criterio de Keller — área expandida mínima")
-    ax.grid(True, axis="y", linestyle=":", alpha=0.6)
-    ax.legend(loc="best")
+    """Gráfica tipo indicador para evaluar Keller de forma más clara y profesional."""
+    margen = ae_actual - ae_min
+    cumple = margen >= 0
+    xmax = max(1.0, ae_actual * 1.25, ae_min * 1.35, 0.75)
+    fig, ax = plt.subplots(figsize=(9.2, 4.8))
+
+    # Franja base de lectura: zona insuficiente y zona aceptable.
+    ax.axvspan(0, ae_min, alpha=0.10, label="Zona insuficiente")
+    ax.axvspan(ae_min, xmax, alpha=0.08, label="Zona aceptable")
+    ax.axvline(ae_min, linestyle="--", linewidth=2.4, label=f"Keller mínimo = {ae_min:.3f}")
+
+    # Barra horizontal del diseño actual.
+    ax.barh(["Diseño actual"], [ae_actual], height=0.34)
+    ax.scatter([ae_actual], [0], s=170, zorder=5, label=f"Ae/A0 actual = {ae_actual:.3f}")
+
+    texto = f"Cumple: margen +{margen:.3f}" if cumple else f"No cumple: déficit {margen:.3f}"
+    ax.annotate(
+        texto,
+        xy=(ae_actual, 0),
+        xytext=(min(xmax * 0.62, max(ae_actual, ae_min) + xmax * 0.08), 0.22),
+        arrowprops=dict(arrowstyle="->", lw=1.2),
+        fontsize=10,
+        fontweight="bold",
+    )
+
+    ax.set_xlim(0, xmax)
+    ax.set_ylim(-0.6, 0.65)
+    ax.set_xlabel("Relación de área expandida Ae/A0 [-]")
+    ax.set_title("Criterio de Keller — verificación de área expandida mínima")
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    ax.legend(loc="upper left", fontsize=8)
+    ax.set_yticks([0])
+    ax.set_yticklabels(["Ae/A0"])
     return fig
 
 
@@ -1251,6 +1275,15 @@ def generar_excel():
         ])
         cav_df.to_excel(writer, sheet_name="Cavitacion_Resultados", index=False)
 
+        graf_desc = pd.DataFrame([
+            {"Hoja": "Graf_Wageningen", "Pestaña de origen": "Hidrodinámica", "Descripción": "Curvas KT, 10KQ y eficiencia ηO de la hélice Wageningen Serie B. Sirve para identificar el comportamiento en aguas abiertas y el J óptimo."},
+            {"Hoja": "Graf_Comparacion", "Pestaña de origen": "PDF / Comparación", "Descripción": "Comparación de error porcentual entre resultados calculados y datos reales detectados o ingresados desde la ficha técnica del buque."},
+            {"Hoja": "Graf_Burrill", "Pestaña de origen": "Cavitación", "Descripción": "Criterio preliminar de Burrill. Compara el coeficiente de cavitación σ contra el coeficiente de carga τc para estimar riesgo de cavitación."},
+            {"Hoja": "Graf_Keller", "Pestaña de origen": "Cavitación", "Descripción": "Criterio de Keller. Verifica si el Ae/A0 actual es mayor o igual al área expandida mínima requerida."},
+            {"Hoja": "Graf_Campbell", "Pestaña de origen": "Campbell", "Descripción": "Diagrama de Campbell. Relaciona RPM de operación, órdenes de excitación y modos naturales lateral, torsional y axial."},
+        ])
+        graf_desc.to_excel(writer, sheet_name="Guia_Graficas", index=False)
+
         figs = [
             (crear_figura_wageningen(res, j_opt), "Graf_Wageningen"),
             (crear_figura_comparacion(comparacion_df), "Graf_Comparacion"),
@@ -1306,7 +1339,14 @@ def generar_pdf():
         story.append(table)
         story.append(Spacer(1, 12))
 
-    def add_fig(story, fig, width=500):
+    def add_fig(story, fig, title=None, caption=None, source_tab=None, width=500):
+        if title:
+            story.append(Paragraph(title, styles["Heading3"]))
+        if source_tab:
+            story.append(Paragraph(f"Pestaña de origen: {source_tab}", body))
+        if caption:
+            story.append(Paragraph(caption, body))
+            story.append(Spacer(1, 4))
         img_buf = fig_to_bytes(fig)
         story.append(Image(img_buf, width=width, height=width*0.55))
         story.append(Spacer(1, 12))
@@ -1327,11 +1367,11 @@ def generar_pdf():
 
     story.append(Paragraph("Comparación con datos reales", h2))
     add_table(story, comparacion_df, col_widths=[180, 90, 90, 70])
-    add_fig(story, crear_figura_comparacion(comparacion_df))
+    add_fig(story, crear_figura_comparacion(comparacion_df), title="Gráfica de comparación", source_tab="PDF / Comparación", caption="Muestra el error porcentual entre los resultados calculados por la aplicación y los datos reales del buque. Permite validar qué tan cercano es el prediseño frente a la ficha técnica.")
 
     story.append(PageBreak())
     story.append(Paragraph("Curvas Wageningen Serie B", h2))
-    add_fig(story, crear_figura_wageningen(res, j_opt))
+    add_fig(story, crear_figura_wageningen(res, j_opt), title="Curvas Wageningen Serie B", source_tab="Hidrodinámica", caption="Presenta KT, 10KQ y ηO en función del coeficiente de avance J. El máximo de ηO identifica el punto de operación hidrodinámicamente más eficiente para la geometría evaluada.")
     story.append(Paragraph("Cavitación: Burrill y Keller", h2))
     cav_df = pd.DataFrame([
         {"Análisis": "Sigma", "Resultado": sigma_n, "Referencia": "> 0.20 preliminar", "Dictamen": "Cumple" if cavitacion_ok else "Revisar"},
@@ -1339,12 +1379,12 @@ def generar_pdf():
         {"Análisis": "Keller Ae/A0", "Resultado": ae_val, "Referencia": keller_ae_min, "Dictamen": "Cumple" if keller_ok else "No cumple"},
     ])
     add_table(story, cav_df, col_widths=[120, 90, 120, 100])
-    add_fig(story, crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
-    add_fig(story, crear_figura_keller(keller_ae_min, ae_val))
+    add_fig(story, crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible), title="Criterio de Burrill", source_tab="Cavitación", caption="Relaciona el coeficiente de cavitación σ con el coeficiente de carga τc. Si el punto del diseño queda dentro de la zona aceptable, el riesgo preliminar de cavitación es bajo.")
+    add_fig(story, crear_figura_keller(keller_ae_min, ae_val), title="Criterio de Keller", source_tab="Cavitación", caption="Compara el Ae/A0 actual con el Ae/A0 mínimo requerido. Si el valor actual supera la línea mínima, la hélice tiene área expandida suficiente según la revisión preliminar de Keller.")
 
     story.append(PageBreak())
     story.append(Paragraph("Diagrama de Campbell", h2))
-    add_fig(story, crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val))
+    add_fig(story, crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val), title="Diagrama de Campbell", source_tab="Campbell", caption="Cruza los órdenes de excitación con las frecuencias naturales lateral, torsional y axial. Sirve para identificar posibles zonas de resonancia cerca de la RPM de operación.")
     story.append(Paragraph("Recomendaciones", h2))
     for rec in recomendaciones:
         story.append(Paragraph(f"• {rec}", body))
@@ -2240,7 +2280,10 @@ with tab_cav:
         ax_re.set_title("Comparación de régimen de flujo")
         ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
         st.pyplot(fig_re)
-        st.success("✅ Flujo turbulento típico de hélices navales.") if reynolds_ok else st.warning("⚠️ Reynolds bajo para escala naval.")
+        if reynolds_ok:
+            st.success("✅ Flujo turbulento típico de hélices navales.")
+        else:
+            st.warning("⚠️ Reynolds bajo para escala naval.")
 
     with col_sig:
         st.markdown("### ⚠️ Coeficiente de cavitación σ")
