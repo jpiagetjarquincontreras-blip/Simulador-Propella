@@ -240,13 +240,30 @@ def crear_figura_wageningen(res_df, j_opt_val):
 
 
 def crear_figura_comparacion(comparacion):
-    fig, ax = plt.subplots(figsize=(9, 4.5))
-    df_err = comparacion.dropna(subset=["Error [%]"])
-    ax.bar(df_err["Parámetro"], df_err["Error [%]"])
-    ax.set_ylabel("Error porcentual [%]")
-    ax.set_title("Error calculado vs dato real")
-    ax.tick_params(axis='x', rotation=30)
-    ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+    """Gráfica profesional: barras agrupadas de calculado vs real y etiqueta de error."""
+    df = comparacion.dropna(subset=["Calculado", "Real PDF/manual"]).copy()
+    fig, ax = plt.subplots(figsize=(10.5, 5.2))
+    if df.empty:
+        ax.text(0.5, 0.5, "Sin datos reales para comparar", ha="center", va="center", fontsize=13, fontweight="bold")
+        ax.axis("off")
+        return fig
+    etiquetas = df["Parámetro"].astype(str).str.replace("Potencia al freno PB ", "PB ", regex=False).tolist()
+    x = np.arange(len(df))
+    ancho = 0.36
+    ax.bar(x - ancho/2, df["Calculado"], width=ancho, label="Calculado")
+    ax.bar(x + ancho/2, df["Real PDF/manual"], width=ancho, label="Real / ficha técnica")
+    for i, (_, row) in enumerate(df.iterrows()):
+        err = row.get("Error [%]", np.nan)
+        if pd.notna(err):
+            ymax = max(row["Calculado"], row["Real PDF/manual"])
+            ax.text(i, ymax * 1.03 if ymax else 0.05, f"Error {err:.1f}%", ha="center", va="bottom", fontsize=8, fontweight="bold")
+    ax.set_title("Comparación de resultados calculados contra datos reales", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Valor")
+    ax.set_xticks(x)
+    ax.set_xticklabels(etiquetas, rotation=18, ha="right")
+    ax.grid(True, axis="y", linestyle=":", alpha=0.55)
+    ax.legend(loc="best")
+    fig.tight_layout()
     return fig
 
 
@@ -502,6 +519,65 @@ def construir_base_motores():
         add("Yanmar", modelo, "4T rápido/medio", kw, rpm, "Reductora según aplicación")
     for cyl in [6,8,12,16]:
         add("ABC", f"DZC {cyl} cyl", "4T medio", cyl*520, 1000, "Remolcador/ferry; reductora")
+
+
+
+    # Base adicional ampliada para que la app funcione con más tipos de buques.
+    # Son valores de preselección didáctica; deben verificarse con hojas técnicas vigentes.
+    familias_2t_extra = [
+        ("MAN Energy Solutions", "G95ME-C", 6100, 70, [5,6,7,8,9,10,11,12]),
+        ("MAN Energy Solutions", "G90ME-C", 5600, 74, [5,6,7,8,9,10,11,12]),
+        ("MAN Energy Solutions", "G70ME-C", 3200, 85, [5,6,7,8,9,10,11,12]),
+        ("MAN Energy Solutions", "G60ME-C", 2500, 97, [5,6,7,8,9,10]),
+        ("MAN Energy Solutions", "S50ME-C", 1780, 127, [5,6,7,8,9]),
+        ("MAN Energy Solutions", "S46ME-B", 1500, 129, [5,6,7,8]),
+        ("MAN Energy Solutions", "S35ME-B", 870, 173, [5,6,7,8]),
+        ("WinGD", "X82", 4500, 76, [5,6,7,8,9,10,11,12]),
+        ("WinGD", "X72DF", 3900, 89, [5,6,7,8,9,10,11]),
+        ("WinGD", "X62DF", 2800, 103, [5,6,7,8,9,10]),
+        ("WinGD", "X52", 1900, 110, [5,6,7,8,9]),
+        ("WinGD", "X40-B", 1050, 146, [5,6,7,8]),
+    ]
+    for fabricante, familia, kw_cyl, rpm, cilindros in familias_2t_extra:
+        for cyl in cilindros:
+            add(fabricante, f"{cyl}{familia}", "2T lento", cyl*kw_cyl, rpm, "Motor lento; candidato para transmisión directa o baja reducción")
+
+    familias_4t_extra = [
+        ("Wärtsilä", "L20", 200, 1000, [4,6,8,9]),
+        ("Wärtsilä", "L26", 340, 1000, [6,8,9,12,16]),
+        ("Wärtsilä", "L31", 610, 750, [8,10,12,14,16]),
+        ("Wärtsilä", "46DF", 1045, 600, [6,8,9,12,16]),
+        ("Wärtsilä", "50DF", 950, 514, [6,8,9,12,16,18]),
+        ("MAN", "L21/31", 220, 1000, [5,6,7,8,9]),
+        ("MAN", "L27/38", 365, 800, [6,8,9]),
+        ("MAN", "V28/33D", 450, 1000, [12,16,20]),
+        ("MAN", "V35/44G", 530, 720, [12,16,20]),
+        ("MAN", "L51/60DF", 1150, 514, [6,7,8,9,12,14,16,18]),
+        ("Caterpillar MaK", "M20C", 180, 1000, [6,8,9]),
+        ("Caterpillar MaK", "M25E", 330, 750, [6,8,9]),
+        ("Caterpillar MaK", "M34DF", 500, 720, [6,8,9,12,16]),
+        ("Bergen", "C25:33", 330, 1000, [6,8,9]),
+        ("Bergen", "B35:40", 665, 750, [6,8,9,12,16,20]),
+        ("Niigata", "28AHX", 320, 750, [6,8,9]),
+        ("Daihatsu", "DE-28", 250, 720, [6,8]),
+        ("Daihatsu", "DE-35", 500, 720, [6,8]),
+    ]
+    for fabricante, familia, kw_cyl, rpm, cilindros in familias_4t_extra:
+        for cyl in cilindros:
+            add(fabricante, f"{cyl}{familia}", "4T medio", cyl*kw_cyl, rpm, "Motor medio; usualmente requiere reductora")
+
+    motores_rapidos_extra = [
+        ("Scania", "DI13 076M", 700, 2100), ("Scania", "DI16 076M", 900, 2100),
+        ("Volvo Penta", "D13 MH", 735, 2300), ("Volvo Penta", "D16 MH", 1000, 2300),
+        ("John Deere", "6135SFM85", 560, 2200), ("John Deere", "PowerTech 6090SFM85", 410, 2200),
+        ("MAN High Speed", "D2862 LE489", 1213, 2300), ("MAN High Speed", "D2868 LE436", 882, 2100),
+        ("MTU", "8V2000 M72", 720, 2250), ("MTU", "10V2000 M72", 900, 2250),
+        ("MTU", "12V4000 M65L", 2250, 1800), ("MTU", "16V4000 M93L", 3440, 2100),
+        ("Baudouin", "12M26.3", 1214, 1800), ("Baudouin", "16M33.3", 2200, 1800),
+        ("Mitsubishi", "S12R-MPTK", 1260, 1600), ("Mitsubishi", "S16R2-MPTK", 2000, 1500),
+    ]
+    for fabricante, modelo, kw, rpm in motores_rapidos_extra:
+        add(fabricante, modelo, "4T rápido", kw, rpm, "Motor rápido; requiere reductora")
 
     df = pd.DataFrame(filas).drop_duplicates(subset=["Fabricante", "Modelo"]).reset_index(drop=True)
     return df
@@ -1596,13 +1672,9 @@ with tab_pdf_comp:
     st.markdown("### Comparación calculado vs real")
     st.dataframe(comparacion_df.style.format({"Calculado":"{:.3f}", "Real PDF/manual":"{:.3f}", "Error [%]":"{:.2f}"}), use_container_width=True)
 
-    fig_cmp, ax_cmp = plt.subplots(figsize=(9,4.5))
-    df_err = comparacion_df.dropna(subset=["Error [%]"])
-    ax_cmp.bar(df_err["Parámetro"], df_err["Error [%]"])
-    ax_cmp.set_ylabel("Error porcentual [%]")
-    ax_cmp.set_title("Error de resultados calculados contra datos reales")
-    ax_cmp.tick_params(axis='x', rotation=30)
-    ax_cmp.grid(True, axis="y", linestyle=":", alpha=0.6)
+    st.markdown("### 📊 Comparación visual profesional")
+    st.caption("La gráfica compara directamente el valor calculado por la app contra el dato real de la ficha técnica o entrada manual. La etiqueta indica el error porcentual.")
+    fig_cmp = crear_figura_comparacion(comparacion_df)
     st.pyplot(fig_cmp)
 
 # ==============================================================================
@@ -1621,6 +1693,13 @@ with tab_potencias:
     c2.metric("PD", f"{PD_kw:,.0f} kW")
     c3.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
     c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+
+    if motor_mcr_kw >= MCR_requerido_kw and motor_cumple:
+        estado_html("✅ Cumple potencia: la PB requerida queda cubierta con el motor seleccionado trabajando alrededor del 85% del MCR.", "good")
+    elif motor_mcr_kw >= MCR_requerido_kw:
+        estado_html("⚠️ Potencia cercana: el MCR nominal cubre el requerimiento, pero revisa el criterio de 85% MCR y el punto de operación.", "warn")
+    else:
+        estado_html("❌ No cumple potencia: el motor seleccionado no cubre la PB requerida con margen suficiente.", "bad")
 
     st.dataframe(power_chain_df.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
 
@@ -1688,7 +1767,9 @@ with tab_motor:
 
     st.markdown("### 🧠 Recomendación automática desde base de motores")
     st.caption("Base didáctica amplia para preselección. Antes de entregar, confirma el modelo exacto con hoja técnica del fabricante.")
-    rec_motores = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_tipo, n=15)
+    total_motores_db = len(construir_base_motores())
+    st.info(f"La base de datos interna contiene {total_motores_db} configuraciones de motores de referencia entre motores lentos 2T, medios 4T y rápidos. La selección es preliminar y debe verificarse con ficha técnica del fabricante.")
+    rec_motores = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_tipo, n=20)
     if rec_motores.empty:
         st.warning("No se encontró un motor en la base didáctica que cubra la PB calculada al 85% MCR. Prueba aumentar base de datos o usar un motor manual.")
     else:
@@ -1770,6 +1851,25 @@ with tab_opt:
         )
         mejor = opt_df.iloc[0]
         estado_html(f"Mejor combinación encontrada: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%.", "good")
+
+        st.markdown("### 📊 Visualización de mejores alternativas")
+        top_opt = opt_df.head(10).copy()
+        top_opt["Configuración"] = top_opt.apply(lambda r: f"Z{int(r['Z'])} | P/D {r['P/D']:.2f} | Ae {r['Ae/A0']:.2f}", axis=1)
+        fig_opt, ax_opt = plt.subplots(figsize=(10.5, 5.0))
+        ax_opt.barh(top_opt["Configuración"][::-1], top_opt["ηO [%]"][::-1])
+        ax_opt.set_xlabel("Eficiencia en aguas abiertas ηO [%]")
+        ax_opt.set_title("Top 10 combinaciones optimizadas de hélice", fontsize=12, fontweight="bold")
+        ax_opt.grid(True, axis="x", linestyle=":", alpha=0.55)
+        for y, val in enumerate(top_opt["ηO [%]"][::-1]):
+            ax_opt.text(val + 0.15, y, f"{val:.2f}%", va="center", fontsize=8)
+        st.pyplot(fig_opt)
+
+        st.markdown("### 📌 Comparación contra la configuración actual")
+        comp_opt = pd.DataFrame([
+            {"Concepto":"Actual", "Z":z_val, "P/D":pd_val, "Ae/A0":ae_val, "J óptimo":j_opt, "ηO [%]":max_eff*100},
+            {"Concepto":"Óptima encontrada", "Z":int(mejor['Z']), "P/D":mejor['P/D'], "Ae/A0":mejor['Ae/A0'], "J óptimo":mejor['J óptimo'], "ηO [%]":mejor['ηO [%]']},
+        ])
+        st.dataframe(comp_opt.style.format({"P/D":"{:.3f}", "Ae/A0":"{:.3f}", "J óptimo":"{:.3f}", "ηO [%]":"{:.2f}"}), use_container_width=True)
     else:
         st.info("Presiona el botón para iniciar la optimización. Mientras no lo hagas, la app seguirá cargando rápido y todas las pestañas estarán disponibles.")
 
@@ -1936,7 +2036,7 @@ with tab_axial:
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Base teórica de vibración axial", expanded=True):
+    with st.expander("📘 Base teórica de vibración axial", expanded=False):
         st.markdown("""
         La hélice no entrega un empuje perfectamente constante. Al girar detrás del casco,
         cada pala entra en zonas de estela diferente, por lo que el empuje puede fluctuar.
@@ -1952,7 +2052,7 @@ with tab_axial:
         - **2ZP y 3ZP:** armónicos superiores del paso de pala.
         """)
 
-    with st.expander("🧮 Fórmulas de vibración axial usadas", expanded=True):
+    with st.expander("🧮 Fórmulas de vibración axial usadas", expanded=False):
         st.latex(r"k_{eje}=\frac{EA}{L}")
         st.latex(r"k_{eq}=\left(\frac{1}{k_{eje}}+\frac{1}{k_{cojinete}}\right)^{-1}")
         st.latex(r"m_{eq}=m_{helice}+0.35m_{eje}")
@@ -2104,7 +2204,7 @@ with tab_balanceo:
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Base teórica de balanceo", expanded=True):
+    with st.expander("📘 Base teórica de balanceo", expanded=False):
         st.markdown("""
         En un eje ideal, la masa gira de forma simétrica alrededor del centro. Cuando existe
         una pequeña masa excéntrica, se produce una fuerza dinámica proporcional a la masa,
@@ -2116,7 +2216,7 @@ with tab_balanceo:
         incorrecto del conjunto eje-hélice.
         """)
 
-    with st.expander("🧮 Fórmulas de desbalance usadas", expanded=True):
+    with st.expander("🧮 Fórmulas de desbalance usadas", expanded=False):
         st.latex(r"\omega=\frac{2\pi n}{60}")
         st.latex(r"F_u=m_u e \omega^2")
         st.latex(r"\%F_u=\frac{F_u}{W_h}\times 100")
