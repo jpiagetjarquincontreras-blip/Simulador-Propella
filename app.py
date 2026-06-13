@@ -1240,7 +1240,8 @@ def generar_excel():
         cumplimiento.to_excel(writer, sheet_name="Cumplimiento", index=False)
         axial_df.to_excel(writer, sheet_name="Vibracion_Axial", index=False)
         campbell_df.to_excel(writer, sheet_name="Campbell_Datos", index=False)
-        motores_recomendados.to_excel(writer, sheet_name="Motores_Recomendados", index=False)
+        rec_motores_export = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_tipo, n=20)
+        rec_motores_export.to_excel(writer, sheet_name="Motores_Recomendados", index=False)
 
         cav_df = pd.DataFrame([
             {"Análisis": "Reynolds", "Resultado": reynolds, "Límite/Referencia": "> 1e7", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
