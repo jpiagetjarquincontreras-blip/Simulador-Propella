@@ -551,21 +551,56 @@ def recomendar_reductoras(pb_kw, relacion_necesaria, n=8):
 
 
 @st.cache_data(show_spinner=False)
-def optimizar_helice_wageningen():
+def optimizar_helice_wageningen(modo="Rápida"):
+    """
+    Optimización ligera para no bloquear la app en Streamlit Cloud.
+    Modo Rápida: pocas combinaciones, ideal para clase.
+    Modo Detallada: más combinaciones, pero sigue limitada para evitar congelamientos.
+    """
     filas = []
+    if modo == "Detallada":
+        pds = np.linspace(0.55, 1.25, 8)
+        aes = np.linspace(0.40, 0.95, 7)
+        j_vals_local = np.linspace(0.05, 1.15, 80)
+    else:
+        pds = np.linspace(0.60, 1.20, 6)
+        aes = np.linspace(0.40, 0.90, 5)
+        j_vals_local = np.linspace(0.08, 1.10, 55)
+
+    col_c = "Coeficiente"
+    kt_c = df_kt[col_c].to_numpy(dtype=float)
+    kt_s = df_kt["S (j)"].to_numpy(dtype=float)
+    kt_t = df_kt["T (p/d)"].to_numpy(dtype=float)
+    kt_u = df_kt["U (ae/ao)"].to_numpy(dtype=float)
+    kt_v = df_kt["V (z)"].to_numpy(dtype=float)
+
+    kq_c = df_kq[col_c].to_numpy(dtype=float)
+    kq_s = df_kq["S (j)"].to_numpy(dtype=float)
+    kq_t = df_kq["T (p/d)"].to_numpy(dtype=float)
+    kq_u = df_kq["U (ae/ao)"].to_numpy(dtype=float)
+    kq_v = df_kq["V (z)"].to_numpy(dtype=float)
+
+    j_matrix_kt = np.power(j_vals_local[:, None], kt_s[None, :])
+    j_matrix_kq = np.power(j_vals_local[:, None], kq_s[None, :])
+
     for z in range(3, 8):
-        for pdv in np.linspace(0.55, 1.25, 10):
-            for aev in np.linspace(0.40, 0.95, 8):
-                curvas = calcular_curvas(float(pdv), float(aev), int(z))
-                imax = curvas["nO"].idxmax()
+        for pdv in pds:
+            for aev in aes:
+                kt_terms = kt_c * (pdv ** kt_t) * (aev ** kt_u) * (z ** kt_v)
+                kq_terms = kq_c * (pdv ** kq_t) * (aev ** kq_u) * (z ** kq_v)
+                kt_vals = j_matrix_kt @ kt_terms
+                kq_vals = j_matrix_kq @ kq_terms
+                eta_vals = np.where((kt_vals > 0) & (kq_vals > 0), (j_vals_local / (2*np.pi)) * (kt_vals / kq_vals), 0.0)
+                eta_vals = np.where(eta_vals <= 0.85, eta_vals, 0.0)
+                imax = int(np.nanargmax(eta_vals))
                 filas.append({
                     "Z": z,
                     "P/D": float(pdv),
                     "Ae/A0": float(aev),
-                    "J óptimo": float(curvas.loc[imax, "J"]),
-                    "KT": float(curvas.loc[imax, "KT"]),
-                    "KQ": float(curvas.loc[imax, "KQ"]),
-                    "ηO [%]": float(curvas.loc[imax, "nO"] * 100.0),
+                    "J óptimo": float(j_vals_local[imax]),
+                    "KT": float(kt_vals[imax]),
+                    "KQ": float(kq_vals[imax]),
+                    "ηO [%]": float(eta_vals[imax] * 100.0),
                 })
     return pd.DataFrame(filas).sort_values("ηO [%]", ascending=False).reset_index(drop=True)
 
@@ -1601,6 +1636,22 @@ with tab_potencias:
     ])
     st.dataframe(eff_df.style.format({"Valor":"{:.4f}"}), use_container_width=True)
 
+    st.markdown("### 📊 Gráfica de crecimiento de potencia")
+    etapas_plot = power_chain_df[power_chain_df["Unidad"].astype(str).str.contains("kW", na=False)].copy()
+    etapas_plot = etapas_plot[etapas_plot["Etapa"].isin(["PE", "PE + Sea Margin", "PT", "PD", "PS", "PB"])]
+    fig_pot, ax_pot = plt.subplots(figsize=(10.5, 4.8))
+    ax_pot.plot(etapas_plot["Etapa"], etapas_plot["Valor"], marker="o", linewidth=2.6)
+    ax_pot.fill_between(range(len(etapas_plot)), etapas_plot["Valor"], alpha=0.10)
+    ax_pot.set_title("Cadena de potencias: desde PE hasta PB", fontsize=12, fontweight="bold")
+    ax_pot.set_xlabel("Etapa de cálculo")
+    ax_pot.set_ylabel("Potencia [kW]")
+    ax_pot.grid(True, linestyle=":", alpha=0.6)
+    for i, val in enumerate(etapas_plot["Valor"]):
+        ax_pot.text(i, val, f"{val:,.0f}", ha="center", va="bottom", fontsize=8)
+    st.pyplot(fig_pot)
+
+    st.caption("La gráfica permite ver cómo la potencia aumenta al aplicar margen de servicio y pérdidas por eficiencias hasta llegar a la potencia al freno requerida en el motor.")
+
     with st.expander("🧮 Fórmulas de la cadena de potencias", expanded=False):
         st.latex(r"P_E = R_T V_S")
         st.latex(r"P_{E,SM}=P_E(1+SM)")
@@ -1694,11 +1745,14 @@ with tab_opt:
     </div>
     """, unsafe_allow_html=True)
 
+    modo_opt = st.radio("Nivel de búsqueda", ["Rápida", "Detallada"], horizontal=True, help="Usa Rápida para obtener resultado casi inmediato. Detallada revisa más combinaciones.")
     ejecutar_opt = st.button("▶️ Ejecutar optimización automática", key="btn_opt_helice")
 
     if ejecutar_opt:
-        with st.spinner("Calculando combinaciones de hélice... tarda unos segundos solo la primera vez."):
-            st.session_state["opt_df"] = optimizar_helice_wageningen()
+        with st.spinner("Calculando combinaciones de hélice... espera unos segundos."):
+            st.session_state["opt_df"] = optimizar_helice_wageningen(modo_opt)
+            st.session_state["opt_modo"] = modo_opt
+        st.success(f"Optimización {modo_opt.lower()} terminada. Se evaluaron {len(st.session_state['opt_df'])} combinaciones.")
 
     if "opt_df" in st.session_state:
         opt_df = st.session_state["opt_df"]
@@ -2312,7 +2366,20 @@ with tab_cav:
         {"Análisis": "Burrill τc", "Valor calculado": tau_c_burrill, "Límite/Referencia": tau_c_admisible, "Resultado": "Cumple" if burrill_ok else "Revisar"},
         {"Análisis": "Keller Ae/A0", "Valor calculado": ae_val, "Límite/Referencia": keller_ae_min, "Resultado": "Cumple" if keller_ok else "No cumple"},
     ])
-    st.dataframe(cav_resumen_df, use_container_width=True)
+    def colorear_resultado_cavitacion(val):
+        val = str(val)
+        if val == "Cumple":
+            return "background-color: #dcfce7; color: #166534; font-weight: bold"
+        if val == "No cumple":
+            return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
+        return "background-color: #fef3c7; color: #92400e; font-weight: bold"
+
+    st.dataframe(
+        cav_resumen_df.style
+        .format({"Valor calculado":"{:.4f}", "Límite/Referencia":"{}"})
+        .map(colorear_resultado_cavitacion, subset=["Resultado"]),
+        use_container_width=True
+    )
 
 # ==============================================================================
 # NORMATIVA APLICABLE
