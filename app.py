@@ -579,6 +579,38 @@ def construir_base_motores():
     for fabricante, modelo, kw, rpm in motores_rapidos_extra:
         add(fabricante, modelo, "4T rápido", kw, rpm, "Motor rápido; requiere reductora")
 
+
+
+    # Catálogo extendido paramétrico adicional: amplia la búsqueda para uso universal.
+    # No representa una ficha exacta única; es una malla de familias comerciales aproximadas para preselección.
+    familias_ext = [
+        ("MAN Energy Solutions", "S40ME-C", "2T lento", 1120, 146, range(5,9)),
+        ("MAN Energy Solutions", "S50ME-C9", "2T lento", 1850, 127, range(5,10)),
+        ("MAN Energy Solutions", "S60ME-C10", "2T lento", 2550, 105, range(5,10)),
+        ("WinGD", "X35-B", "2T lento", 870, 167, range(5,9)),
+        ("WinGD", "X40DF", "2T lento", 1100, 146, range(5,9)),
+        ("WinGD", "X52DF", "2T lento", 2000, 110, range(5,10)),
+        ("Wärtsilä", "L34DF", "4T medio", 500, 750, range(6,18,2)),
+        ("Wärtsilä", "L38", "4T medio", 725, 600, range(6,18,2)),
+        ("MAN", "L23/30H", "4T medio", 200, 900, range(5,10)),
+        ("MAN", "L28/32DF", "4T medio", 450, 720, range(6,20,2)),
+        ("Caterpillar MaK", "M43C", "4T medio", 900, 500, range(6,18,2)),
+        ("Caterpillar MaK", "M32C", "4T medio", 500, 600, range(6,18,2)),
+        ("Hyundai HiMSEN", "H25/33", "4T medio", 250, 900, range(5,10)),
+        ("Hyundai HiMSEN", "H35/40", "4T medio", 600, 720, range(6,20,2)),
+        ("Bergen", "B32:40", "4T medio", 500, 750, range(6,20,2)),
+        ("Bergen", "B36:45", "4T medio", 750, 600, range(6,20,2)),
+        ("ABC", "DL36", "4T medio", 750, 750, range(6,18,2)),
+        ("ABC", "DZC Medium", "4T medio", 520, 1000, range(6,18,2)),
+    ]
+    for fabricante, familia, tipo, kw_cyl, rpm, cilindros in familias_ext:
+        for cyl in cilindros:
+            add(fabricante, f"{cyl}{familia}", tipo, cyl*kw_cyl, rpm, "Catálogo extendido de preselección; verificar ficha de fabricante")
+
+    # Variantes de motores rápidos por niveles de potencia para embarcaciones menores.
+    for kw in [300, 450, 600, 800, 1000, 1200, 1500, 1800, 2200, 2600, 3200, 4000, 5000]:
+        add("Base genérica comercial", f"High Speed Marine {kw} kW", "4T rápido", kw, 1800 if kw < 2500 else 1500, "Opción genérica para dimensionamiento; reemplazar por modelo real")
+
     df = pd.DataFrame(filas).drop_duplicates(subset=["Fabricante", "Modelo"]).reset_index(drop=True)
     return df
 
@@ -758,6 +790,83 @@ def calcular_curvas(pd_v, ae_v, z_v):
     })
 
 
+
+
+# ==============================================================================
+# ESTIMADORES UNIVERSALES DE PREDISEÑO
+# ==============================================================================
+# Estos estimadores evitan que la app dependa de un buque específico. Si el usuario
+# sube un PDF, sus datos reales se usan para comparación; si no, la app genera
+# valores preliminares transparentes y editables a partir de dimensiones y tipo de buque.
+
+def coef_bloque_referencia(tipo_buque):
+    tabla = {
+        "Buque tanque": 0.82,
+        "Bulk carrier": 0.80,
+        "Portacontenedores": 0.66,
+        "OSV / PSV": 0.62,
+        "AHTS": 0.58,
+        "Remolcador": 0.54,
+        "Ferry": 0.55,
+        "Libre / Personalizado": 0.70,
+    }
+    return tabla.get(tipo_buque, 0.70)
+
+def estimar_estela(tipo_buque, cb=None):
+    cb = coef_bloque_referencia(tipo_buque) if cb is None else cb
+    w = 0.05 + 0.38 * cb
+    return float(min(max(w, 0.12), 0.45))
+
+def estimar_deduccion_empuje(w):
+    # Relación preliminar habitual: t menor que w para buques de una hélice.
+    return float(min(max(0.55 * w, 0.06), 0.32))
+
+def estimar_eta_s(tipo_transmision="Directa / sin caja reductora"):
+    return 0.990 if str(tipo_transmision).startswith("Directa") else 0.985
+
+def estimar_eta_g(tipo_transmision="Directa / sin caja reductora"):
+    return 1.000 if str(tipo_transmision).startswith("Directa") else 0.975
+
+def estimar_resistencia_ittc_kn(lwl, manga, calado, velocidad_kn, tipo_buque, rho=1025.0, nu=1.1883e-6):
+    # Estimación universal preliminar usando superficie mojada aproximada + ITTC-1957.
+    # No sustituye canal de pruebas ni Holtrop-Mennen completo; sirve como punto inicial editable.
+    v = max(velocidad_kn * 0.514444, 0.01)
+    L = max(float(lwl), 1.0)
+    B = max(float(manga), 0.1)
+    T = max(float(calado), 0.1)
+    cb = coef_bloque_referencia(tipo_buque)
+    s_mojada = L * (2*T + B) * max(0.70, min(0.95, 0.72 + 0.25*cb))
+    rn = max(v * L / max(nu, 1e-12), 1e5)
+    cf = 0.075 / ((math.log10(rn) - 2.0) ** 2)
+    q = 0.5 * rho * v**2
+    rf = q * s_mojada * cf
+    # Factor global por forma, apéndices y resistencia residual según tipo.
+    factor = {
+        "Buque tanque": 1.55, "Bulk carrier": 1.60, "Portacontenedores": 1.85,
+        "OSV / PSV": 2.10, "AHTS": 2.20, "Remolcador": 2.35,
+        "Ferry": 2.00, "Libre / Personalizado": 1.80
+    }.get(tipo_buque, 1.80)
+    return float(rf * factor / 1000.0)
+
+def estimar_diametro_eje_mm(pb_kw, rpm, material="Acero Forjado Naval Estándar"):
+    # Predimensionamiento por torsión para que la app funcione sin dato de eje.
+    # Se limita a valores razonables y debe validarse con reglas de clase.
+    if pb_kw <= 0 or rpm <= 0:
+        return 250.0
+    omega = 2.0 * math.pi * rpm / 60.0
+    torque = pb_kw * 1000.0 / omega
+    tau_adm = 45e6  # Pa, valor preliminar conservador para prediseño académico.
+    d = (16.0 * torque / (math.pi * tau_adm)) ** (1/3)
+    return float(min(max(d * 1000.0, 80.0), 1200.0))
+
+def estimar_peso_helice_kg(diametro_m, z):
+    # Correlación didáctica proporcional a D^3; evita usar pesos de un buque específico.
+    return float(max(250.0, 48.0 * (max(diametro_m, 0.1)**3) * (max(z, 3)/4.0)))
+
+def estimar_voladizo_m(diametro_m):
+    return float(min(max(0.35 * diametro_m, 0.8), 5.0))
+
+
 # ==============================================================================
 # ENCABEZADO
 # ==============================================================================
@@ -874,40 +983,44 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🌀 Interacción casco-propulsor")
 
+    w_estimado = estimar_estela(modo_guia)
+    t_estimado = estimar_deduccion_empuje(w_estimado)
+
     estela = st.number_input(
         "Fracción de estela w [-]",
-        value=0.351,
+        value=float(nvl(datos_pdf.get("w"), w_estimado)),
         min_value=0.0,
         max_value=0.8,
         step=0.001,
         format="%.3f",
-        help="Reduce la velocidad efectiva que llega a la hélice. Valores comunes: 0.10–0.45."
+        help="Valor editable. Si no se conoce, la app propone una estimación según tipo de buque y coeficiente de bloque de referencia."
     )
 
     t_fraction = st.slider(
         "Fracción de deducción de empuje t [-]",
         0.05,
         0.35,
-        0.180,
+        float(nvl(datos_pdf.get("t"), t_estimado)),
         0.005,
-        help="Pérdida asociada a la interacción entre el empuje de la hélice y el casco."
+        help="Valor editable. Si no se conoce, se estima preliminarmente como una fracción de la estela."
     )
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=1.015,
+        value=float(nvl(datos_pdf.get("eta_r"), 1.000)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
-        format="%.3f"
+        format="%.3f",
+        help="Si no se conoce, 1.000 es una hipótesis neutra de prediseño."
     )
 
     inmersion_eje_m = st.number_input(
         "Inmersión del centro del eje h [m]",
-        value=14.10,
+        value=float(nvl(datos_pdf.get("inmersion_eje_m"), max(0.50 * calado, 0.1))),
         min_value=0.1,
         step=0.1,
-        help="Profundidad del centro de la hélice respecto a la superficie libre. A mayor inmersión, menor tendencia a cavitación."
+        help="Si no se conoce, se aproxima como 50% del calado. Debe corregirse con plano de arreglo de popa si existe."
     )
 
     st.markdown("---")
@@ -923,50 +1036,70 @@ with st.sidebar:
     st.subheader("⚙️ Material del sistema propulsivo")
     st.info(
         "Selecciona el material de referencia para evaluar el límite admisible de esfuerzo. "
-        "Los demás parámetros mecánicos se mantienen internamente como valores de referencia "
-        "para no saturar la interfaz del usuario."
+        "Los parámetros que no existan en la ficha técnica se estiman de forma preliminar y quedan visibles/editables."
     )
 
     st.markdown("---")
     st.subheader("⚡ Cadena de potencias")
-    resistencia_total_kn = st.number_input("Resistencia total RT [kN]", value=2100.0, min_value=0.0, step=50.0, help="Si no tienes RT experimental, ingresa una estimación. Este valor alimenta PE=RT·Vs.")
-    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=0.985, min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
-    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=0.980, min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
+    rt_estimado_kn = estimar_resistencia_ittc_kn(lwl, manga, calado, velocidad, modo_guia, rho_auto)
+    usar_rt_auto = st.checkbox("Usar RT estimada automáticamente", value=("rt_kn" not in datos_pdf), help="Si no tienes resistencia de pruebas o CFD, la app estima RT con una aproximación ITTC preliminar. Puedes desactivarlo y escribir tu propio valor.")
+    resistencia_total_kn = st.number_input(
+        "Resistencia total RT [kN]",
+        value=float(nvl(datos_pdf.get("rt_kn"), rt_estimado_kn)),
+        min_value=0.0, step=50.0,
+        disabled=usar_rt_auto,
+        help="RT es la resistencia al avance. Si está en automático, se estima con dimensiones, velocidad y tipo de buque; si tienes un dato real, desactiva el automático."
+    )
+    if usar_rt_auto:
+        resistencia_total_kn = rt_estimado_kn
+        st.caption(f"RT automática preliminar: {resistencia_total_kn:,.0f} kN. Este valor no viene de un buque específico; se recalcula con tus entradas.")
+
+    transmision_tipo = st.selectbox("Tipo de transmisión", ["Automática según motor recomendado", "Directa / sin caja reductora", "Con caja reductora"] )
+    transmision_para_eta = "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo
+    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=estimar_eta_s(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
+    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=estimar_eta_g(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
     eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", help="Normalmente 1.000 si no se considera una pérdida adicional.")
 
     st.markdown("---")
     st.subheader("🛠️ Motor y transmisión")
-    transmision_tipo = st.selectbox("Tipo de transmisión", ["Directa / sin caja reductora", "Con caja reductora"] )
-    motor_nombre_pdf = datos_pdf.get("motor_modelo") or "Hyundai – B&W 6S90MC-C MK7"
-    motor_nombre = st.text_input("Motor real seleccionado", value=motor_nombre_pdf)
-    motor_mcr_kw = st.number_input("Potencia MCR del motor [kW]", value=float(nvl(datos_pdf.get("mcr_kw"), 29340.0)), min_value=0.0, step=100.0)
-    motor_mcr_rpm = st.number_input("RPM MCR del motor [rpm]", value=float(nvl(datos_pdf.get("mcr_rpm"), 79.0)), min_value=0.0, step=1.0)
-    motor_ncr_kw = st.number_input("Potencia NCR / servicio real [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), motor_mcr_kw * 0.85)), min_value=0.0, step=100.0)
-    motor_ncr_rpm = st.number_input("RPM NCR / servicio real [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 75.0)), min_value=0.0, step=1.0)
+    st.caption("El motor real solo se toma del PDF si el usuario lo sube. Sin PDF, la app no usa ningún motor fijo: recomienda opciones desde la base interna.")
+    motor_nombre_pdf = datos_pdf.get("motor_modelo") or "Sin motor real cargado"
+    motor_nombre = st.text_input("Motor real detectado/manual", value=motor_nombre_pdf)
+    motor_mcr_kw = st.number_input("Potencia MCR del motor [kW]", value=float(nvl(datos_pdf.get("mcr_kw"), 0.0)), min_value=0.0, step=100.0)
+    motor_mcr_rpm = st.number_input("RPM MCR del motor [rpm]", value=float(nvl(datos_pdf.get("mcr_rpm"), 0.0)), min_value=0.0, step=1.0)
+    motor_ncr_kw = st.number_input("Potencia NCR / servicio real [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), motor_mcr_kw * 0.85 if motor_mcr_kw else 0.0)), min_value=0.0, step=100.0)
+    motor_ncr_rpm = st.number_input("RPM NCR / servicio real [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), motor_mcr_rpm if motor_mcr_rpm else 0.0)), min_value=0.0, step=1.0)
 
     if transmision_tipo == "Con caja reductora":
         marca_caja = st.selectbox("Caja reductora real", ["Reintjes WAF/WGF", "ZF Marine", "Twin Disc", "Lufkin", "Otra"] )
         relacion_reduccion = st.number_input("Relación de reducción i = RPM motor / RPM hélice", value=1.50, min_value=1.0, step=0.01, format="%.2f")
-    else:
+    elif transmision_tipo == "Directa / sin caja reductora":
         marca_caja = "No aplica: motor lento acoplado directamente"
-        relacion_reduccion = safe_div(motor_ncr_rpm, motor_ncr_rpm, default=1.0)
+        relacion_reduccion = 1.0
+    else:
+        marca_caja = "Automática: se propone directa o reductora en pestaña Motor"
+        relacion_reduccion = 1.0
 
     st.markdown("---")
     st.subheader("🔎 Datos reales para comparar")
-    pb_real_kw = st.number_input("PB real/NCR del buque [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 24939.0)), min_value=0.0, step=100.0)
-    rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 75.0)), min_value=0.0, step=1.0)
-    diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 10.0)), min_value=0.0, step=0.01)
-    z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 4)), min_value=0, step=1)
-    pd_real = st.number_input("P/D real", value=float(nvl(datos_pdf.get("prop_pd"), 0.706)), min_value=0.0, step=0.001, format="%.3f")
+    st.caption("Estos campos son opcionales. Si no hay PDF o ficha técnica, déjalos en 0 y la app calculará sin comparar contra datos reales.")
+    pb_real_kw = st.number_input("PB real/NCR del buque [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 0.0)), min_value=0.0, step=100.0)
+    rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 0.0)), min_value=0.0, step=1.0)
+    diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 0.0)), min_value=0.0, step=0.01)
+    z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 0)), min_value=0, step=1)
+    pd_real = st.number_input("P/D real", value=float(nvl(datos_pdf.get("prop_pd"), 0.0)), min_value=0.0, step=0.001, format="%.3f")
 
     st.markdown("---")
     st.subheader("⚙️ Parámetros mecánicos visibles")
-    potencia_kw_base = st.number_input("Potencia base para análisis de eje [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 22000.0)), min_value=0.0, step=100.0)
-    potencia_kw = potencia_kw_base * (1 + margen_servicio / 100)
-    rpm_motor = st.number_input("RPM de operación para vibración [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 75.0)), min_value=0.1, step=1.0)
-    diametro_eje_mm = st.number_input("Diámetro del eje [mm]", value=680.0, min_value=50.0, step=10.0)
-    peso_helice_kg = st.number_input("Peso estimado de hélice [kg]", value=52000.0, min_value=1.0, step=500.0)
-    longitud_volado_m = st.number_input("Longitud en voladizo del eje [m]", value=3.5, min_value=0.1, step=0.1)
+    st.caption("Si no tienes estos datos, la app puede estimarlos. No se usa ningún valor fijo de un barco específico.")
+    rpm_motor_default = float(nvl(datos_pdf.get("ncr_rpm"), rpm_real if rpm_real > 0 else 100.0))
+    rpm_motor = st.number_input("RPM de operación para vibración [rpm]", value=rpm_motor_default, min_value=0.1, step=1.0, help="Si no hay PDF, se usa un valor preliminar editable para que el análisis vibratorio pueda ejecutarse.")
+    potencia_kw_base = st.number_input("Potencia base manual para análisis de eje [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 0.0)), min_value=0.0, step=100.0, help="Opcional. Si lo dejas en 0, la app usará automáticamente la PB calculada en la cadena de potencias.")
+    potencia_kw = potencia_kw_base * (1 + margen_servicio / 100) if potencia_kw_base > 0 else 0.0
+    diametro_eje_default = estimar_diametro_eje_mm(max(potencia_kw_base, 1.0), rpm_motor)
+    diametro_eje_mm = st.number_input("Diámetro del eje [mm]", value=diametro_eje_default, min_value=50.0, step=10.0, help="Estimado automáticamente si no hay dato de plano; editable para validación.")
+    peso_helice_kg = st.number_input("Peso estimado de hélice [kg]", value=estimar_peso_helice_kg(diam_prop_m, z_val), min_value=1.0, step=500.0, help="Estimado con correlación D³; editable si el fabricante proporciona el peso real.")
+    longitud_volado_m = st.number_input("Longitud en voladizo del eje [m]", value=estimar_voladizo_m(diam_prop_m), min_value=0.1, step=0.1, help="Estimación preliminar a partir del diámetro de hélice; corregir con arreglo de línea de ejes si existe.")
 
     dict_materiales = {
         "Bronce de Níquel-Aluminio (Cu3)": 590.0,
@@ -1158,15 +1291,26 @@ PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
 PS_kw = safe_div(PD_kw, max(eta_s, 1e-9))
 PB_kw_calc = safe_div(PS_kw, max(eta_g, 1e-9))
 MCR_requerido_kw = safe_div(PB_kw_calc, 0.85, default=0.0)
+# Si el usuario no proporcionó potencia para vibraciones, se toma PB calculada automáticamente.
+if potencia_kw_base <= 0:
+    potencia_kw = PB_kw_calc
+    empuje_estimado_n = thrust_req_N
+    amplitud_empuje_axial_n = 0.08 * empuje_estimado_n
+    desplazamiento_axial_est_m = safe_div(amplitud_empuje_axial_n, rigidez_axial_equivalente_n_m)
 potencia_85_mcr_kw = motor_mcr_kw * 0.85
 motor_cumple = potencia_85_mcr_kw >= PB_kw_calc and motor_mcr_kw > 0
 rpm_helice_requerida = safe_div(VA_ms, max(j_opt * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_opt > 0 else 0.0
 # Para validación de transmisión se usa primero la RPM real/manual si existe, porque J óptimo no siempre representa la RPM real de servicio.
 rpm_helice_objetivo = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
-rpm_helice_por_caja = motor_ncr_rpm if transmision_tipo == "Directa / sin caja reductora" else safe_div(motor_ncr_rpm, max(relacion_reduccion, 1e-9), default=0.0)
-relacion_recomendada = safe_div(motor_ncr_rpm, max(rpm_helice_objetivo, 1e-9), default=1.0)
+if transmision_tipo == "Con caja reductora":
+    rpm_helice_por_caja = safe_div(motor_ncr_rpm, max(relacion_reduccion, 1e-9), default=0.0)
+elif transmision_tipo == "Directa / sin caja reductora":
+    rpm_helice_por_caja = motor_ncr_rpm
+else:
+    rpm_helice_por_caja = 0.0
+relacion_recomendada = safe_div(motor_ncr_rpm, max(rpm_helice_objetivo, 1e-9), default=0.0) if motor_ncr_rpm > 0 else 0.0
 tolerancia_rpm = max(5.0, 0.10 * max(rpm_helice_objetivo, 1.0))
-caja_cumple = abs(rpm_helice_por_caja - rpm_helice_objetivo) <= tolerancia_rpm
+caja_cumple = True if transmision_tipo.startswith("Automática") or motor_ncr_rpm <= 0 else abs(rpm_helice_por_caja - rpm_helice_objetivo) <= tolerancia_rpm
 
 # Keller: área expandida mínima preliminar para evitar cavitación excesiva.
 p0_pv = (p_atm_auto + rho_auto * g_auto * inmersion_eje_m - p_vap_auto)
@@ -1375,7 +1519,7 @@ def generar_excel():
         cumplimiento.to_excel(writer, sheet_name="Cumplimiento", index=False)
         axial_df.to_excel(writer, sheet_name="Vibracion_Axial", index=False)
         campbell_df.to_excel(writer, sheet_name="Campbell_Datos", index=False)
-        rec_motores_export = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_tipo, n=20)
+        rec_motores_export = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo, n=20)
         rec_motores_export.to_excel(writer, sheet_name="Motores_Recomendados", index=False)
 
         cav_df = pd.DataFrame([
@@ -1760,7 +1904,9 @@ with tab_motor:
     c3.metric("85% MCR", f"{potencia_85_mcr_kw:,.0f} kW")
     c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
 
-    if motor_cumple:
+    if motor_mcr_kw <= 0:
+        estado_html("ℹ️ No hay motor real cargado. La app no asume ningún motor fijo; usa la tabla de recomendación automática para elegir candidatos preliminares.", "warn")
+    elif motor_cumple:
         estado_html(f"✅ Motor compatible: {motor_nombre}. El 85% del MCR cubre la PB calculada.", "good")
     else:
         estado_html(f"❌ Motor insuficiente: {motor_nombre}. Se requiere un MCR mínimo aproximado de {MCR_requerido_kw:,.0f} kW.", "bad")
@@ -1769,7 +1915,8 @@ with tab_motor:
     st.caption("Base didáctica amplia para preselección. Antes de entregar, confirma el modelo exacto con hoja técnica del fabricante.")
     total_motores_db = len(construir_base_motores())
     st.info(f"La base de datos interna contiene {total_motores_db} configuraciones de motores de referencia entre motores lentos 2T, medios 4T y rápidos. La selección es preliminar y debe verificarse con ficha técnica del fabricante.")
-    rec_motores = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_tipo, n=20)
+    transmision_busqueda = "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo
+    rec_motores = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_busqueda, n=25)
     if rec_motores.empty:
         st.warning("No se encontró un motor en la base didáctica que cubra la PB calculada al 85% MCR. Prueba aumentar base de datos o usar un motor manual.")
     else:
@@ -1821,7 +1968,7 @@ with tab_opt:
     st.subheader("⭐ Optimización automática de hélice Wageningen")
     st.markdown("""
     <div class="section-card">
-    Esta tabla prueba combinaciones de Z, P/D y Ae/A0 dentro de rangos comerciales para encontrar la mayor eficiencia de aguas abiertas.
+    Esta herramienta no cambia tus datos automáticamente: prueba combinaciones comerciales de número de palas Z, P/D y Ae/A0, calcula sus curvas Wageningen, encuentra el máximo ηO de cada una y ordena las alternativas por eficiencia. Sirve para comparar tu hélice actual contra una propuesta preliminar más eficiente.
     Para evitar que la app se quede cargando y bloquee las pestañas siguientes, la optimización se ejecuta solo cuando el usuario presiona el botón.
     </div>
     """, unsafe_allow_html=True)
@@ -2099,17 +2246,36 @@ with tab_axial:
         height=230
     )
 
-    st.markdown("### 📈 Excitaciones axiales vs frecuencia natural")
-    fig_a, ax_a = plt.subplots(figsize=(10, 4.5))
-    ordenes_plot = axial_df["Orden de excitación"].tolist()
-    frec_plot = axial_df["Frecuencia excitante [Hz]"].tolist()
-    ax_a.bar(ordenes_plot, frec_plot, label="Frecuencia excitante")
-    ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.4, label="Frecuencia natural axial")
+    st.markdown("### 📈 Mapa profesional de separación axial")
+    st.caption("La gráfica compara cada orden de excitación contra la frecuencia natural axial. Mientras más lejos quede cada punto de la línea natural, menor riesgo de resonancia.")
+    fig_a, ax_a = plt.subplots(figsize=(10.8, 4.8))
+    axial_plot = axial_df.copy()
+    x = np.arange(len(axial_plot))
+    f_exc_vals = axial_plot["Frecuencia excitante [Hz]"].to_numpy()
+    sep_vals = axial_plot["Separación [%]"].to_numpy()
+    ax_a.axhspan(f_axial_natural_hz*0.95, f_axial_natural_hz*1.05, alpha=0.16, label="Zona crítica ±5%")
+    ax_a.axhspan(f_axial_natural_hz*0.88, f_axial_natural_hz*1.12, alpha=0.08, label="Zona de precaución ±12%")
+    ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.6, label=f"Frecuencia natural axial = {f_axial_natural_hz:.2f} Hz")
+    ax_a.vlines(x, 0, f_exc_vals, linewidth=4, alpha=0.55)
+    ax_a.scatter(x, f_exc_vals, s=180, zorder=5, label="Excitación calculada")
+    for i, (f, sep, riesgo) in enumerate(zip(f_exc_vals, sep_vals, axial_plot["Riesgo axial"])):
+        ax_a.text(i, f + max(f_axial_natural_hz*0.035, 0.15), f"{f:.2f} Hz\nsep. {sep:.1f}%", ha="center", va="bottom", fontsize=8)
+    ax_a.set_xticks(x)
+    ax_a.set_xticklabels(axial_plot["Orden de excitación"].tolist())
     ax_a.set_ylabel("Frecuencia [Hz]")
-    ax_a.set_title("Comparación de excitaciones axiales")
-    ax_a.grid(True, axis="y", linestyle=":", alpha=0.6)
-    ax_a.legend()
+    ax_a.set_title("Órdenes axiales vs frecuencia natural del sistema", fontsize=12, fontweight="bold")
+    ax_a.grid(True, axis="y", linestyle=":", alpha=0.55)
+    ax_a.legend(loc="best", fontsize=8)
     st.pyplot(fig_a)
+
+    st.markdown("### 🧾 Lectura técnica automática")
+    peor_ax = axial_df.sort_values("Separación [%]").iloc[0]
+    if peor_ax["Riesgo axial"] == "Bajo":
+        estado_html(f"✅ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. La condición axial es aceptable para prediseño.", "good")
+    elif peor_ax["Riesgo axial"] == "Medio":
+        estado_html(f"⚠️ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. Conviene revisar rigidez axial, RPM o número de palas.", "warn")
+    else:
+        estado_html(f"❌ La excitación {peor_ax['Orden de excitación']} queda demasiado cerca de la frecuencia natural axial. Riesgo alto de resonancia.", "bad")
 
     st.markdown("### 🧰 Instrumentación recomendada")
     st.markdown("""
