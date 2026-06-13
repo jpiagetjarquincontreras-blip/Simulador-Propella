@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import math
 import re
+import tempfile
+import os
 from io import BytesIO
 import matplotlib.pyplot as plt
 
@@ -205,6 +207,113 @@ def fig_to_bytes(fig):
     return buffer
 
 
+def tabla_a_reportlab(df, max_rows=30):
+    """Convierte un DataFrame pequeño a estructura de tabla para ReportLab."""
+    df2 = df.copy().head(max_rows)
+    data = [list(df2.columns)]
+    for _, row in df2.iterrows():
+        fila = []
+        for val in row.tolist():
+            if isinstance(val, float):
+                if abs(val) >= 1000:
+                    fila.append(f"{val:,.2f}")
+                else:
+                    fila.append(f"{val:.4g}")
+            else:
+                fila.append(str(val))
+        data.append(fila)
+    return data
+
+
+def crear_figura_wageningen(res_df, j_opt_val):
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.plot(res_df["J"], res_df["KT"], linewidth=2.2, label="KT")
+    ax.plot(res_df["J"], res_df["10KQ"], linewidth=2.2, label="10KQ")
+    ax.plot(res_df["J"], res_df["nO"], linewidth=2.8, linestyle="--", label="ηO")
+    ax.axvline(x=j_opt_val, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt_val:.3f}")
+    ax.set_title("Curvas Wageningen Serie B")
+    ax.set_xlabel("J")
+    ax.set_ylabel("Coeficientes")
+    ax.grid(True, linestyle=":", alpha=0.6)
+    ax.legend(loc="best")
+    return fig
+
+
+def crear_figura_comparacion(comparacion):
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    df_err = comparacion.dropna(subset=["Error [%]"])
+    ax.bar(df_err["Parámetro"], df_err["Error [%]"])
+    ax.set_ylabel("Error porcentual [%]")
+    ax.set_title("Error calculado vs dato real")
+    ax.tick_params(axis='x', rotation=30)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+    return fig
+
+
+def crear_figura_burrill(sigma_actual, tau_actual, tau_adm_actual):
+    max_sigma = max(1.2, sigma_actual * 1.15)
+    sig = np.linspace(0.05, max_sigma, 220)
+    tau_adm = 0.22 + 0.18 * sig
+    fig, ax = plt.subplots(figsize=(8.2, 4.8))
+    ax.plot(sig, tau_adm, linewidth=2.6, label="Límite preliminar admisible")
+    ax.fill_between(sig, 0, tau_adm, alpha=0.10, label="Zona aceptable")
+    ax.scatter([sigma_actual], [tau_actual], s=130, zorder=5, label="Diseño actual")
+    ax.axvline(sigma_actual, linestyle=":", linewidth=1.8)
+    ax.axhline(tau_actual, linestyle=":", linewidth=1.8)
+    ax.set_xlabel("Coeficiente de cavitación σ")
+    ax.set_ylabel("Coeficiente de carga τc")
+    ax.set_title("Criterio de Burrill — σ vs τc")
+    ax.grid(True, linestyle=":", alpha=0.6)
+    ax.legend(loc="best")
+    return fig
+
+
+def crear_figura_keller(ae_min, ae_actual):
+    fig, ax = plt.subplots(figsize=(8.2, 4.8))
+    labels = ["Ae/A0 mínimo Keller", "Ae/A0 actual"]
+    vals = [ae_min, ae_actual]
+    ax.bar(labels, vals)
+    ax.axhline(ae_min, linestyle="--", linewidth=2, label=f"Mínimo = {ae_min:.3f}")
+    ax.set_ylabel("Ae/A0 [-]")
+    ax.set_title("Criterio de Keller — área expandida mínima")
+    ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+    ax.legend(loc="best")
+    return fig
+
+
+def crear_figura_campbell(rpm_operacion, f_lat, f_tors, f_axial, z):
+    max_rpm = max(rpm_operacion * 2.0, 120)
+    rpm_x = np.linspace(0, max_rpm, 400)
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.axhline(y=f_lat, linestyle="--", linewidth=2, label=f"Lateral {f_lat:.2f} Hz")
+    ax.axhline(y=f_tors, linestyle="-.", linewidth=2, label=f"Torsional {f_tors:.2f} Hz")
+    ax.axhline(y=f_axial, linestyle=":", linewidth=2.4, label=f"Axial {f_axial:.2f} Hz")
+    for nombre, mult in [("1P",1),("2P",2),("3P",3),("ZP",z),("2ZP",2*z),("3ZP",3*z)]:
+        ax.plot(rpm_x, mult*rpm_x/60.0, linewidth=1.4, label=nombre)
+    ax.axvline(x=rpm_operacion, linewidth=2.2, label=f"Operación {rpm_operacion:.0f} rpm")
+    ax.set_xlabel("RPM")
+    ax.set_ylabel("Frecuencia [Hz]")
+    ax.set_title("Diagrama de Campbell")
+    ax.grid(True, linestyle=":", alpha=0.6)
+    ax.legend(loc="upper left", fontsize=8, ncols=2)
+    return fig
+
+
+def insertar_figura_excel(writer, fig, sheet_name, cell="A1"):
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        tmp.close()
+        fig.savefig(tmp.name, format="png", dpi=150, bbox_inches="tight")
+        ws = writer.book.create_sheet(sheet_name)
+        img = XLImage(tmp.name)
+        img.anchor = cell
+        ws.add_image(img)
+        return tmp.name
+    except Exception:
+        return None
+
+
 def extraer_texto_pdf(uploaded_file):
     """Extrae texto básico de un PDF cargado por el usuario.
     Funciona como asistente de lectura: los datos detectados siempre deben poder revisarse.
@@ -301,11 +410,128 @@ def error_pct(calculado, real):
         return None
 
 
+
+# ==============================================================================
+# BASE DE DATOS DIDÁCTICA DE MOTORES Y REDUCTORAS
+# ==============================================================================
+# Esta base sirve para preselección académica. Para entrega final siempre debe
+# verificarse contra la hoja técnica vigente del fabricante.
+@st.cache_data(show_spinner=False)
+def construir_base_motores():
+    filas = []
+
+    def add(fabricante, modelo, tipo, mcr_kw, rpm, notas=""):
+        filas.append({
+            "Fabricante": fabricante,
+            "Modelo": modelo,
+            "Tipo": tipo,
+            "MCR [kW]": float(mcr_kw),
+            "RPM MCR": float(rpm),
+            "85% MCR [kW]": float(mcr_kw) * 0.85,
+            "Notas": notas
+        })
+
+    # Motores lentos 2T para buques grandes, normalmente transmisión directa.
+    for cyl, kw in [(5,24450),(6,29340),(7,34230),(8,39120),(9,44010),(10,48900),(11,53790),(12,58680)]:
+        add("Hyundai MAN-B&W", f"{cyl}S90MC-C MK7", "2T lento", kw, 79, "Motor lento; normalmente acoplamiento directo")
+    for cyl, kw in [(5,21000),(6,25200),(7,29400),(8,33600),(9,37800),(10,42000),(11,46200),(12,50400),(14,58800)]:
+        add("MAN Energy Solutions", f"{cyl}G80ME-C", "2T lento", kw, 72, "Motor lento; portacontenedores/tanqueros")
+    for cyl, kw in [(5,17100),(6,20520),(7,23940),(8,27360),(9,30780),(10,34200),(11,37620),(12,41040)]:
+        add("MAN Energy Solutions", f"{cyl}S70ME-C", "2T lento", kw, 91, "Motor lento; bulk/tanker")
+    for cyl, kw in [(5,12400),(6,14880),(7,17360),(8,19840),(9,22320)]:
+        add("MAN Energy Solutions", f"{cyl}S60ME-C", "2T lento", kw, 105, "Motor lento/medio-bajo")
+    for cyl, kw in [(5,27000),(6,32400),(7,37800),(8,43200),(9,48600),(10,54000),(11,59400),(12,64800)]:
+        add("WinGD", f"{cyl}X92-B", "2T lento", kw, 80, "Motor lento; buques de gran porte")
+    for cyl, kw in [(5,19500),(6,23400),(7,27300),(8,31200),(9,35100),(10,39000),(11,42900),(12,46800)]:
+        add("WinGD", f"{cyl}X72", "2T lento", kw, 89, "Motor lento; tanque/bulk/container")
+    for cyl, kw in [(5,12800),(6,15360),(7,17920),(8,20480),(9,23040)]:
+        add("WinGD", f"{cyl}X62", "2T lento", kw, 103, "Motor lento; mercante")
+
+    # Motores semi-rápidos 4T; normalmente requieren reductora.
+    for cyl in [6,7,8,9,10,12,14,16,18,20]:
+        add("Wärtsilä", f"{cyl}L32", "4T medio", cyl*580, 750, "Requiere reductora para hélice convencional")
+        add("Wärtsilä", f"{cyl}V32", "4T medio", cyl*580, 750, "Requiere reductora")
+    for cyl in [6,8,9,12,14,16,18,20]:
+        add("Wärtsilä", f"{cyl}V46F", "4T medio", cyl*1200, 600, "Requiere reductora")
+    for cyl in [6,8,9,12,14,16,18]:
+        add("MAN", f"{cyl}L32/44CR", "4T medio", cyl*560, 750, "Requiere reductora")
+        add("MAN", f"{cyl}L48/60CR", "4T medio", cyl*1200, 500, "Requiere reductora")
+    for cyl in [6,8,9,12,16,20]:
+        add("Caterpillar MaK", f"M32E {cyl} cyl", "4T medio", cyl*550, 750, "Offshore/ferry/mercante; reductora")
+        add("Caterpillar MaK", f"M46DF {cyl} cyl", "4T medio", cyl*900, 500, "Dual fuel; reductora")
+    for cyl in [6,8,9,12,16,20]:
+        add("Hyundai HiMSEN", f"H32/40 {cyl} cyl", "4T medio", cyl*500, 720, "Auxiliar o propulsión mediana; reductora")
+    for cyl in [6,8,9,12,16,20]:
+        add("Bergen / Rolls-Royce", f"B33:45 {cyl} cyl", "4T medio", cyl*600, 750, "OSV/ferry; reductora")
+
+    # Motores rápidos para embarcaciones pequeñas, remolcadores, yates, patrullas.
+    for modelo, kw, rpm in [
+        ("C18 ACERT", 715, 1800), ("C32 ACERT", 1450, 1800), ("3512C", 1900, 1800),
+        ("3516C", 2525, 1800), ("C280-6", 2700, 1000), ("C280-8", 3600, 1000),
+        ("C280-12", 5400, 1000), ("C280-16", 7200, 1000)]:
+        add("Caterpillar", modelo, "4T rápido", kw, rpm, "Alta RPM; requiere reductora")
+    for modelo, kw, rpm in [("QSK19-M", 600, 1800), ("QSK38-M", 1200, 1800), ("QSK50-M", 1600, 1800), ("QSK60-M", 2200, 1800), ("QSK95-M", 3200, 1700)]:
+        add("Cummins", modelo, "4T rápido", kw, rpm, "Embarcaciones menores/servicio; reductora")
+    for modelo, kw, rpm in [("16V4000 M63", 2000, 1800), ("20V4000 M73L", 3600, 2050), ("12V2000 M96", 1500, 2450), ("16V2000 M96L", 1939, 2450)]:
+        add("MTU", modelo, "4T rápido", kw, rpm, "Alta velocidad; reductora")
+    for modelo, kw, rpm in [("6AYM-WET", 610, 1900), ("12AYM-WET", 1340, 1900), ("6EY26W", 1920, 750), ("8EY26W", 2560, 750)]:
+        add("Yanmar", modelo, "4T rápido/medio", kw, rpm, "Reductora según aplicación")
+    for cyl in [6,8,12,16]:
+        add("ABC", f"DZC {cyl} cyl", "4T medio", cyl*520, 1000, "Remolcador/ferry; reductora")
+
+    df = pd.DataFrame(filas).drop_duplicates(subset=["Fabricante", "Modelo"]).reset_index(drop=True)
+    return df
+
+
+def recomendar_motores(pb_req_kw, rpm_objetivo, transmision_tipo, n=12):
+    db = construir_base_motores().copy()
+    db = db[db["85% MCR [kW]"] >= max(pb_req_kw, 0)]
+    if db.empty:
+        return db
+    # Penaliza exceso de potencia y diferencia de RPM. Para transmisión directa pesa más la RPM.
+    db["Exceso 85% MCR [kW]"] = db["85% MCR [kW]"] - pb_req_kw
+    db["MCR requerido aprox [kW]"] = pb_req_kw / 0.85 if pb_req_kw else 0
+    if transmision_tipo.startswith("Directa"):
+        db["Diferencia RPM [%]"] = abs(db["RPM MCR"] - rpm_objetivo) / max(rpm_objetivo, 1) * 100
+        db["Puntaje"] = db["Exceso 85% MCR [kW]"] + db["Diferencia RPM [%]"] * 500
+    else:
+        db["Relación recomendada i"] = db["RPM MCR"] / max(rpm_objetivo, 1)
+        db["Diferencia RPM [%]"] = 0.0
+        db["Puntaje"] = db["Exceso 85% MCR [kW]"]
+    if "Relación recomendada i" not in db.columns:
+        db["Relación recomendada i"] = db["RPM MCR"] / max(rpm_objetivo, 1)
+    return db.sort_values("Puntaje").head(n).reset_index(drop=True)
+
+@st.cache_data(show_spinner=False)
+def construir_base_reductoras():
+    filas = []
+    def add(marca, serie, pmin, pmax, imin, imax, eta):
+        filas.append({"Marca": marca, "Serie/modelo": serie, "Potencia mín [kW]": pmin, "Potencia máx [kW]": pmax,
+                      "i mín": imin, "i máx": imax, "ηG ref": eta})
+    for serie, pmax in [("WAF/WGF 300", 1500),("WAF/WGF 500", 3500),("WAF/WGF 700", 7000),("WAF/WGF 1000", 12000),("WAF/WGF 1500", 20000),("WAF/WGF 2000", 30000)]:
+        add("Reintjes", serie, 100, pmax, 1.2, 7.0, 0.98)
+    for serie, pmax in [("ZF 500", 1200),("ZF 2000", 2500),("ZF 5000", 6000),("ZF 10000", 12000),("ZF 30000", 25000)]:
+        add("ZF Marine", serie, 50, pmax, 1.2, 6.5, 0.97)
+    for serie, pmax in [("MGX 5000", 1500),("MGX 6000", 3000),("MGX 7000", 5000),("MGX 8000", 8000),("MGX 9000", 12000)]:
+        add("Twin Disc", serie, 50, pmax, 1.1, 6.0, 0.97)
+    for serie, pmax in [("Marine Gear L", 5000),("Marine Gear M", 12000),("Marine Gear H", 30000),("Marine Gear VH", 60000)]:
+        add("Lufkin", serie, 500, pmax, 1.1, 8.0, 0.98)
+    return pd.DataFrame(filas)
+
+
+def recomendar_reductoras(pb_kw, relacion_necesaria, n=8):
+    db = construir_base_reductoras().copy()
+    db = db[(db["Potencia mín [kW]"] <= pb_kw) & (db["Potencia máx [kW]"] >= pb_kw) &
+            (db["i mín"] <= relacion_necesaria) & (db["i máx"] >= relacion_necesaria)]
+    return db.head(n).reset_index(drop=True)
+
+
+@st.cache_data(show_spinner=False)
 def optimizar_helice_wageningen():
     filas = []
     for z in range(3, 8):
-        for pdv in np.linspace(0.55, 1.25, 15):
-            for aev in np.linspace(0.40, 0.95, 12):
+        for pdv in np.linspace(0.55, 1.25, 10):
+            for aev in np.linspace(0.40, 0.95, 8):
                 curvas = calcular_curvas(float(pdv), float(aev), int(z))
                 imax = curvas["nO"].idxmax()
                 filas.append({
@@ -800,11 +1026,12 @@ MCR_requerido_kw = safe_div(PB_kw_calc, 0.85, default=0.0)
 potencia_85_mcr_kw = motor_mcr_kw * 0.85
 motor_cumple = potencia_85_mcr_kw >= PB_kw_calc and motor_mcr_kw > 0
 rpm_helice_requerida = safe_div(VA_ms, max(j_opt * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_opt > 0 else 0.0
-rpm_helice_por_caja = safe_div(motor_ncr_rpm, max(relacion_reduccion, 1e-9), default=0.0)
-if transmision_tipo == "Directa / sin caja reductora":
-    caja_cumple = abs(motor_ncr_rpm - rpm_helice_requerida) <= max(5.0, 0.08 * max(rpm_helice_requerida, 1.0))
-else:
-    caja_cumple = abs(rpm_helice_por_caja - rpm_helice_requerida) <= max(5.0, 0.08 * max(rpm_helice_requerida, 1.0))
+# Para validación de transmisión se usa primero la RPM real/manual si existe, porque J óptimo no siempre representa la RPM real de servicio.
+rpm_helice_objetivo = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
+rpm_helice_por_caja = motor_ncr_rpm if transmision_tipo == "Directa / sin caja reductora" else safe_div(motor_ncr_rpm, max(relacion_reduccion, 1e-9), default=0.0)
+relacion_recomendada = safe_div(motor_ncr_rpm, max(rpm_helice_objetivo, 1e-9), default=1.0)
+tolerancia_rpm = max(5.0, 0.10 * max(rpm_helice_objetivo, 1.0))
+caja_cumple = abs(rpm_helice_por_caja - rpm_helice_objetivo) <= tolerancia_rpm
 
 # Keller: área expandida mínima preliminar para evitar cavitación excesiva.
 p0_pv = (p_atm_auto + rho_auto * g_auto * inmersion_eje_m - p_vap_auto)
@@ -982,27 +1209,28 @@ def construir_resumen_dataframe():
 def generar_excel():
     output = BytesIO()
     resumen_df = construir_resumen_dataframe()
+    tmp_files = []
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         resumen_df.to_excel(writer, sheet_name="Resumen", index=False)
-        res.to_excel(writer, sheet_name="Wageningen", index=False)
+        res.to_excel(writer, sheet_name="Wageningen_Datos", index=False)
         power_chain_df.to_excel(writer, sheet_name="Cadena_Potencias", index=False)
         comparacion_df.to_excel(writer, sheet_name="Comparacion_Real", index=False)
 
         cumplimiento = pd.DataFrame({
             "Criterio": [
-                "Hidrodinámica",
-                "Reynolds",
-                "Cavitación",
-                "Vibración torsional",
-                "Vibración lateral",
-                "Vibración axial",
-                "Balanceo/desbalance"
+                "Hidrodinámica", "Reynolds", "Cavitación sigma",
+                "Burrill", "Keller", "Motor", "Transmisión/reductora",
+                "Vibración torsional", "Vibración lateral", "Vibración axial", "Balanceo/desbalance"
             ],
             "Resultado": [
                 "Cumple" if hidro_ok else "Observación",
                 "Cumple" if reynolds_ok else "Observación",
                 "Cumple" if cavitacion_ok else "No cumple",
+                "Cumple" if burrill_ok else "Revisar",
+                "Cumple" if keller_ok else "No cumple",
+                "Cumple" if motor_cumple else "No cumple",
+                "Cumple" if caja_cumple else "Revisar",
                 "Cumple" if torsion_ok else "No cumple",
                 "Cumple" if lateral_ok else "No cumple",
                 "Cumple" if axial_ok else "No cumple",
@@ -1011,83 +1239,122 @@ def generar_excel():
         })
         cumplimiento.to_excel(writer, sheet_name="Cumplimiento", index=False)
         axial_df.to_excel(writer, sheet_name="Vibracion_Axial", index=False)
-        campbell_df.to_excel(writer, sheet_name="Campbell", index=False)
+        campbell_df.to_excel(writer, sheet_name="Campbell_Datos", index=False)
+        motores_recomendados.to_excel(writer, sheet_name="Motores_Recomendados", index=False)
 
+        cav_df = pd.DataFrame([
+            {"Análisis": "Reynolds", "Resultado": reynolds, "Límite/Referencia": "> 1e7", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
+            {"Análisis": "Sigma cavitación", "Resultado": sigma_n, "Límite/Referencia": "> 0.20 preliminar", "Dictamen": "Cumple" if cavitacion_ok else "Revisar"},
+            {"Análisis": "Burrill τc", "Resultado": tau_c_burrill, "Límite/Referencia": tau_c_admisible, "Dictamen": "Cumple" if burrill_ok else "Revisar"},
+            {"Análisis": "Keller Ae/A0", "Resultado": ae_val, "Límite/Referencia": keller_ae_min, "Dictamen": "Cumple" if keller_ok else "No cumple"},
+        ])
+        cav_df.to_excel(writer, sheet_name="Cavitacion_Resultados", index=False)
+
+        figs = [
+            (crear_figura_wageningen(res, j_opt), "Graf_Wageningen"),
+            (crear_figura_comparacion(comparacion_df), "Graf_Comparacion"),
+            (crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible), "Graf_Burrill"),
+            (crear_figura_keller(keller_ae_min, ae_val), "Graf_Keller"),
+            (crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val), "Graf_Campbell"),
+        ]
+        for fig, sheet in figs:
+            tmp = insertar_figura_excel(writer, fig, sheet)
+            if tmp:
+                tmp_files.append(tmp)
+            plt.close(fig)
+
+    for tmp in tmp_files:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
     output.seek(0)
     return output
 
 
 def generar_pdf():
     try:
-        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.pagesizes import letter, landscape
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
     except Exception:
         return None
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=28, leftMargin=28, topMargin=28, bottomMargin=28)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        "CustomTitle",
-        parent=styles["Title"],
-        textColor=colors.HexColor("#1e1b4b"),
-        fontSize=18,
-        leading=22
-    )
+    title_style = ParagraphStyle("CustomTitle", parent=styles["Title"], textColor=colors.HexColor("#1e1b4b"), fontSize=18, leading=22)
+    h2 = styles["Heading2"]
+    body = styles["BodyText"]
+
+    def add_table(story, df, col_widths=None, max_rows=35):
+        data = tabla_a_reportlab(df, max_rows=max_rows)
+        if col_widths is None:
+            col_widths = [max(70, min(170, 500 / max(len(data[0]), 1)))] * len(data[0])
+        table = Table(data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1e1b4b")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#CBD5E1")),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("BACKGROUND", (0,1), (-1,-1), colors.HexColor("#F8FAFC")),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("FONTSIZE", (0,0), (-1,-1), 7),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 12))
+
+    def add_fig(story, fig, width=500):
+        img_buf = fig_to_bytes(fig)
+        story.append(Image(img_buf, width=width, height=width*0.55))
+        story.append(Spacer(1, 12))
+        plt.close(fig)
 
     story = []
     story.append(Paragraph("Universal Ship Propulsion & Shafting Analysis Suite", title_style))
+    story.append(Paragraph("Reporte técnico integral de propulsión naval", h2))
+    story.append(Paragraph("Este reporte integra resultados de hidrodinámica, cadena de potencias, selección de motor, transmisión, cavitación Burrill/Keller, vibraciones, Campbell y comparación con datos reales cuando existe ficha técnica cargada.", body))
     story.append(Spacer(1, 12))
-    story.append(Paragraph("Reporte técnico preliminar de propulsión naval", styles["Heading2"]))
-    story.append(Spacer(1, 12))
 
-    intro = (
-        "Este reporte resume los resultados principales del análisis hidrodinámico, "
-        "vibratorio, de cavitación y de cumplimiento preliminar del sistema propulsivo. "
-        "Los resultados son orientativos y deben complementarse con análisis de sociedad "
-        "de clasificación para diseño final."
-    )
-    story.append(Paragraph(intro, styles["BodyText"]))
-    story.append(Spacer(1, 16))
+    story.append(Paragraph(f"Dictamen general: {dictamen}", h2))
+    add_table(story, construir_resumen_dataframe(), col_widths=[230, 250], max_rows=45)
 
-    resumen = construir_resumen_dataframe()
-    tabla_datos = [["Parámetro", "Valor"]]
-    for _, row in resumen.iterrows():
-        val = row["Valor"]
-        if isinstance(val, float):
-            val = f"{val:,.4g}"
-        tabla_datos.append([str(row["Parámetro"]), str(val)])
+    story.append(PageBreak())
+    story.append(Paragraph("Cadena de potencias", h2))
+    add_table(story, power_chain_df, col_widths=[90, 240, 90, 60])
 
-    table = Table(tabla_datos, colWidths=[230, 250])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1e1b4b")),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#CBD5E1")),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("BACKGROUND", (0,1), (-1,-1), colors.HexColor("#F8FAFC")),
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("FONTSIZE", (0,0), (-1,-1), 8),
-    ]))
+    story.append(Paragraph("Comparación con datos reales", h2))
+    add_table(story, comparacion_df, col_widths=[180, 90, 90, 70])
+    add_fig(story, crear_figura_comparacion(comparacion_df))
 
-    story.append(table)
-    story.append(Spacer(1, 16))
-    story.append(Paragraph(f"Dictamen general: {dictamen}", styles["Heading2"]))
-    story.append(Paragraph("Recomendaciones:", styles["Heading3"]))
+    story.append(PageBreak())
+    story.append(Paragraph("Curvas Wageningen Serie B", h2))
+    add_fig(story, crear_figura_wageningen(res, j_opt))
+    story.append(Paragraph("Cavitación: Burrill y Keller", h2))
+    cav_df = pd.DataFrame([
+        {"Análisis": "Sigma", "Resultado": sigma_n, "Referencia": "> 0.20 preliminar", "Dictamen": "Cumple" if cavitacion_ok else "Revisar"},
+        {"Análisis": "Burrill τc", "Resultado": tau_c_burrill, "Referencia": tau_c_admisible, "Dictamen": "Cumple" if burrill_ok else "Revisar"},
+        {"Análisis": "Keller Ae/A0", "Resultado": ae_val, "Referencia": keller_ae_min, "Dictamen": "Cumple" if keller_ok else "No cumple"},
+    ])
+    add_table(story, cav_df, col_widths=[120, 90, 120, 100])
+    add_fig(story, crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
+    add_fig(story, crear_figura_keller(keller_ae_min, ae_val))
 
+    story.append(PageBreak())
+    story.append(Paragraph("Diagrama de Campbell", h2))
+    add_fig(story, crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val))
+    story.append(Paragraph("Recomendaciones", h2))
     for rec in recomendaciones:
-        story.append(Paragraph(f"• {rec}", styles["BodyText"]))
+        story.append(Paragraph(f"• {rec}", body))
 
     doc.build(story)
     buffer.seek(0)
     return buffer
 
 # ==============================================================================
-# TABS
-# ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_formulas = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -1104,9 +1371,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🔍 Cavitación",
     "📚 Normativa",
     "📋 Clase",
-    "📄 Exportar",
-    "🧮 Fórmulas",
-    "📚 Guía"
+    "🧮 Fórmulas / Guía"
 ])
 
 # ==============================================================================
@@ -1205,6 +1470,33 @@ with tab_resumen:
     resultado_df = construir_resumen_dataframe()
     st.dataframe(resultado_df, use_container_width=True, height=520)
 
+    st.markdown("### 📄 Exportar resultados completos")
+    st.markdown("""
+    Desde aquí puedes descargar el análisis completo. El Excel incluye tablas y hojas con gráficas;
+    el PDF incluye resumen, cadena de potencias, comparación real, Wageningen, Burrill, Keller, Campbell y recomendaciones.
+    """)
+
+    col_exp1, col_exp2 = st.columns(2)
+    with col_exp1:
+        excel_data = generar_excel()
+        st.download_button(
+            label="📥 Descargar Excel completo",
+            data=excel_data,
+            file_name="resultados_propulsion_completo.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    with col_exp2:
+        pdf_data = generar_pdf()
+        if pdf_data is not None:
+            st.download_button(
+                label="📄 Descargar PDF completo",
+                data=pdf_data,
+                file_name="reporte_propulsion_completo.pdf",
+                mime="application/pdf"
+            )
+        else:
+            st.warning("Para activar PDF agrega 'reportlab' a requirements.txt.")
+
 
 # ==============================================================================
 # PDF / COMPARACIÓN CON BUQUE REAL
@@ -1302,12 +1594,28 @@ with tab_motor:
     else:
         estado_html(f"❌ Motor insuficiente: {motor_nombre}. Se requiere un MCR mínimo aproximado de {MCR_requerido_kw:,.0f} kW.", "bad")
 
+    st.markdown("### 🧠 Recomendación automática desde base de motores")
+    st.caption("Base didáctica amplia para preselección. Antes de entregar, confirma el modelo exacto con hoja técnica del fabricante.")
+    rec_motores = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_tipo, n=15)
+    if rec_motores.empty:
+        st.warning("No se encontró un motor en la base didáctica que cubra la PB calculada al 85% MCR. Prueba aumentar base de datos o usar un motor manual.")
+    else:
+        st.dataframe(rec_motores.drop(columns=["Puntaje"], errors="ignore").style.format({
+            "MCR [kW]":"{:,.0f}", "RPM MCR":"{:,.0f}", "85% MCR [kW]":"{:,.0f}",
+            "Exceso 85% MCR [kW]":"{:,.0f}", "MCR requerido aprox [kW]":"{:,.0f}",
+            "Diferencia RPM [%]":"{:.1f}", "Relación recomendada i":"{:.2f}"
+        }), use_container_width=True, height=420)
+        mejor_motor = rec_motores.iloc[0]
+        estado_html(f"Sugerencia: {mejor_motor['Fabricante']} {mejor_motor['Modelo']} — MCR {mejor_motor['MCR [kW]']:,.0f} kW, {mejor_motor['RPM MCR']:.0f} rpm.", "good")
+
     st.markdown("### Transmisión")
     trans_df = pd.DataFrame([
         {"Concepto":"Tipo", "Valor": transmision_tipo},
         {"Concepto":"Caja/reductora", "Valor": marca_caja},
-        {"Concepto":"Relación de reducción", "Valor": relacion_reduccion},
-        {"Concepto":"RPM hélice requerida por hidrodinámica", "Valor": rpm_helice_requerida},
+        {"Concepto":"Relación de reducción indicada", "Valor": relacion_reduccion},
+        {"Concepto":"Relación recomendada i", "Valor": relacion_recomendada},
+        {"Concepto":"RPM hélice por J óptimo", "Valor": rpm_helice_requerida},
+        {"Concepto":"RPM objetivo usada para validar", "Valor": rpm_helice_objetivo},
         {"Concepto":"RPM hélice por transmisión", "Valor": rpm_helice_por_caja},
         {"Concepto":"Compatibilidad", "Valor": "Compatible" if caja_cumple else "Revisar"},
     ])
@@ -1315,7 +1623,15 @@ with tab_motor:
     if caja_cumple:
         estado_html("✅ La transmisión/RPM es compatible dentro de una tolerancia preliminar.", "good")
     else:
-        estado_html("⚠️ Revisar relación de reducción o RPM: la hélice requerida no coincide con la transmisión indicada.", "warn")
+        estado_html("⚠️ Revisar relación de reducción o RPM: la RPM que entrega la transmisión no coincide con la RPM objetivo de la hélice.", "warn")
+
+    if transmision_tipo == "Con caja reductora":
+        st.markdown("### ⚙️ Reductoras sugeridas")
+        rec_red = recomendar_reductoras(PB_kw_calc, relacion_recomendada, n=8)
+        if rec_red.empty:
+            st.info("No se encontró una reductora estándar en la base didáctica para esa potencia y relación. Puede requerirse otro rango/modelo o transmisión directa.")
+        else:
+            st.dataframe(rec_red.style.format({"Potencia mín [kW]":"{:,.0f}", "Potencia máx [kW]":"{:,.0f}", "i mín":"{:.2f}", "i máx":"{:.2f}", "ηG ref":"{:.3f}"}), use_container_width=True)
 
     with st.expander("¿Qué significa esto?", expanded=False):
         st.markdown("""
@@ -1340,7 +1656,7 @@ with tab_opt:
     ejecutar_opt = st.button("▶️ Ejecutar optimización automática", key="btn_opt_helice")
 
     if ejecutar_opt:
-        with st.spinner("Calculando combinaciones de hélice..."):
+        with st.spinner("Calculando combinaciones de hélice... tarda unos segundos solo la primera vez."):
             st.session_state["opt_df"] = optimizar_helice_wageningen()
 
     if "opt_df" in st.session_state:
@@ -1834,11 +2150,10 @@ with tab_cav:
 
     st.markdown("""
     <div class="section-card">
-    Esta sección evalúa el comportamiento hidrodinámico del propulsor mediante dos
-    indicadores fundamentales: el <b>número de Reynolds</b>, asociado al régimen de flujo,
-    y el <b>coeficiente de cavitación σ</b>, asociado a la tendencia de formación de vapor
-    sobre las palas. Estos resultados son preliminares y sirven para orientar decisiones
-    de diseño como inmersión del eje, área expandida y carga de la hélice.
+    Esta sección separa el análisis de cavitación en tres partes: condición general de flujo
+    mediante Reynolds y σ, criterio de <b>Burrill</b> para carga de pala y criterio de
+    <b>Keller</b> para área expandida mínima. Los criterios se presentan como revisión
+    preliminar de prediseño.
     </div>
     """, unsafe_allow_html=True)
 
@@ -1847,31 +2162,74 @@ with tab_cav:
     c2.metric("Número de Reynolds", f"{reynolds:.2e}")
     c3.metric("Coef. cavitación σ", f"{sigma_n:.3f}")
 
-    st.markdown("### Criterios Burrill y Keller")
-    k1,k2,k3,k4 = st.columns(4)
-    k1.metric("τc Burrill", f"{tau_c_burrill:.3f}")
-    k2.metric("τc admisible", f"{tau_c_admisible:.3f}")
-    k3.metric("Ae/A0 mínimo Keller", f"{keller_ae_min:.3f}")
-    k4.metric("Ae/A0 actual", f"{ae_val:.3f}")
-    estado_html("✅ Cumple Burrill preliminar" if burrill_ok else "⚠️ Revisar Burrill: carga de pala elevada", "good" if burrill_ok else "warn")
-    estado_html("✅ Cumple Keller preliminar" if keller_ok else "❌ No cumple Keller: aumentar Ae/A0", "good" if keller_ok else "bad")
+    st.markdown("---")
+    st.markdown("## 1) Criterio de Burrill")
+    st.markdown("""
+    El criterio de Burrill compara el coeficiente de cavitación disponible, σ, contra
+    la carga de empuje de la hélice, τc. En esta app se usa una curva admisible
+    preliminar para detectar si el diseño queda dentro de una zona aceptable o si la
+    pala está demasiado cargada.
+    """)
 
-    with st.expander("🧮 Fórmulas de Reynolds, Burrill y Keller usadas", expanded=False):
-        st.latex(r"V_A = V_s(1-w)")
-        st.latex(r"Re = \frac{V_A D}{\nu}")
-        st.latex(r"\sigma = \frac{P_{atm} + \rho g h - P_v}{\frac{1}{2}\rho V_A^2}")
+    b1, b2, b3 = st.columns(3)
+    b1.metric("τc Burrill", f"{tau_c_burrill:.3f}")
+    b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
+    b3.metric("Margen Burrill", f"{(tau_c_admisible - tau_c_burrill):.3f}")
+
+    if burrill_ok:
+        estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible.", "good")
+    else:
+        estado_html("⚠️ Revisar Burrill: la carga de pala es elevada. Conviene aumentar Ae/A0, aumentar D o reducir carga.", "warn")
+
+    fig_burr = crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible)
+    st.pyplot(fig_burr)
+
+    with st.expander("🧮 Fórmulas del criterio de Burrill", expanded=False):
+        st.latex(r"\sigma = \frac{P_{atm}+\rho gh-P_v}{\frac{1}{2}\rho V_A^2}")
+        st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2 A_0}")
+        st.latex(r"A_0 = \frac{\pi D^2}{4}")
+        st.latex(r"\tau_{c,adm}=0.22+0.18\sigma")
         st.markdown("""
-        **VA** es la velocidad efectiva que entra a la hélice, **Re** indica el régimen
-        de flujo, y **σ** estima la tendencia preliminar a cavitación. Un valor bajo de σ
-        implica mayor riesgo de formación de vapor sobre las palas.
+        En esta versión la línea admisible es preliminar y sirve para comparación didáctica.
+        Para diseño final debe validarse con el diagrama Burrill original o con criterios de casa clasificadora.
         """)
 
     st.markdown("---")
+    st.markdown("## 2) Criterio de Keller")
+    st.markdown("""
+    El criterio de Keller estima el área expandida mínima que debe tener la hélice para
+    evitar una carga excesiva de pala. La app compara el valor mínimo requerido contra
+    el Ae/A0 actualmente seleccionado.
+    """)
 
-    col_re, col_cav = st.columns(2)
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Ae/A0 mínimo Keller", f"{keller_ae_min:.3f}")
+    k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
+    k3.metric("Margen Keller", f"{(ae_val - keller_ae_min):.3f}")
+
+    if keller_ok:
+        estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido.", "good")
+    else:
+        estado_html("❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga de la hélice.", "bad")
+
+    fig_kel = crear_figura_keller(keller_ae_min, ae_val)
+    st.pyplot(fig_kel)
+
+    with st.expander("🧮 Fórmulas del criterio de Keller", expanded=False):
+        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
+        st.latex(r"P_0-P_v=P_{atm}+\rho gh-P_v")
+        st.markdown("""
+        Donde **T** es el empuje requerido, **Z** el número de palas, **D** el diámetro de hélice
+        y **h** la inmersión del eje. Si el Ae/A0 actual es menor que el mínimo, la hélice queda
+        demasiado cargada para el área disponible.
+        """)
+
+    st.markdown("---")
+    st.markdown("## 3) Reynolds y σ general")
+    col_re, col_sig = st.columns(2)
 
     with col_re:
-        st.markdown("### 🌊 Gráfica del Número de Reynolds")
+        st.markdown("### 🌊 Número de Reynolds")
         fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
         etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
         valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
@@ -1881,52 +2239,36 @@ with tab_cav:
         ax_re.set_title("Comparación de régimen de flujo")
         ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
         st.pyplot(fig_re)
+        st.success("✅ Flujo turbulento típico de hélices navales.") if reynolds_ok else st.warning("⚠️ Reynolds bajo para escala naval.")
 
-        if reynolds_ok:
-            st.success("✅ El flujo se encuentra en régimen turbulento típico de hélices navales.")
-        else:
-            st.warning("⚠️ Reynolds bajo para escala naval. Revisar velocidad efectiva, diámetro o escala de análisis.")
-
-    with col_cav:
-        st.markdown("### ⚠️ Gráfica del Coeficiente de Cavitación")
+    with col_sig:
+        st.markdown("### ⚠️ Coeficiente de cavitación σ")
         fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
         etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
         valores_sig = [0.20, 0.50, 1.00, sigma_n]
         ax_sig.barh(etiquetas_sig, valores_sig)
-        ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite crítico σ = 0.20")
+        ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite preliminar σ = 0.20")
         ax_sig.set_xlabel("Coeficiente de cavitación σ")
-        ax_sig.set_title("Comparación de riesgo de cavitación")
+        ax_sig.set_title("Riesgo general de cavitación")
         ax_sig.grid(True, linestyle=":", alpha=0.55)
         ax_sig.legend(fontsize=8)
         st.pyplot(fig_sig)
-
         if sigma_n < 0.20:
-            st.error("""
-            🔴 Riesgo elevado de cavitación. Se recomienda aumentar Ae/A0, aumentar
-            la inmersión del eje, reducir la velocidad efectiva o revisar el diámetro
-            y la carga de la hélice.
-            """)
+            st.error("🔴 Riesgo elevado de cavitación por σ bajo.")
         elif sigma_n < 0.50:
-            st.warning("""
-            🟡 Zona de precaución. El diseño puede funcionar, pero conviene validar
-            con un análisis de cavitación más detallado y revisión de distribución de carga.
-            """)
+            st.warning("🟡 Zona de precaución: validar con análisis más detallado.")
         else:
-            st.success("""
-            🟢 Condición preliminar favorable frente a cavitación. El valor de σ se
-            encuentra por encima del umbral crítico usado en esta evaluación.
-            """)
+            st.success("🟢 Condición preliminar favorable frente a cavitación.")
 
     st.markdown("---")
-    st.markdown("""
-    ### 📖 Interpretación técnica
-
-    La cavitación aparece cuando la presión local en alguna región de la pala cae por debajo
-    de la presión de vapor del agua. En operación real puede provocar ruido, vibración,
-    erosión superficial y pérdida de eficiencia propulsiva. El número de Reynolds confirma
-    si el flujo alrededor de la hélice está dentro de un régimen representativo para análisis
-    hidrodinámico naval.
-    """)
+    st.markdown("### 📋 Resumen de cavitación")
+    cav_resumen_df = pd.DataFrame([
+        {"Análisis": "Reynolds", "Valor calculado": reynolds, "Límite/Referencia": "> 1e7", "Resultado": "Cumple" if reynolds_ok else "Revisar"},
+        {"Análisis": "Sigma cavitación", "Valor calculado": sigma_n, "Límite/Referencia": "> 0.20 preliminar", "Resultado": "Cumple" if cavitacion_ok else "Revisar"},
+        {"Análisis": "Burrill τc", "Valor calculado": tau_c_burrill, "Límite/Referencia": tau_c_admisible, "Resultado": "Cumple" if burrill_ok else "Revisar"},
+        {"Análisis": "Keller Ae/A0", "Valor calculado": ae_val, "Límite/Referencia": keller_ae_min, "Resultado": "Cumple" if keller_ok else "No cumple"},
+    ])
+    st.dataframe(cav_resumen_df, use_container_width=True)
 
 # ==============================================================================
 # NORMATIVA APLICABLE
@@ -2098,45 +2440,6 @@ with tab_clase:
 # EXPORTACIÓN
 # ==============================================================================
 
-with tab_export:
-    st.subheader("📄 Exportación de Resultados")
-
-    st.markdown("""
-    <div class="section-card">
-    Esta sección permite descargar los resultados del análisis para anexarlos a una memoria
-    técnica, reporte de clase o presentación académica. El archivo Excel incluye resumen,
-    curvas Wageningen y tabla de cumplimiento.
-    </div>
-    """, unsafe_allow_html=True)
-
-    excel_data = generar_excel()
-    st.download_button(
-        label="📥 Descargar resultados en Excel",
-        data=excel_data,
-        file_name="resultados_propulsion_shafting.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    pdf_data = generar_pdf()
-    if pdf_data is not None:
-        st.download_button(
-            label="📄 Descargar reporte técnico PDF",
-            data=pdf_data,
-            file_name="reporte_propulsion_shafting.pdf",
-            mime="application/pdf"
-        )
-    else:
-        st.warning(
-            "Para activar la descarga PDF agrega 'reportlab' a requirements.txt."
-        )
-
-    st.markdown("### Requisitos recomendados para Streamlit Cloud")
-    st.code(
-        "streamlit\npandas\nnumpy\nmatplotlib\nopenpyxl\nxlsxwriter\nreportlab",
-        language="text"
-    )
-
-
 # ==============================================================================
 # FÓRMULAS DEL MODELO
 # ==============================================================================
@@ -2213,23 +2516,16 @@ with tab_formulas:
     pero permite generar un dictamen preliminar de ingeniería.
     """)
 
-# ==============================================================================
-# GUÍA DIDÁCTICA
-# ==============================================================================
 
-with tab_guia:
-    st.subheader("📚 Guía de Referencia Naval")
 
+    st.markdown("---")
+    st.markdown("## 📚 Guía rápida de referencia")
     st.markdown("""
-    <div class="section-card">
-    Esta guía sirve como referencia rápida para que el usuario pueda ingresar datos coherentes
-    al analizar distintos tipos de buque. Los rangos son orientativos y no sustituyen una base
-    de datos de proyecto ni reglas oficiales de clasificación.
-    </div>
-    """, unsafe_allow_html=True)
+    Esta guía se integra aquí para evitar una pestaña adicional. Los rangos son orientativos
+    y sirven para revisar si los datos ingresados son coherentes antes de ejecutar el cálculo.
+    """)
 
     c1, c2 = st.columns(2)
-
     with c1:
         st.markdown("""
         ### Rangos típicos de Lpp
@@ -2245,13 +2541,11 @@ with tab_guia:
         | Portacontenedores | 250–400 m |
 
         ### Número de palas
-
         - **3 palas:** buena eficiencia, más vibración.
         - **4 palas:** configuración comercial común.
         - **5 palas:** menor vibración y ruido.
         - **6–7 palas:** aplicaciones especiales o alta carga.
         """)
-
     with c2:
         st.markdown("""
         ### Rangos típicos de Ae/A0
@@ -2263,15 +2557,11 @@ with tab_guia:
         | Alta carga | 0.70–0.95 |
 
         ### Interpretación rápida
-
         - **KT:** capacidad de empuje.
         - **KQ:** torque requerido.
         - **ηO:** eficiencia ideal de aguas abiertas.
         - **σ:** tendencia a cavitación.
+        - **Burrill:** revisa carga de pala vs cavitación.
+        - **Keller:** revisa área expandida mínima.
         - **Campbell:** detección de posibles resonancias.
         """)
-
-    st.info(
-        "Recomendación: para un proyecto formal, documentar siempre la fuente de dimensiones, "
-        "potencia, RPM, material y coeficientes hidrodinámicos usados."
-    )
