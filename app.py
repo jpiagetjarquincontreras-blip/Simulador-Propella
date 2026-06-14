@@ -1824,7 +1824,7 @@ with tab_pdf_comp:
             "Real PDF/manual": lambda x: "—" if pd.isna(x) else f"{x:,.3f}",
             "Error [%]": lambda x: "—" if pd.isna(x) else f"{x:,.2f}"
         })
-        .applymap(lambda v: "color:#64748b" if pd.isna(v) else "", subset=["Calculado", "Real PDF/manual", "Error [%]"]),
+        .map(lambda v: "color:#64748b" if pd.isna(v) else "", subset=["Calculado", "Real PDF/manual", "Error [%]"]),
         use_container_width=True
     )
 
