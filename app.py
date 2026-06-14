@@ -1665,7 +1665,7 @@ def generar_pdf():
 
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_formulas, tab_avanzado = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_formulas, tab_avanzado = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -1674,9 +1674,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "📈 Hidrodinámica",
     "⭐ Optimización",
     "📋 Resultados",
-    "💥 Torsional",
-    "↔️ Axial",
-    "📊 Lateral",
+    "🧭 Vibración",
     "⚖️ Balanceo",
     "🗺️ Campbell",
     "🔍 Cavitación",
@@ -2132,259 +2130,278 @@ with tab_resultados:
     )
 
 # ==============================================================================
-# TORSIONAL
+# VIBRACIÓN DEL EJE: TORSIONAL, AXIAL Y LATERAL
 # ==============================================================================
 
-with tab_torsion:
-    st.subheader("💥 Análisis de Vibración Torsional")
-
+with tab_vibracion:
+    st.subheader("🧭 Análisis integral de vibración del eje")
     st.markdown("""
     <div class="section-card">
-    La vibración torsional se asocia a variaciones periódicas del torque transmitido
-    por el eje. En un análisis de prediseño, se verifica que el esfuerzo torsional alternante
-    sea menor que un límite admisible basado en la resistencia última del material.
+    Esta pestaña concentra los tres análisis principales de vibración del eje propulsor:
+    <b>torsional</b>, <b>axial</b> y <b>lateral/whirling</b>. Se mantienen los mismos cálculos,
+    tablas y gráficas, pero organizados en subpestañas para que la navegación sea más limpia.
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Base teórica de vibración del eje — vibración torsional", expanded=False):
+    vib_torsion, vib_axial, vib_lateral = st.tabs(["💥 Torsional", "↔️ Axial", "📊 Lateral / Whirling"])
+
+    # ==============================================================================
+    # TORSIONAL
+    # ==============================================================================
+    
+    with vib_torsion:
+        st.subheader("💥 Análisis de Vibración Torsional")
+    
         st.markdown("""
-        De acuerdo con la asignación del **Vibración en el Eje Propulsor**, la vibración
-        torsional corresponde a una variación cíclica del ángulo de giro relativo entre
-        secciones del eje. Puede ser provocada por la irregularidad del par del motor y
-        por el torque resistente variable de la hélice al trabajar dentro del campo de
-        estela no uniforme del casco.
+        <div class="section-card">
+        La vibración torsional se asocia a variaciones periódicas del torque transmitido
+        por el eje. En un análisis de prediseño, se verifica que el esfuerzo torsional alternante
+        sea menor que un límite admisible basado en la resistencia última del material.
+        </div>
+        """, unsafe_allow_html=True)
+    
+        with st.expander("📘 Base teórica de vibración del eje — vibración torsional", expanded=False):
+            st.markdown("""
+            De acuerdo con la asignación del **Vibración en el Eje Propulsor**, la vibración
+            torsional corresponde a una variación cíclica del ángulo de giro relativo entre
+            secciones del eje. Puede ser provocada por la irregularidad del par del motor y
+            por el torque resistente variable de la hélice al trabajar dentro del campo de
+            estela no uniforme del casco.
+    
+            En esta aplicación se representa de forma preliminar mediante un torque alternante
+            estimado y se compara el esfuerzo torsional obtenido contra un límite admisible
+            asociado al material seleccionado. Esta revisión se conecta con el criterio didáctico
+            de **IACS UR M68**, usado como referencia para análisis torsional.
+            """)
+            st.markdown("""
+            **Instrumentación relacionada:** torsiógrafo óptico o magnético, sensores de velocidad
+            angular y software de TVA/Shafting para modelos de masas discretas, inercias, rigideces
+            y amortiguamiento.
+            """)
+    
+        with st.expander("🧮 Fórmulas de torsión usadas", expanded=False):
+            st.latex(r"\omega = \frac{2\pi n}{60}")
+            st.latex(r"T = \frac{P}{\omega}")
+            st.latex(r"T_{alt} = 0.15T")
+            st.latex(r"W_t = \frac{\pi d^3}{16}")
+            st.latex(r"\tau = \frac{T_{alt}}{W_t}")
+            st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
+            st.markdown("""
+            Estas expresiones se usan para estimar el esfuerzo torsional alternante
+            en el eje y compararlo contra un límite admisible preliminar basado en
+            la resistencia última del material seleccionado.
+            """)
+    
+        c1, c2 = st.columns([1, 1.3])
+    
+        with c1:
+            st.metric("Torque nominal", f"{torque_nominal/1000:.2f} kN·m")
+            st.metric("Torque alternante estimado", f"{torque_dinamico_alternante/1000:.2f} kN·m")
+            st.metric("Esfuerzo real", f"{esfuerzo_real_mpa:.2f} MPa")
+            st.metric("Límite admisible", f"{tau_admisible_mpa:.2f} MPa")
+    
+            if torsion_ok:
+                estado_html("✅ Cumple: el esfuerzo torsional estimado está por debajo del límite admisible.", "good")
+            else:
+                estado_html("❌ No cumple: el esfuerzo torsional estimado supera el límite admisible.", "bad")
+    
+        with c2:
+            fig_t, ax_t = plt.subplots(figsize=(7, 3.8))
+            ax_t.barh(["Esfuerzo real", "Límite admisible"], [esfuerzo_real_mpa, tau_admisible_mpa])
+            ax_t.set_xlabel("MPa")
+            ax_t.set_title("Comparación de esfuerzo torsional")
+            ax_t.grid(True, axis="x", linestyle=":", alpha=0.6)
+            st.pyplot(fig_t)
+    
 
-        En esta aplicación se representa de forma preliminar mediante un torque alternante
-        estimado y se compara el esfuerzo torsional obtenido contra un límite admisible
-        asociado al material seleccionado. Esta revisión se conecta con el criterio didáctico
-        de **IACS UR M68**, usado como referencia para análisis torsional.
-        """)
+    # ==============================================================================
+    # AXIAL
+    # ==============================================================================
+    
+    with vib_axial:
+        st.subheader("↔️ Análisis de Vibración Axial")
+    
         st.markdown("""
-        **Instrumentación relacionada:** torsiógrafo óptico o magnético, sensores de velocidad
-        angular y software de TVA/Shafting para modelos de masas discretas, inercias, rigideces
-        y amortiguamiento.
-        """)
-
-    with st.expander("🧮 Fórmulas de torsión usadas", expanded=False):
-        st.latex(r"\omega = \frac{2\pi n}{60}")
-        st.latex(r"T = \frac{P}{\omega}")
-        st.latex(r"T_{alt} = 0.15T")
-        st.latex(r"W_t = \frac{\pi d^3}{16}")
-        st.latex(r"\tau = \frac{T_{alt}}{W_t}")
-        st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
-        st.markdown("""
-        Estas expresiones se usan para estimar el esfuerzo torsional alternante
-        en el eje y compararlo contra un límite admisible preliminar basado en
-        la resistencia última del material seleccionado.
-        """)
-
-    c1, c2 = st.columns([1, 1.3])
-
-    with c1:
-        st.metric("Torque nominal", f"{torque_nominal/1000:.2f} kN·m")
-        st.metric("Torque alternante estimado", f"{torque_dinamico_alternante/1000:.2f} kN·m")
-        st.metric("Esfuerzo real", f"{esfuerzo_real_mpa:.2f} MPa")
-        st.metric("Límite admisible", f"{tau_admisible_mpa:.2f} MPa")
-
-        if torsion_ok:
-            estado_html("✅ Cumple: el esfuerzo torsional estimado está por debajo del límite admisible.", "good")
+        <div class="section-card">
+        La vibración axial corresponde al movimiento longitudinal del eje propulsor.
+        En buques, suele estar asociada a fluctuaciones del empuje de la hélice y a la
+        interacción hélice-casco. Esta sección completa el análisis de
+        vibración del eje junto con la parte torsional y lateral.
+        </div>
+        """, unsafe_allow_html=True)
+    
+        with st.expander("📘 Base teórica de vibración axial", expanded=False):
+            st.markdown("""
+            La hélice no entrega un empuje perfectamente constante. Al girar detrás del casco,
+            cada pala entra en zonas de estela diferente, por lo que el empuje puede fluctuar.
+            Esa fluctuación genera una fuerza alternante en dirección longitudinal del eje.
+    
+            En análisis preliminar, la vibración axial puede estudiarse como un sistema
+            **masa-resorte**, donde la masa equivalente incluye hélice y parte del eje, y la
+            rigidez axial representa la rigidez del eje más la rigidez del cojinete de empuje.
+    
+            Las excitaciones más importantes se revisan por órdenes:
+            - **1P:** una excitación por revolución del eje.
+            - **ZP:** frecuencia de paso de pala, donde Z es el número de palas.
+            - **2ZP y 3ZP:** armónicos superiores del paso de pala.
+            """)
+    
+        with st.expander("🧮 Fórmulas de vibración axial usadas", expanded=False):
+            st.latex(r"k_{eje}=\frac{EA}{L}")
+            st.latex(r"k_{eq}=\left(\frac{1}{k_{eje}}+\frac{1}{k_{cojinete}}\right)^{-1}")
+            st.latex(r"m_{eq}=m_{helice}+0.35m_{eje}")
+            st.latex(r"f_{n,axial}=\frac{1}{2\pi}\sqrt{\frac{k_{eq}}{m_{eq}}}")
+            st.latex(r"f_{exc}=k\frac{n}{60}")
+            st.latex(r"f_{ZP}=Z\frac{n}{60}")
+            st.latex(r"x_{axial}=\frac{F_{alt}}{k_{eq}}")
+            st.markdown("""
+            Donde **E** es el módulo de elasticidad, **A** es el área transversal del eje,
+            **L** es la longitud axial equivalente, **Z** es el número de palas y **n** es la RPM.
+            """)
+    
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Frecuencia natural axial", f"{f_axial_natural_hz:.2f} Hz")
+        a2.metric("RPM crítica axial ZP", f"{rpm_critica_axial_zp:.1f} rpm")
+        a3.metric("Rigidez axial equivalente", f"{rigidez_axial_equivalente_n_m/1e9:.2f} GN/m")
+        a4.metric("Desplazamiento axial est.", f"{desplazamiento_axial_est_m*1000:.4f} mm")
+    
+        if riesgo_axial_global == "Bajo":
+            estado_html(f"✅ Condición axial aceptable: riesgo global {riesgo_axial_global}.", "good")
+        elif riesgo_axial_global == "Medio":
+            estado_html(f"⚠️ Condición axial en zona de precaución: riesgo global {riesgo_axial_global}. No se considera falla, pero conviene revisarlo.", "warn")
         else:
-            estado_html("❌ No cumple: el esfuerzo torsional estimado supera el límite admisible.", "bad")
-
-    with c2:
-        fig_t, ax_t = plt.subplots(figsize=(7, 3.8))
-        ax_t.barh(["Esfuerzo real", "Límite admisible"], [esfuerzo_real_mpa, tau_admisible_mpa])
-        ax_t.set_xlabel("MPa")
-        ax_t.set_title("Comparación de esfuerzo torsional")
-        ax_t.grid(True, axis="x", linestyle=":", alpha=0.6)
-        st.pyplot(fig_t)
-
-# ==============================================================================
-# AXIAL
-# ==============================================================================
-
-with tab_axial:
-    st.subheader("↔️ Análisis de Vibración Axial")
-
-    st.markdown("""
-    <div class="section-card">
-    La vibración axial corresponde al movimiento longitudinal del eje propulsor.
-    En buques, suele estar asociada a fluctuaciones del empuje de la hélice y a la
-    interacción hélice-casco. Esta sección completa el análisis de
-    vibración del eje junto con la parte torsional y lateral.
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("📘 Base teórica de vibración axial", expanded=False):
-        st.markdown("""
-        La hélice no entrega un empuje perfectamente constante. Al girar detrás del casco,
-        cada pala entra en zonas de estela diferente, por lo que el empuje puede fluctuar.
-        Esa fluctuación genera una fuerza alternante en dirección longitudinal del eje.
-
-        En análisis preliminar, la vibración axial puede estudiarse como un sistema
-        **masa-resorte**, donde la masa equivalente incluye hélice y parte del eje, y la
-        rigidez axial representa la rigidez del eje más la rigidez del cojinete de empuje.
-
-        Las excitaciones más importantes se revisan por órdenes:
-        - **1P:** una excitación por revolución del eje.
-        - **ZP:** frecuencia de paso de pala, donde Z es el número de palas.
-        - **2ZP y 3ZP:** armónicos superiores del paso de pala.
-        """)
-
-    with st.expander("🧮 Fórmulas de vibración axial usadas", expanded=False):
-        st.latex(r"k_{eje}=\frac{EA}{L}")
-        st.latex(r"k_{eq}=\left(\frac{1}{k_{eje}}+\frac{1}{k_{cojinete}}\right)^{-1}")
-        st.latex(r"m_{eq}=m_{helice}+0.35m_{eje}")
-        st.latex(r"f_{n,axial}=\frac{1}{2\pi}\sqrt{\frac{k_{eq}}{m_{eq}}}")
-        st.latex(r"f_{exc}=k\frac{n}{60}")
-        st.latex(r"f_{ZP}=Z\frac{n}{60}")
-        st.latex(r"x_{axial}=\frac{F_{alt}}{k_{eq}}")
-        st.markdown("""
-        Donde **E** es el módulo de elasticidad, **A** es el área transversal del eje,
-        **L** es la longitud axial equivalente, **Z** es el número de palas y **n** es la RPM.
-        """)
-
-    a1, a2, a3, a4 = st.columns(4)
-    a1.metric("Frecuencia natural axial", f"{f_axial_natural_hz:.2f} Hz")
-    a2.metric("RPM crítica axial ZP", f"{rpm_critica_axial_zp:.1f} rpm")
-    a3.metric("Rigidez axial equivalente", f"{rigidez_axial_equivalente_n_m/1e9:.2f} GN/m")
-    a4.metric("Desplazamiento axial est.", f"{desplazamiento_axial_est_m*1000:.4f} mm")
-
-    if riesgo_axial_global == "Bajo":
-        estado_html(f"✅ Condición axial aceptable: riesgo global {riesgo_axial_global}.", "good")
-    elif riesgo_axial_global == "Medio":
-        estado_html(f"⚠️ Condición axial en zona de precaución: riesgo global {riesgo_axial_global}. No se considera falla, pero conviene revisarlo.", "warn")
-    else:
-        estado_html(f"❌ Revisar diseño: existe al menos una excitación axial con riesgo {riesgo_axial_global}.", "bad")
-
-    st.markdown("### 📋 Tabla de órdenes axiales")
-
-    def color_riesgo_axial(val):
-        if val == "Bajo":
-            return "background-color: #dcfce7; color: #166534; font-weight: bold"
-        if val == "Medio":
-            return "background-color: #fef3c7; color: #92400e; font-weight: bold"
-        return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
-
-    st.dataframe(
-        axial_df.style
-        .format({
-            "Frecuencia excitante [Hz]": "{:.3f}",
-            "Frecuencia natural axial [Hz]": "{:.3f}",
-            "Separación [%]": "{:.2f}"
-        })
-        .map(color_riesgo_axial, subset=["Riesgo axial"]),
-        use_container_width=True,
-        height=230
-    )
-
-    st.markdown("### 📈 Mapa profesional de separación axial")
-    st.caption("La gráfica compara cada orden de excitación contra la frecuencia natural axial. Mientras más lejos quede cada punto de la línea natural, menor riesgo de resonancia.")
-    fig_a, ax_a = plt.subplots(figsize=(10.8, 4.8))
-    axial_plot = axial_df.copy()
-    x = np.arange(len(axial_plot))
-    f_exc_vals = axial_plot["Frecuencia excitante [Hz]"].to_numpy()
-    sep_vals = axial_plot["Separación [%]"].to_numpy()
-    ax_a.axhspan(f_axial_natural_hz*0.95, f_axial_natural_hz*1.05, alpha=0.16, label="Zona crítica ±5%")
-    ax_a.axhspan(f_axial_natural_hz*0.88, f_axial_natural_hz*1.12, alpha=0.08, label="Zona de precaución ±12%")
-    ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.6, label=f"Frecuencia natural axial = {f_axial_natural_hz:.2f} Hz")
-    ax_a.vlines(x, 0, f_exc_vals, linewidth=4, alpha=0.55)
-    ax_a.scatter(x, f_exc_vals, s=180, zorder=5, label="Excitación calculada")
-    for i, (f, sep, riesgo) in enumerate(zip(f_exc_vals, sep_vals, axial_plot["Riesgo axial"])):
-        ax_a.text(i, f + max(f_axial_natural_hz*0.035, 0.15), f"{f:.2f} Hz\nsep. {sep:.1f}%", ha="center", va="bottom", fontsize=8)
-    ax_a.set_xticks(x)
-    ax_a.set_xticklabels(axial_plot["Orden de excitación"].tolist())
-    ax_a.set_ylabel("Frecuencia [Hz]")
-    ax_a.set_title("Órdenes axiales vs frecuencia natural del sistema", fontsize=12, fontweight="bold")
-    ax_a.grid(True, axis="y", linestyle=":", alpha=0.55)
-    ax_a.legend(loc="best", fontsize=8)
-    st.pyplot(fig_a)
-
-    st.markdown("### 🧾 Lectura técnica automática")
-    peor_ax = axial_df.sort_values("Separación [%]").iloc[0]
-    if peor_ax["Riesgo axial"] == "Bajo":
-        estado_html(f"✅ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. La condición axial es aceptable para prediseño.", "good")
-    elif peor_ax["Riesgo axial"] == "Medio":
-        estado_html(f"⚠️ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. Conviene revisar rigidez axial, RPM o número de palas.", "warn")
-    else:
-        estado_html(f"❌ La excitación {peor_ax['Orden de excitación']} queda demasiado cerca de la frecuencia natural axial. Riesgo alto de resonancia.", "bad")
-
-    st.markdown("### 🧰 Instrumentación recomendada")
-    st.markdown("""
-    Para medir o validar vibración axial en un sistema real se pueden usar:
-
-    - **Acelerómetro axial** sobre chumaceras o carcasa del cojinete de empuje.
-    - **Sensor de proximidad axial** para medir desplazamiento longitudinal del eje.
-    - **Tacómetro** para sincronizar la señal con la RPM del eje.
-    - **Galgas extensométricas** para estimar esfuerzo alternante en el eje.
-    - **Monitoreo FFT** para identificar picos en 1P, ZP, 2ZP y 3ZP.
-    """)
-
-# ==============================================================================
-# LATERAL
-# ==============================================================================
-
-with tab_lateral:
-    st.subheader("📊 Análisis de Vibración Lateral / Whirling")
-
-    st.markdown("""
-    <div class="section-card">
-    La vibración lateral del eje está relacionada con la deflexión radial y la aparición
-    de velocidades críticas. Se recomienda que la velocidad de operación no coincida
-    con la zona ±20% alrededor de la primera velocidad crítica lateral.
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("📘 Base teórica de vibración del eje — vibración lateral / whirling", expanded=False):
-        st.markdown("""
-        En la guía técnica base, la vibración lateral o *whirling* se describe como
-        la deflexión radial del eje. Su frecuencia natural depende de la rigidez a flexión
-        **EI**, de la masa equivalente y de la longitud característica del sistema.
-
-        Si la frecuencia de excitación asociada al giro del eje coincide con una frecuencia
-        natural lateral, aparece una velocidad crítica. Por eso la aplicación compara la
-        velocidad de operación contra una zona de seguridad de **±20%** alrededor de la
-        velocidad crítica estimada.
-        """)
-        st.markdown("""
-        **Instrumentación relacionada:** sensores de proximidad inductivos (*eddy current*)
-        para medir órbitas del eje, acelerómetros en apoyos y mediciones durante pruebas de mar.
-        """)
-
-    with st.expander("🧮 Fórmulas de vibración lateral usadas", expanded=False):
-        st.latex(r"I = \frac{\pi d^4}{64}")
-        st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
-        st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
-        st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
-        st.latex(r"n_{crit} = 60 f_n")
-        st.markdown("""
-        El cálculo considera el peso de la hélice y el peso propio del tramo en voladizo
-        del eje. La zona crítica se evalúa como ±20% alrededor de la velocidad crítica.
-        """)
-
-    c1, c2 = st.columns([1, 1.35])
-
-    with c1:
-        st.metric("Frecuencia natural lateral", f"{f_natural_hz:.2f} Hz")
-        st.metric("RPM crítica lateral", f"{rpm_critica_lateral:.1f} rpm")
-        st.metric("Zona crítica", f"{margen_inf:.1f} - {margen_sup:.1f} rpm")
-
-        if lateral_ok:
-            estado_html("✅ Diseño seguro: la RPM de operación está fuera de la zona crítica.", "good")
+            estado_html(f"❌ Revisar diseño: existe al menos una excitación axial con riesgo {riesgo_axial_global}.", "bad")
+    
+        st.markdown("### 📋 Tabla de órdenes axiales")
+    
+        def color_riesgo_axial(val):
+            if val == "Bajo":
+                return "background-color: #dcfce7; color: #166534; font-weight: bold"
+            if val == "Medio":
+                return "background-color: #fef3c7; color: #92400e; font-weight: bold"
+            return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
+    
+        st.dataframe(
+            axial_df.style
+            .format({
+                "Frecuencia excitante [Hz]": "{:.3f}",
+                "Frecuencia natural axial [Hz]": "{:.3f}",
+                "Separación [%]": "{:.2f}"
+            })
+            .map(color_riesgo_axial, subset=["Riesgo axial"]),
+            use_container_width=True,
+            height=230
+        )
+    
+        st.markdown("### 📈 Mapa profesional de separación axial")
+        st.caption("La gráfica compara cada orden de excitación contra la frecuencia natural axial. Mientras más lejos quede cada punto de la línea natural, menor riesgo de resonancia.")
+        fig_a, ax_a = plt.subplots(figsize=(10.8, 4.8))
+        axial_plot = axial_df.copy()
+        x = np.arange(len(axial_plot))
+        f_exc_vals = axial_plot["Frecuencia excitante [Hz]"].to_numpy()
+        sep_vals = axial_plot["Separación [%]"].to_numpy()
+        ax_a.axhspan(f_axial_natural_hz*0.95, f_axial_natural_hz*1.05, alpha=0.16, label="Zona crítica ±5%")
+        ax_a.axhspan(f_axial_natural_hz*0.88, f_axial_natural_hz*1.12, alpha=0.08, label="Zona de precaución ±12%")
+        ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.6, label=f"Frecuencia natural axial = {f_axial_natural_hz:.2f} Hz")
+        ax_a.vlines(x, 0, f_exc_vals, linewidth=4, alpha=0.55)
+        ax_a.scatter(x, f_exc_vals, s=180, zorder=5, label="Excitación calculada")
+        for i, (f, sep, riesgo) in enumerate(zip(f_exc_vals, sep_vals, axial_plot["Riesgo axial"])):
+            ax_a.text(i, f + max(f_axial_natural_hz*0.035, 0.15), f"{f:.2f} Hz\nsep. {sep:.1f}%", ha="center", va="bottom", fontsize=8)
+        ax_a.set_xticks(x)
+        ax_a.set_xticklabels(axial_plot["Orden de excitación"].tolist())
+        ax_a.set_ylabel("Frecuencia [Hz]")
+        ax_a.set_title("Órdenes axiales vs frecuencia natural del sistema", fontsize=12, fontweight="bold")
+        ax_a.grid(True, axis="y", linestyle=":", alpha=0.55)
+        ax_a.legend(loc="best", fontsize=8)
+        st.pyplot(fig_a)
+    
+        st.markdown("### 🧾 Lectura técnica automática")
+        peor_ax = axial_df.sort_values("Separación [%]").iloc[0]
+        if peor_ax["Riesgo axial"] == "Bajo":
+            estado_html(f"✅ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. La condición axial es aceptable para prediseño.", "good")
+        elif peor_ax["Riesgo axial"] == "Medio":
+            estado_html(f"⚠️ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. Conviene revisar rigidez axial, RPM o número de palas.", "warn")
         else:
-            estado_html("❌ Alerta: la RPM de operación cae dentro de la zona crítica.", "bad")
+            estado_html(f"❌ La excitación {peor_ax['Orden de excitación']} queda demasiado cerca de la frecuencia natural axial. Riesgo alto de resonancia.", "bad")
+    
+        st.markdown("### 🧰 Instrumentación recomendada")
+        st.markdown("""
+        Para medir o validar vibración axial en un sistema real se pueden usar:
+    
+        - **Acelerómetro axial** sobre chumaceras o carcasa del cojinete de empuje.
+        - **Sensor de proximidad axial** para medir desplazamiento longitudinal del eje.
+        - **Tacómetro** para sincronizar la señal con la RPM del eje.
+        - **Galgas extensométricas** para estimar esfuerzo alternante en el eje.
+        - **Monitoreo FFT** para identificar picos en 1P, ZP, 2ZP y 3ZP.
+        """)
+    
 
-    with c2:
-        fig_l, ax_l = plt.subplots(figsize=(8, 3.8))
-        ax_l.axvline(x=rpm_critica_lateral, linestyle="--", linewidth=2, label="RPM crítica")
-        ax_l.axvspan(margen_inf, margen_sup, alpha=0.20, label="Zona ±20%")
-        ax_l.scatter([rpm_motor], [1], s=160, zorder=5, label="RPM operación")
-        ax_l.set_yticks([])
-        ax_l.set_xlabel("RPM")
-        ax_l.set_title("Margen frente a velocidad crítica lateral")
-        ax_l.grid(True, axis="x", linestyle=":", alpha=0.6)
-        ax_l.legend()
-        st.pyplot(fig_l)
+    # ==============================================================================
+    # LATERAL
+    # ==============================================================================
+    
+    with vib_lateral:
+        st.subheader("📊 Análisis de Vibración Lateral / Whirling")
+    
+        st.markdown("""
+        <div class="section-card">
+        La vibración lateral del eje está relacionada con la deflexión radial y la aparición
+        de velocidades críticas. Se recomienda que la velocidad de operación no coincida
+        con la zona ±20% alrededor de la primera velocidad crítica lateral.
+        </div>
+        """, unsafe_allow_html=True)
+    
+        with st.expander("📘 Base teórica de vibración del eje — vibración lateral / whirling", expanded=False):
+            st.markdown("""
+            En la guía técnica base, la vibración lateral o *whirling* se describe como
+            la deflexión radial del eje. Su frecuencia natural depende de la rigidez a flexión
+            **EI**, de la masa equivalente y de la longitud característica del sistema.
+    
+            Si la frecuencia de excitación asociada al giro del eje coincide con una frecuencia
+            natural lateral, aparece una velocidad crítica. Por eso la aplicación compara la
+            velocidad de operación contra una zona de seguridad de **±20%** alrededor de la
+            velocidad crítica estimada.
+            """)
+            st.markdown("""
+            **Instrumentación relacionada:** sensores de proximidad inductivos (*eddy current*)
+            para medir órbitas del eje, acelerómetros en apoyos y mediciones durante pruebas de mar.
+            """)
+    
+        with st.expander("🧮 Fórmulas de vibración lateral usadas", expanded=False):
+            st.latex(r"I = \frac{\pi d^4}{64}")
+            st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
+            st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
+            st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
+            st.latex(r"n_{crit} = 60 f_n")
+            st.markdown("""
+            El cálculo considera el peso de la hélice y el peso propio del tramo en voladizo
+            del eje. La zona crítica se evalúa como ±20% alrededor de la velocidad crítica.
+            """)
+    
+        c1, c2 = st.columns([1, 1.35])
+    
+        with c1:
+            st.metric("Frecuencia natural lateral", f"{f_natural_hz:.2f} Hz")
+            st.metric("RPM crítica lateral", f"{rpm_critica_lateral:.1f} rpm")
+            st.metric("Zona crítica", f"{margen_inf:.1f} - {margen_sup:.1f} rpm")
+    
+            if lateral_ok:
+                estado_html("✅ Diseño seguro: la RPM de operación está fuera de la zona crítica.", "good")
+            else:
+                estado_html("❌ Alerta: la RPM de operación cae dentro de la zona crítica.", "bad")
+    
+        with c2:
+            fig_l, ax_l = plt.subplots(figsize=(8, 3.8))
+            ax_l.axvline(x=rpm_critica_lateral, linestyle="--", linewidth=2, label="RPM crítica")
+            ax_l.axvspan(margen_inf, margen_sup, alpha=0.20, label="Zona ±20%")
+            ax_l.scatter([rpm_motor], [1], s=160, zorder=5, label="RPM operación")
+            ax_l.set_yticks([])
+            ax_l.set_xlabel("RPM")
+            ax_l.set_title("Margen frente a velocidad crítica lateral")
+            ax_l.grid(True, axis="x", linestyle=":", alpha=0.6)
+            ax_l.legend()
+            st.pyplot(fig_l)
+    
 
 # ==============================================================================
 # BALANCEO Y DESBALANCE
