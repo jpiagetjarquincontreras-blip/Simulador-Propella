@@ -1814,7 +1814,19 @@ with tab_pdf_comp:
         st.info("No se cargó PDF o no se detectaron datos. La app continuará con los parámetros manuales del panel lateral.")
 
     st.markdown("### Comparación calculado vs real")
-    st.dataframe(comparacion_df.style.format({"Calculado":"{:.3f}", "Real PDF/manual":"{:.3f}", "Error [%]":"{:.2f}"}), use_container_width=True)
+    comparacion_vista = comparacion_df.copy()
+    for col in ["Calculado", "Real PDF/manual", "Error [%]"]:
+        comparacion_vista[col] = pd.to_numeric(comparacion_vista[col], errors="coerce")
+    st.dataframe(
+        comparacion_vista.style
+        .format({
+            "Calculado": lambda x: "—" if pd.isna(x) else f"{x:,.3f}",
+            "Real PDF/manual": lambda x: "—" if pd.isna(x) else f"{x:,.3f}",
+            "Error [%]": lambda x: "—" if pd.isna(x) else f"{x:,.2f}"
+        })
+        .applymap(lambda v: "color:#64748b" if pd.isna(v) else "", subset=["Calculado", "Real PDF/manual", "Error [%]"]),
+        use_container_width=True
+    )
 
     st.markdown("### 📊 Comparación visual profesional")
     st.caption("La gráfica compara directamente el valor calculado por la app contra el dato real de la ficha técnica o entrada manual. La etiqueta indica el error porcentual.")
