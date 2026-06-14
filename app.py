@@ -3426,16 +3426,23 @@ with tab_avanzado:
         c2.metric("Criterios a revisar", rev)
         c3.metric("No cumple", no)
 
-        fig_dyn_status, ax_dyn_status = plt.subplots(figsize=(8.8, 3.8))
+        # Gráfica compacta y más ejecutiva del dictamen global.
+        fig_dyn_status, ax_dyn_status = plt.subplots(figsize=(6.6, 2.55))
         labels = ["Cumple", "Revisar", "No cumple"]
         vals = [ok, rev, no]
-        ax_dyn_status.barh(labels, vals)
-        ax_dyn_status.set_xlabel("Número de criterios")
-        ax_dyn_status.set_title("Resumen de integridad dinámica")
-        ax_dyn_status.grid(True, axis="x", linestyle=":", alpha=0.45)
+        y = np.arange(len(labels))
+        bars = ax_dyn_status.barh(y, vals, height=0.46)
+        ax_dyn_status.set_yticks(y)
+        ax_dyn_status.set_yticklabels(labels)
+        ax_dyn_status.set_xlabel("Criterios")
+        ax_dyn_status.set_title("Resumen ejecutivo de integridad dinámica", fontsize=11, fontweight="bold")
+        ax_dyn_status.grid(True, axis="x", linestyle=":", alpha=0.28)
+        ax_dyn_status.spines[["top", "right", "left"]].set_visible(False)
+        ax_dyn_status.set_xlim(0, max(vals + [1]) + 1.2)
         for i, v in enumerate(vals):
-            ax_dyn_status.text(v + 0.05, i, str(v), va="center", fontweight="bold")
-        st.pyplot(fig_dyn_status)
+            ax_dyn_status.text(v + 0.08, i, str(v), va="center", fontsize=10, fontweight="bold")
+        fig_dyn_status.tight_layout()
+        st.pyplot(fig_dyn_status, use_container_width=False)
 
         if no == 0 and rev <= 2:
             estado_html("✅ Integridad dinámica preliminar aceptable: no se observan fallas críticas en los criterios revisados.", "good")
@@ -3537,56 +3544,93 @@ with tab_avanzado:
     with dyn_bode:
         st.markdown("### 📉 Respuesta en frecuencia tipo Bode")
         st.markdown("""
-        El diagrama de Bode muestra qué tanto se amplifica la respuesta vibratoria cuando el sistema es excitado
-        a diferentes frecuencias. Es útil porque permite identificar si una excitación operacional, como 1P o ZP,
-        cae cerca de una frecuencia natural. Entre más alto sea el pico, mayor sensibilidad dinámica existe.
+        El diagrama de Bode muestra cómo responde dinámicamente el sistema eje-hélice ante diferentes
+        frecuencias de excitación. En lugar de interpretar únicamente el pico matemático de resonancia,
+        esta versión separa dos conceptos: **sensibilidad teórica del modo** y **amplificación real en operación**.
+        Esto evita marcar como falla un caso que solo tendría problemas si el eje operara cerca de su frecuencia natural.
         """)
-        with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
+        with st.expander("📘 Teoría, lectura del resultado y fórmulas usadas", expanded=False):
             st.latex(r"H(r)=\frac{1}{\sqrt{(1-r^2)^2+(2\zeta r)^2}}")
             st.latex(r"r=\frac{f}{f_n}")
             st.latex(r"\phi=-\tan^{-1}\left(\frac{2\zeta r}{1-r^2}\right)")
-            st.markdown("Criterio didáctico: pico < 3× cumple; 3–5× revisar; >5× no cumple.")
+            st.markdown("""
+            El pico máximo de un Bode ocurre cerca de la frecuencia natural. Con amortiguamiento bajo, por ejemplo
+            ζ = 0.05, el pico teórico puede acercarse a 10×. Eso **no significa automáticamente que el eje falle**;
+            lo importante para el dictamen de operación es cuánto se amplifica el sistema en las frecuencias reales
+            de excitación: **1P** y **ZP**. Por eso la app muestra dos lecturas: el pico teórico y la amplificación operacional.
+
+            **Criterio usado en la app:** amplificación operacional máxima < 1.5× cumple; 1.5–2.5× revisar; > 2.5× no cumple.
+            """)
 
         zeta = st.slider("Amortiguamiento modal ζ", 0.01, 0.25, 0.05, 0.01)
         modo_bode = st.selectbox("Modo a visualizar", ["Axial", "Lateral / whirling", "Torsional estimado"])
         fn_sel = {"Axial": f_axial_natural_hz, "Lateral / whirling": f_natural_hz, "Torsional estimado": f_torsional_est}[modo_bode]
-        fmax_bode = max(fn_sel*3.0, z_val*rpm_dyn/60.0*1.4, 1.0)
+        f_1p = rpm_dyn / 60.0
+        f_zp = z_val * rpm_dyn / 60.0
+        fmax_bode = max(fn_sel*3.0, f_zp*1.35, 1.0)
         f_bode = np.linspace(0.05, fmax_bode, 650)
         r = f_bode / max(fn_sel, 1e-9)
         mag = 1.0 / np.sqrt((1-r**2)**2 + (2*zeta*r)**2)
         phase = -np.degrees(np.arctan2(2*zeta*r, 1-r**2))
         peak = float(np.nanmax(mag))
         peak_db = 20*np.log10(max(peak, 1e-9))
-        bode_estado = "Cumple" if peak < 3 else ("Revisar" if peak <= 5 else "No cumple")
+
+        def _amp_at(freq):
+            rr = freq / max(fn_sel, 1e-9)
+            return float(1.0 / math.sqrt((1-rr**2)**2 + (2*zeta*rr)**2))
+
+        amp_1p = _amp_at(f_1p)
+        amp_zp = _amp_at(f_zp)
+        amp_oper = max(amp_1p, amp_zp)
+        amp_oper_db = 20*np.log10(max(amp_oper, 1e-9))
+        bode_estado = "Cumple" if amp_oper < 1.5 else ("Revisar" if amp_oper <= 2.5 else "No cumple")
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Modo", modo_bode)
         c2.metric("fn", f"{fn_sel:.2f} Hz")
-        c3.metric("Pico", f"{peak:.2f}× / {peak_db:.1f} dB")
+        c3.metric("Amplif. operacional", f"{amp_oper:.2f}× / {amp_oper_db:.1f} dB")
         c4.metric("Dictamen", bode_estado)
-        estado_html(f"{'✅' if bode_estado=='Cumple' else '⚠️' if bode_estado=='Revisar' else '❌'} Bode: {bode_estado}. Un pico de {peak:.2f}× indica la amplificación máxima estimada del modo seleccionado.", "good" if bode_estado=="Cumple" else "warn" if bode_estado=="Revisar" else "bad")
+        estado_html(
+            f"{'✅' if bode_estado=='Cumple' else '⚠️' if bode_estado=='Revisar' else '❌'} Bode operacional: {bode_estado}. "
+            f"La amplificación máxima en 1P/ZP es {amp_oper:.2f}×. El pico teórico de resonancia es {peak:.2f}×, "
+            "pero solo sería crítico si la operación cae cerca de esa frecuencia natural.",
+            "good" if bode_estado=="Cumple" else "warn" if bode_estado=="Revisar" else "bad"
+        )
 
-        fig_mag, ax_mag = plt.subplots(figsize=(10.6, 4.4))
-        ax_mag.plot(f_bode, 20*np.log10(mag), linewidth=2.6)
-        ax_mag.axvline(fn_sel, linestyle="--", linewidth=2, label=f"fn = {fn_sel:.2f} Hz")
-        ax_mag.axvline(rpm_dyn/60.0, linestyle=":", linewidth=2, label="1P operación")
-        ax_mag.axvline(z_val*rpm_dyn/60.0, linestyle="-.", linewidth=2, label="ZP operación")
-        ax_mag.set_title(f"Bode de magnitud — {modo_bode}")
+        st.caption("Lectura rápida: el pico teórico ayuda a entender la sensibilidad del modo; el dictamen se basa en las frecuencias reales de operación 1P y ZP.")
+        bode_resumen_df = pd.DataFrame([
+            {"Frecuencia": "1P operación", "Hz": f_1p, "Amplificación [x]": amp_1p, "Magnitud [dB]": 20*np.log10(max(amp_1p, 1e-9))},
+            {"Frecuencia": "ZP operación", "Hz": f_zp, "Amplificación [x]": amp_zp, "Magnitud [dB]": 20*np.log10(max(amp_zp, 1e-9))},
+            {"Frecuencia": "Pico teórico", "Hz": float(f_bode[np.nanargmax(mag)]), "Amplificación [x]": peak, "Magnitud [dB]": peak_db},
+        ])
+        st.dataframe(bode_resumen_df.style.format({"Hz":"{:.2f}", "Amplificación [x]":"{:.2f}", "Magnitud [dB]":"{:.1f}"}), use_container_width=True, height=150)
+
+        fig_mag, ax_mag = plt.subplots(figsize=(8.2, 3.2))
+        mag_db = 20*np.log10(mag)
+        ax_mag.plot(f_bode, mag_db, linewidth=2.2, label="Magnitud")
+        ax_mag.axvline(fn_sel, linestyle="--", linewidth=1.8, label=f"fn = {fn_sel:.2f} Hz")
+        ax_mag.scatter([f_1p, f_zp], [20*np.log10(max(amp_1p, 1e-9)), 20*np.log10(max(amp_zp, 1e-9))], s=70, zorder=5, label="1P / ZP")
+        ax_mag.set_title(f"Bode operacional de magnitud — {modo_bode}", fontsize=11, fontweight="bold")
         ax_mag.set_xlabel("Frecuencia [Hz]")
         ax_mag.set_ylabel("Magnitud [dB]")
-        ax_mag.grid(True, linestyle=":", alpha=0.55)
-        ax_mag.legend(fontsize=8)
-        st.pyplot(fig_mag)
+        ax_mag.grid(True, linestyle=":", alpha=0.35)
+        ax_mag.spines[["top", "right"]].set_visible(False)
+        ax_mag.legend(fontsize=8, loc="best")
+        fig_mag.tight_layout()
+        st.pyplot(fig_mag, use_container_width=False)
 
-        fig_phase, ax_phase = plt.subplots(figsize=(10.6, 4.2))
-        ax_phase.plot(f_bode, phase, linewidth=2.6)
-        ax_phase.axvline(fn_sel, linestyle="--", linewidth=2, label=f"fn = {fn_sel:.2f} Hz")
-        ax_phase.set_title(f"Bode de fase — {modo_bode}")
+        fig_phase, ax_phase = plt.subplots(figsize=(8.2, 3.0))
+        ax_phase.plot(f_bode, phase, linewidth=2.2)
+        ax_phase.axvline(fn_sel, linestyle="--", linewidth=1.8, label=f"fn = {fn_sel:.2f} Hz")
+        ax_phase.scatter([f_1p, f_zp], [np.interp(f_1p, f_bode, phase), np.interp(f_zp, f_bode, phase)], s=70, zorder=5, label="1P / ZP")
+        ax_phase.set_title(f"Bode operacional de fase — {modo_bode}", fontsize=11, fontweight="bold")
         ax_phase.set_xlabel("Frecuencia [Hz]")
         ax_phase.set_ylabel("Fase [°]")
-        ax_phase.grid(True, linestyle=":", alpha=0.55)
-        ax_phase.legend(fontsize=8)
-        st.pyplot(fig_phase)
+        ax_phase.grid(True, linestyle=":", alpha=0.35)
+        ax_phase.spines[["top", "right"]].set_visible(False)
+        ax_phase.legend(fontsize=8, loc="best")
+        fig_phase.tight_layout()
+        st.pyplot(fig_phase, use_container_width=False)
 
     with dyn_orbitas:
         st.markdown("### 🌀 Órbitas laterales estimadas del eje")
