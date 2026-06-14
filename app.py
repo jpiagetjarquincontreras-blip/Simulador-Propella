@@ -3177,7 +3177,7 @@ def crear_vibracion_eje_3d_wow(L=30.0,D=10.0,rpm=75.0,f_lat=1.0,f_tors=1.0,f_ax=
 
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_gemelo, tab_lab, tab_avanzado, tab_clase = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -3190,10 +3190,9 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🗺️ Campbell",
     "🔍 Cavitación",
     "📚 Normativa",
-    "🧩 Sistema propulsivo 3D",
-    "🚢 Laboratorio virtual",
+    "🧩 Integración visual 3D",
     "⚙️ Integridad dinámica",
-    "🧾 Síntesis técnica final"
+    "🧾 Dictamen técnico final"
 ])
 
 # ==============================================================================
@@ -4529,23 +4528,24 @@ with tab_clase:
 
 
 with tab_gemelo:
-    st.subheader("🧩 Sistema propulsivo 3D e integración visual")
+    st.subheader("🧩 Integración visual 3D del sistema propulsivo")
     st.markdown("""
     <div class="section-card">
-    <b>Objetivo del módulo:</b> convertir los resultados numéricos de la app en una visualización técnica interactiva del sistema eje–hélice.
-    El módulo funciona como una <b>integración 3D paramétrica del sistema propulsivo</b>: cuando el usuario cambia diámetro, número de palas, P/D, Ae/A0, potencia, RPM, transmisión o cavitación, las gráficas y modelos se actualizan automáticamente.
+    <b>Objetivo técnico:</b> reunir en un solo módulo las visualizaciones 3D y simulaciones visuales relacionadas con el sistema
+    motor–transmisión–eje–hélice. Esta sección funciona como una <b>representación paramétrica de prediseño</b>: no sustituye CAD,
+    CFD, FEM ni planos de fabricación, pero ayuda a interpretar físicamente los resultados calculados por la app.
     <br><br>
     <span class="small-muted">
-    Nota técnica: el modelo 3D es paramétrico, didáctico y de prediseño. No sustituye CAD de fabricación, CFD, planos aprobados ni modelo de astillero; sirve para prediseño, presentación, revisión de consistencia y explicación visual del sistema motor–transmisión–eje–hélice.
+    Para mantener la app ordenada se quitaron las vistas que eran más decorativas o repetitivas, como el casco con flujo 3D y la vibración 3D conceptual. La cavitación formal queda en la pestaña Cavitación, la dinámica formal queda en Integridad dinámica y aquí se conserva lo más útil visualmente: tren propulsor, hélice paramétrica, prueba de mar y mapa de carga de la hélice.
     </span>
     </div>
     """, unsafe_allow_html=True)
 
     if go is None:
-        estado_html("⚠️ Para activar el módulo 3D instala Plotly agregando `plotly` a requirements.txt.", "warn")
+        estado_html("⚠️ Para activar las visualizaciones 3D instala Plotly agregando `plotly` a requirements.txt.", "warn")
     else:
-        twin_resumen, twin_sistema, twin_helice = st.tabs([
-            "📌 Panel técnico", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada"
+        twin_resumen, twin_sistema, twin_helice, twin_prueba, twin_carga, twin_lectura = st.tabs([
+            "📌 Panel técnico", "🔩 Tren propulsor 3D", "🌀 Hélice 3D", "🏁 Prueba de mar", "🎨 Carga en hélice", "📋 Lectura técnica"
         ])
 
         with twin_resumen:
@@ -4553,148 +4553,119 @@ with tab_gemelo:
             c1.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
             c2.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
             c3.metric("Hélice", f"Z={z_val} · D={diam_prop_m:.2f} m")
-            c4.metric("RPM ref.", f"{rpm_helice_objetivo:.1f} rpm")
-            estado_html("✅ Sistema 3D activo: las visualizaciones se alimentan de los datos actuales de entrada y resultados calculados por la app.", "good")
+            c4.metric("RPM hélice", f"{rpm_helice_objetivo:.1f} rpm")
+
+            sistema_visual_ok = bool(diam_prop_m > 0 and z_val >= 3 and pd_val > 0 and ae_val > 0 and PB_kw_calc > 0)
+            estado_html(
+                "✅ Módulo visual activo: los modelos se alimentan de los datos actuales de la app." if sistema_visual_ok else
+                "⚠️ Módulo visual con datos incompletos: revisa diámetro, palas, P/D, Ae/A0 o potencia.",
+                "good" if sistema_visual_ok else "warn"
+            )
 
             st.markdown("""
-            ### ¿Qué evalúa esta pestaña?
-            - **Tren propulsor:** representa motor, transmisión/reductora, eje, cojinetes, hélice y dirección de empuje.
-            - **Hélice paramétrica:** cambia con Z, D, P/D, Ae/A0 y hub ratio.
-            - **Integración visual:** concentra solo la parte geométrica 3D del sistema eje-hélice. El flujo energético se ubica en Potencias y la cavitación visual se ubica en Cavitación para que cada análisis esté en su sección correspondiente.
-            - **Defensa del proyecto:** permite explicar el sistema como si fuera un software de diseño, no solo una hoja de cálculo.
+            ### ¿Qué hace este módulo?
+            Este apartado traduce los resultados numéricos a una lectura visual del sistema propulsivo. En lugar de mostrar únicamente tablas,
+            permite observar cómo cambian el tren propulsor, la hélice, el mapa de carga y la prueba de mar al modificar los parámetros de entrada.
+
+            **Qué se conserva aquí:**
+            - **Tren propulsor 3D:** motor, transmisión, eje, cojinetes, hélice y empuje.
+            - **Hélice 3D:** geometría paramétrica ligada a D, Z, P/D, Ae/A0 y hub ratio.
+            - **Prueba de mar virtual:** evolución de RT, PE, PB, eficiencia y cavitación con la velocidad.
+            - **Mapa de carga:** visualización de zonas de mayor demanda hidrodinámica sobre las palas.
             """)
 
             resumen_twin_df = pd.DataFrame([
-                {"Variable": "Potencia efectiva PE", "Valor": f"{PE_kw:,.1f} kW", "Uso en gemelo": "Inicio del flujo energético útil."},
-                {"Variable": "Potencia al freno PB", "Valor": f"{PB_kw_calc:,.1f} kW", "Uso en gemelo": "Carga requerida en motor."},
-                {"Variable": "MCR requerido", "Valor": f"{MCR_requerido_kw:,.1f} kW", "Uso en gemelo": "Reserva de potencia al 85% MCR."},
-                {"Variable": "Diámetro de hélice", "Valor": f"{diam_prop_m:.2f} m", "Uso en gemelo": "Escala la hélice 3D y el disco propulsor."},
-                {"Variable": "P/D", "Valor": f"{pd_val:.3f}", "Uso en gemelo": "Modifica la torsión geométrica/twist visual de las palas."},
-                {"Variable": "Ae/A0", "Valor": f"{ae_val:.3f}", "Uso en gemelo": "Aumenta o reduce la cuerda/área visual de las palas."},
-                {"Variable": "σ cavitación", "Valor": f"{sigma_n:.3f}", "Uso en gemelo": "Controla la nube simbólica de cavitación."},
+                {"Variable": "Potencia efectiva PE", "Valor": f"{PE_kw:,.1f} kW", "Uso visual": "Base de la potencia útil para vencer resistencia."},
+                {"Variable": "Potencia al freno PB", "Valor": f"{PB_kw_calc:,.1f} kW", "Uso visual": "Carga exigida al motor."},
+                {"Variable": "MCR requerido", "Valor": f"{MCR_requerido_kw:,.1f} kW", "Uso visual": "Reserva operacional recomendada."},
+                {"Variable": "Diámetro de hélice", "Valor": f"{diam_prop_m:.2f} m", "Uso visual": "Escala el propulsor 3D y el disco de operación."},
+                {"Variable": "P/D", "Valor": f"{pd_val:.3f}", "Uso visual": "Modifica la torsión visual de la pala."},
+                {"Variable": "Ae/A0", "Valor": f"{ae_val:.3f}", "Uso visual": "Aumenta o reduce el área visual de las palas."},
+                {"Variable": "σ cavitación", "Valor": f"{sigma_n:.3f}", "Uso visual": "Ayuda a interpretar el margen frente a cavitación."},
             ])
-            st.dataframe(resumen_twin_df, use_container_width=True, height=285)
+            dataframe_profesional(resumen_twin_df, height=285)
 
         with twin_sistema:
             st.markdown("""
-            ### Tren propulsor 3D interactivo de popa
-            El modelo representa el arreglo conceptual **motor → transmisión → línea de ejes → cojinetes → hélice → empuje** dentro de una envolvente de casco.
-            Puedes rotarlo, acercarlo y moverlo con el mouse; además, al pasar el cursor sobre cada componente aparece información técnica del elemento. La escala cambia automáticamente con el diámetro de hélice, diámetro de eje, potencia, RPM y tipo de transmisión.
+            ### Tren propulsor 3D interactivo
+            Representa el arreglo **motor → transmisión/reductora → eje → cojinetes → hélice → empuje**. El objetivo es revisar la coherencia
+            geométrica y funcional del sistema. Puedes moverlo con el mouse y pasar el cursor sobre los componentes para leer datos técnicos.
             """)
             sistema_ok = (diametro_eje_mm > 0) and (diam_prop_m > 0) and caja_cumple and (PB_kw_calc <= max(MCR_requerido_kw, PB_kw_calc)*1.02)
-            if sistema_ok:
-                estado_html("✅ Integración 3D coherente: el tren propulsor representa una configuración compatible entre potencia, eje, hélice y transmisión para prediseño.", "good")
-            else:
-                estado_html("⚠️ Integración 3D con observaciones: revisar potencia, RPM de transmisión o dimensiones del eje antes de interpretar el modelo como configuración final.", "warn")
-            fig_sys = crear_sistema_propulsor_3d(
-                D=diam_prop_m,
-                eje_d_mm=diametro_eje_mm,
-                Lpp=eslora,
-                tipo_trans=transmision_tipo,
-                relacion=relacion_reduccion,
-                PB=PB_kw_calc,
-                rpm=rpm_helice_objetivo,
-                Z=z_val,
-                PD=pd_val,
-                AeAo=ae_val,
-                hub_ratio=hub_ratio
+            estado_html(
+                "✅ Integración 3D coherente para prediseño: potencia, transmisión, eje y hélice son consistentes visualmente." if sistema_ok else
+                "⚠️ Integración 3D con observaciones: revisar potencia, relación de transmisión o diámetro de eje.",
+                "good" if sistema_ok else "warn"
             )
-            st.plotly_chart(fig_sys, use_container_width=True)
+            fig_sys = crear_sistema_propulsor_3d(
+                D=diam_prop_m, eje_d_mm=diametro_eje_mm, Lpp=eslora, tipo_trans=transmision_tipo,
+                relacion=relacion_reduccion, PB=PB_kw_calc, rpm=rpm_helice_objetivo, Z=z_val,
+                PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio
+            )
+            st.plotly_chart(fig_sys, use_container_width=True, config=_plotly_config())
             sistema_df = pd.DataFrame([
-                {"Elemento": "Motor", "Dato asociado": f"PB={PB_kw_calc:,.0f} kW / MCR≈{MCR_requerido_kw:,.0f} kW", "Qué representa": "Fuente de potencia del sistema."},
-                {"Elemento": "Transmisión", "Dato asociado": f"{transmision_tipo} · i={relacion_reduccion:.2f}", "Qué representa": "Compatibilidad entre RPM de motor y hélice."},
-                {"Elemento": "Eje", "Dato asociado": f"d≈{diametro_eje_mm:.0f} mm", "Qué representa": "Transmisión de torque y soporte dinámico."},
-                {"Elemento": "Hélice", "Dato asociado": f"D={diam_prop_m:.2f} m · Z={z_val}", "Qué representa": "Conversión de potencia en empuje."},
-                {"Elemento": "Empuje", "Dato asociado": f"T≈{thrust_req_N/1000:,.1f} kN", "Qué representa": "Fuerza propulsiva generada."},
+                {"Elemento": "Motor", "Dato asociado": f"PB={PB_kw_calc:,.0f} kW / MCR≈{MCR_requerido_kw:,.0f} kW", "Función": "Entrega potencia al tren propulsor."},
+                {"Elemento": "Transmisión", "Dato asociado": f"{transmision_tipo} · i={relacion_reduccion:.2f}", "Función": "Adapta RPM entre motor y hélice."},
+                {"Elemento": "Eje", "Dato asociado": f"d≈{diametro_eje_mm:.0f} mm", "Función": "Transmite torque y soporta cargas dinámicas."},
+                {"Elemento": "Hélice", "Dato asociado": f"D={diam_prop_m:.2f} m · Z={z_val}", "Función": "Convierte potencia en empuje."},
+                {"Elemento": "Empuje", "Dato asociado": f"T≈{thrust_req_N/1000:,.1f} kN", "Función": "Fuerza propulsiva resultante."},
             ])
-            st.dataframe(sistema_df, use_container_width=True, height=250)
+            dataframe_profesional(sistema_df, height=250)
 
         with twin_helice:
             st.markdown("""
-            ### Hélice 3D paramétrica de perfil y animada
-            Esta hélice no es una pieza CAD final, pero sí es un modelo paramétrico: cambia con el **número de palas, diámetro, P/D, Ae/A0 y hub ratio**.
-            Puedes rotarla manualmente con el mouse o usar el botón **Girar** dentro de la gráfica. El objetivo es visualizar cómo los parámetros hidrodinámicos se traducen en forma geométrica del propulsor.
+            ### Hélice 3D paramétrica
+            La hélice 3D muestra de forma conceptual cómo los parámetros hidrodinámicos se convierten en geometría. No es una pala CAD final,
+            pero sí permite visualizar tendencias: más **P/D** aumenta el paso/twist, más **Ae/A0** aumenta el área de pala y más **Z** cambia la distribución angular.
             """)
-            helice_geom_ok = (3 <= z_val <= 7) and (0.50 <= pd_val <= 1.40) and (0.30 <= ae_val <= 1.00) and (ae_val >= keller_ae_min) and (diam_prop_m > 0)
-            if helice_geom_ok:
-                estado_html("✅ Hélice 3D coherente: la geometría visual se encuentra dentro de rangos típicos de prediseño y cumple el área mínima Keller preliminar.", "good")
-            else:
-                estado_html("⚠️ Hélice 3D con observaciones: la geometría puede visualizarse, pero alguno de los parámetros está fuera de rango o no cubre el área mínima preliminar.", "warn")
-            fig_prop = crear_helice_3d_parametrica(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, rpm=rpm_helice_objetivo, animar=True)
-            st.plotly_chart(fig_prop, use_container_width=True)
-            helice_visual_df = pd.DataFrame([
-                {"Parámetro": "Número de palas Z", "Valor": z_val, "Efecto visual/técnico": "Define cuántas palas se distribuyen angularmente; influye en vibración y eficiencia."},
-                {"Parámetro": "Diámetro D", "Valor": f"{diam_prop_m:.3f} m", "Efecto visual/técnico": "Escala el radio del disco propulsor y la longitud de pala."},
-                {"Parámetro": "P/D", "Valor": f"{pd_val:.3f}", "Efecto visual/técnico": "Aumenta el avance geométrico y la torsión visual de la pala."},
-                {"Parámetro": "Ae/A0", "Valor": f"{ae_val:.3f}", "Efecto visual/técnico": "Modifica la cuerda/área de pala; mayor área suele ayudar contra cavitación."},
-                {"Parámetro": "Hub ratio", "Valor": f"{hub_ratio:.3f}", "Efecto visual/técnico": "Define el tamaño relativo del cubo central."},
-                {"Parámetro": "RPM de referencia", "Valor": f"{rpm_helice_objetivo:.2f} rpm", "Efecto visual/técnico": "Se usa para la interpretación de velocidad de operación del propulsor."},
-            ])
-            st.dataframe(helice_visual_df, use_container_width=True, height=285)
-
-
-
-
-with tab_lab:
-    st.subheader("🚢 Laboratorio virtual de prediseño propulsivo")
-    st.markdown("""
-    <div class="section-card">
-    <b>Objetivo del laboratorio:</b> reunir simulaciones visuales de alto impacto para defender el diseño como un sistema integrado.
-    Este módulo no reemplaza CFD, FEM ni pruebas de canal, pero transforma los resultados de la app en visualizaciones dinámicas:
-    casco y estela 3D, prueba de mar virtual, mapa de carga de hélice y vibración del eje. Todo se actualiza con los datos ingresados por el usuario.
-    </div>
-    """, unsafe_allow_html=True)
-    if go is None:
-        estado_html("⚠️ Para activar el laboratorio virtual instala `plotly` en requirements.txt.", "warn")
-    else:
-        lab_casco, lab_prueba, lab_carga, lab_vib, lab_conc = st.tabs([
-            "🌊 Casco + flujo 3D", "🏁 Prueba de mar", "🌀 Carga en hélice", "🧬 Vibración 3D", "📌 Lectura técnica"
-        ])
-        with lab_casco:
-            st.markdown("""
-            ### Casco transparente, estela, hélice y empuje
-            Esta vista funciona como un **mini gemelo digital visual**. Integra la popa del buque, flujo hacia la hélice,
-            línea de eje, propulsor, timón y vector de empuje. Puedes moverlo libremente con el mouse y activar la animación.
-            """)
-            estado_html("✅ Visualización paramétrica activa: el tamaño de la hélice, estela, cavitación y empuje se recalculan con los datos actuales.", "good")
-            fig_lab = crear_casco_flujo_empuje_3d_wow(
-                D=diam_prop_m, Lpp=eslora, B=manga, T=calado, rpm=rpm_helice_objetivo,
-                thrust_kN=thrust_req_N/1000.0, sigma=sigma_n, Z=z_val, PD=pd_val,
-                AeAo=ae_val, hub_ratio=hub_ratio, wake=estela
+            helice_geom_ok = (3 <= z_val <= 7) and (0.50 <= pd_val <= 1.40) and (ae_val >= ae_min_keller)
+            estado_html(
+                "✅ Geometría paramétrica coherente: los parámetros se encuentran dentro de rangos razonables de prediseño." if helice_geom_ok else
+                "⚠️ Geometría con observaciones: revisar P/D, Ae/A0, número de palas o criterio de Keller.",
+                "good" if helice_geom_ok else "warn"
             )
-            st.plotly_chart(fig_lab, use_container_width=True, config=_plotly_config())
-            lab_df = pd.DataFrame([
-                {"Elemento": "Casco transparente", "Dato usado": f"L≈{eslora:.1f} m, B≈{manga:.1f} m, T≈{calado:.1f} m", "Interpretación": "Ubica la línea de ejes dentro de la popa del buque."},
-                {"Elemento": "Estela / flujo", "Dato usado": f"w={estela:.3f}, VA={VA_ms:.2f} m/s", "Interpretación": "Representa cómo el flujo llega al disco de la hélice."},
-                {"Elemento": "Hélice", "Dato usado": f"D={diam_prop_m:.2f} m, Z={z_val}, P/D={pd_val:.3f}", "Interpretación": "Convierte potencia entregada en empuje."},
-                {"Elemento": "Vector de empuje", "Dato usado": f"T≈{thrust_req_N/1000:,.1f} kN", "Interpretación": "Muestra dirección e intensidad relativa del empuje."},
-                {"Elemento": "Cavitación simbólica", "Dato usado": f"σ={sigma_n:.3f}", "Interpretación": "La nube aumenta cuando el margen de cavitación disminuye."},
+            fig_prop = crear_helice_3d_parametrica(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, rpm=rpm_helice_objetivo, animar=True)
+            st.plotly_chart(fig_prop, use_container_width=True, config=_plotly_config())
+            helice_visual_df = pd.DataFrame([
+                {"Parámetro": "Número de palas Z", "Valor": z_val, "Lectura técnica": "Más palas suelen reducir vibración, pero pueden disminuir eficiencia si el área no se optimiza."},
+                {"Parámetro": "Diámetro D", "Valor": f"{diam_prop_m:.3f} m", "Lectura técnica": "Aumentar D permite más empuje a menor carga de pala, limitado por calado e inmersión."},
+                {"Parámetro": "P/D", "Valor": f"{pd_val:.3f}", "Lectura técnica": "Controla avance geométrico; valores extremos pueden afectar eficiencia y cavitación."},
+                {"Parámetro": "Ae/A0", "Valor": f"{ae_val:.3f}", "Lectura técnica": "Mayor área expandida reduce carga por unidad de área y ayuda contra cavitación."},
+                {"Parámetro": "Hub ratio", "Valor": f"{hub_ratio:.3f}", "Lectura técnica": "Define el tamaño del cubo central y afecta el área efectiva de las palas."},
+                {"Parámetro": "RPM", "Valor": f"{rpm_helice_objetivo:.2f} rpm", "Lectura técnica": "Velocidad de rotación usada para lectura operacional del propulsor."},
             ])
-            dataframe_profesional(lab_df, height=240)
-        with lab_prueba:
+            dataframe_profesional(helice_visual_df, height=300)
+
+        with twin_prueba:
             st.markdown("""
             ### Prueba de mar virtual
-            Simula el crecimiento de resistencia y potencia desde baja velocidad hasta la velocidad de servicio.
-            Sirve para explicar por qué pequeños incrementos de velocidad exigen grandes aumentos de potencia.
+            Esta visualización simula cómo crecen resistencia y potencia al aumentar la velocidad hasta el punto de servicio.
+            Es útil para explicar por qué la potencia requerida aumenta rápidamente con la velocidad y por qué se aplica margen de servicio.
             """)
             fig_sea = crear_prueba_mar_animada_wow(velocidad, resistencia_total_kn, PE_kw, PB_kw_calc, sigma_n, eta_d)
             st.plotly_chart(fig_sea, use_container_width=True, config=_plotly_config())
             sea_df = pd.DataFrame([
-                {"Variable": "Velocidad de servicio", "Valor": f"{velocidad:.2f} kn", "Lectura": "Punto final de la simulación de aceleración."},
-                {"Variable": "RT de diseño", "Valor": f"{resistencia_total_kn:,.1f} kN", "Lectura": "Resistencia usada para calcular PE."},
-                {"Variable": "PB requerida", "Valor": f"{PB_kw_calc:,.0f} kW", "Lectura": "Potencia final al freno requerida por el sistema."},
-                {"Variable": "σ de servicio", "Valor": f"{sigma_n:.3f}", "Lectura": "Indicador de margen frente a cavitación."},
+                {"Variable": "Velocidad de servicio", "Valor": f"{velocidad:.2f} kn", "Interpretación": "Punto de operación final de la simulación."},
+                {"Variable": "RT de diseño", "Valor": f"{resistencia_total_kn:,.1f} kN", "Interpretación": "Resistencia usada para calcular potencia efectiva."},
+                {"Variable": "PE", "Valor": f"{PE_kw:,.0f} kW", "Interpretación": "Potencia útil para vencer resistencia."},
+                {"Variable": "PB", "Valor": f"{PB_kw_calc:,.0f} kW", "Interpretación": "Potencia requerida al motor considerando pérdidas."},
+                {"Variable": "ηD", "Valor": f"{eta_d:.3f}", "Interpretación": "Eficiencia cuasi-propulsiva global hasta potencia entregada."},
+                {"Variable": "σ", "Valor": f"{sigma_n:.3f}", "Interpretación": "Margen preliminar frente a cavitación."},
             ])
-            dataframe_profesional(sea_df, height=220)
-        with lab_carga:
+            dataframe_profesional(sea_df, height=260)
+
+        with twin_carga:
             st.markdown("""
             ### Mapa 3D de carga relativa en la hélice
-            El color sobre las palas muestra una carga relativa conceptual: zonas verdes/amarillas/rojas indican mayor demanda hidrodinámica.
-            Es útil para explicar visualmente por qué cavitación y eficiencia dependen de P/D, Ae/A0, Z y diámetro.
+            Este mapa colorea las palas según una **carga hidrodinámica relativa conceptual**. No es un cálculo CFD de presión, pero permite
+            explicar dónde se concentra mayor demanda sobre la pala y cómo los parámetros del diseño influyen en esa carga.
+
+            **Cómo leerlo:**
+            - Zonas frías indican menor carga relativa.
+            - Zonas cálidas indican mayor demanda hidrodinámica.
+            - Si el diseño tiene bajo σ, bajo Ae/A0 o alta carga de pala, el mapa tiende a mostrar zonas más exigidas.
+            - Se interpreta junto con Burrill, Keller, Reynolds y σ, no de forma aislada.
             """)
-            
-            # KT y KQ se toman del punto de máxima eficiencia de las curvas Wageningen actuales.
-            # Así el Laboratorio Virtual no depende de variables externas no definidas.
             try:
                 _idx_wow = int(res["nO"].idxmax())
                 KT_actual_wow = float(res.loc[_idx_wow, "KT"])
@@ -4705,32 +4676,38 @@ with tab_lab:
             fig_load = crear_mapa_carga_helice_wow(diam_prop_m, z_val, pd_val, ae_val, hub_ratio, sigma_n, KT_actual_wow, KQ_actual_wow)
             st.plotly_chart(fig_load, use_container_width=True, config=_plotly_config())
             carga_ok = sigma_n > 0.2 and burrill_ok and keller_ok
-            estado_html(("✅ Mapa de carga favorable: los criterios de cavitación preliminares se mantienen dentro del margen." if carga_ok else "⚠️ Mapa de carga con observaciones: revisar cavitación, área expandida o diámetro."), "good" if carga_ok else "warn")
-        with lab_vib:
+            estado_html(
+                "✅ Carga visual favorable: la lectura coincide con criterios preliminares aceptables de cavitación y área de pala." if carga_ok else
+                "⚠️ Carga visual con observaciones: revisar σ, Ae/A0, diámetro o carga de pala antes de aceptar el diseño.",
+                "good" if carga_ok else "warn"
+            )
+            carga_df = pd.DataFrame([
+                {"Dato evaluado": "KT en punto de diseño", "Valor": f"{KT_actual_wow:.4f}", "Qué aporta": "Coeficiente de empuje usado como referencia de carga."},
+                {"Dato evaluado": "KQ en punto de diseño", "Valor": f"{KQ_actual_wow:.4f}", "Qué aporta": "Coeficiente de torque usado como referencia de demanda mecánica."},
+                {"Dato evaluado": "Ae/A0", "Valor": f"{ae_val:.3f}", "Qué aporta": "Área disponible para repartir la carga sobre las palas."},
+                {"Dato evaluado": "P/D", "Valor": f"{pd_val:.3f}", "Qué aporta": "Influye en avance, ángulo de pala y carga local."},
+                {"Dato evaluado": "σ cavitación", "Valor": f"{sigma_n:.3f}", "Qué aporta": "Indica margen de presión frente a formación de vapor."},
+                {"Dato evaluado": "Burrill", "Valor": "Cumple" if burrill_ok else "Revisar", "Qué aporta": "Controla carga de pala frente a cavitación."},
+                {"Dato evaluado": "Keller", "Valor": "Cumple" if keller_ok else "Revisar", "Qué aporta": "Verifica área expandida mínima."},
+            ])
+            dataframe_profesional(carga_df, height=315)
+
+        with twin_lectura:
             st.markdown("""
-            ### Vibración 3D conceptual del eje
-            Esta animación permite visualizar de forma sencilla los modos lateral, axial y torsional del sistema eje–hélice.
-            No es FEM; es una representación didáctica para explicar el fenómeno de vibración y su relación con Campbell/Bode.
-            """)
-            modo_lab = st.selectbox("Modo a visualizar", ["Lateral", "Axial", "Torsional"], key="modo_lab_vib")
-            fig_vib3d = crear_vibracion_eje_3d_wow(L=max(3.0*diam_prop_m, 18.0), D=diam_prop_m, rpm=rpm_helice_objetivo, f_lat=f_natural_hz, f_tors=f_torsional_est, f_ax=f_axial_natural_hz, modo=modo_lab)
-            st.plotly_chart(fig_vib3d, use_container_width=True, config=_plotly_config())
-            estado_html("✅ Visualización dinámica estable para prediseño: usar junto con Campbell, Bode y márgenes de separación para el dictamen técnico.", "good")
-        with lab_conc:
-            st.markdown("""
-            ### Lectura técnica del laboratorio virtual
-            Este módulo se agregó como apoyo de presentación y revisión visual. Su valor principal es que conecta los resultados numéricos con una interpretación física.
+            ### Lectura técnica integrada
+            La visualización 3D no reemplaza los cálculos, sino que los hace defendibles: conecta la memoria numérica con una lectura física del sistema.
             """)
             conc_df = pd.DataFrame([
-                {"Módulo": "Casco + flujo 3D", "Qué demuestra": "Ubicación del sistema propulsivo en popa, flujo de llegada y dirección de empuje.", "Dato clave": f"T≈{thrust_req_N/1000:,.1f} kN"},
-                {"Módulo": "Prueba de mar", "Qué demuestra": "Crecimiento no lineal de resistencia y potencia con la velocidad.", "Dato clave": f"PB≈{PB_kw_calc:,.0f} kW"},
-                {"Módulo": "Carga en hélice", "Qué demuestra": "Zonas de mayor demanda hidrodinámica en las palas.", "Dato clave": f"Ae/A0={ae_val:.3f}"},
-                {"Módulo": "Vibración 3D", "Qué demuestra": "Comportamiento cualitativo de modos lateral, axial y torsional.", "Dato clave": f"n={rpm_helice_objetivo:.1f} rpm"},
+                {"Módulo": "Tren propulsor 3D", "Qué demuestra": "Relación física motor–transmisión–eje–hélice.", "Dato clave": f"PB≈{PB_kw_calc:,.0f} kW"},
+                {"Módulo": "Hélice paramétrica", "Qué demuestra": "Efecto de D, Z, P/D, Ae/A0 y hub ratio en la forma del propulsor.", "Dato clave": f"D={diam_prop_m:.2f} m"},
+                {"Módulo": "Prueba de mar", "Qué demuestra": "Crecimiento de resistencia y potencia con la velocidad.", "Dato clave": f"V={velocidad:.2f} kn"},
+                {"Módulo": "Mapa de carga", "Qué demuestra": "Zonas relativas de mayor demanda hidrodinámica en las palas.", "Dato clave": f"Ae/A0={ae_val:.3f}"},
             ])
             dataframe_profesional(conc_df, height=260)
             st.markdown("""
-            **Conclusión automática del laboratorio:** el sistema queda representado como un conjunto integrado motor–transmisión–eje–hélice.
-            Las visualizaciones son de prediseño y sirven para defensa técnica; los valores finales deben validarse con fabricante, sociedad clasificadora, pruebas de mar y, si aplica, CFD/FEM.
+            **Conclusión automática:** el sistema queda representado como un conjunto integrado de prediseño. Las visualizaciones son útiles para
+            presentación, revisión de consistencia y explicación técnica. La aceptación final debe validarse con fabricante, sociedad clasificadora,
+            pruebas de mar y, si aplica, CFD/FEM.
             """)
 
 
