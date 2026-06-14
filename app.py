@@ -1162,7 +1162,7 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
     # Empuje y flujo de agua conceptual
     fig.add_trace(go.Cone(x=[shaft_len+0.65*D], y=[0], z=[0], u=[0.95*D], v=[0], w=[0], sizemode="absolute", sizeref=0.60*D, anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0284c7"]], showscale=False, name="Empuje"))
     for yy in np.linspace(-0.9*D, 0.9*D, 5):
-        fig.add_trace(go.Scatter3d(x=[shaft_len+1.25*D, shaft_len+0.25*D], y=[yy, yy*0.55], z=[-0.65*D, -0.20*D], mode="lines", line=dict(width=3, color="rgba(56,189,248,.32)"), name="Flujo de agua" if yy==0 else "", showlegend=(yy==0)))
+        fig.add_trace(go.Scatter3d(x=[shaft_len+1.25*D, shaft_len+0.25*D], y=[yy, yy*0.55], z=[-0.65*D, -0.20*D], mode="lines", line=dict(width=3, color="rgba(56,189,248,.32)"), name="Flujo de agua" if yy==0 else "", showlegend=bool(yy==0)))
     fig.update_layout(
         title=dict(text=f"Gemelo digital del tren propulsor — PB={PB:,.0f} kW, n={rpm:.1f} rpm, D={D:.2f} m", x=0.02, xanchor="left"),
         scene=dict(
