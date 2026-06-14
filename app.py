@@ -1903,25 +1903,25 @@ with tab_potencias:
         st.markdown("La potencia efectiva representa la potencia mínima necesaria para vencer la resistencia total del casco a la velocidad de servicio. En esta etapa todavía no se consideran pérdidas propulsivas.")
         cols_pe = st.columns(3)
         with cols_pe[0]:
-            st.metric("RT", f"{RT_kn:,.1f} kN")
+            st.metric("RT", f"{resistencia_total_kn:,.1f} kN")
         with cols_pe[1]:
             st.metric("Velocidad", f"{velocidad_buque_ms:.2f} m/s")
         with cols_pe[2]:
-            st.metric("PE sin margen", f"{PE_sin_margen_kw:,.0f} kW")
+            st.metric("PE sin margen", f"{PE_kw_sin_margen:,.0f} kW")
         cols_pe_margin = st.columns(2)
         with cols_pe_margin[0]:
             st.metric("Sea Margin", f"{margen_servicio:.1f}%")
         with cols_pe_margin[1]:
             st.metric("PE con margen", f"{PE_kw:,.0f} kW")
         df_pe = pd.DataFrame([
-            {"Concepto":"Resistencia total RT", "Valor":RT_kn, "Unidad":"kN"},
+            {"Concepto":"Resistencia total RT", "Valor":resistencia_total_kn, "Unidad":"kN"},
             {"Concepto":"Velocidad del buque VS", "Valor":velocidad_buque_ms, "Unidad":"m/s"},
-            {"Concepto":"PE sin margen", "Valor":PE_sin_margen_kw, "Unidad":"kW"},
+            {"Concepto":"PE sin margen", "Valor":PE_kw_sin_margen, "Unidad":"kW"},
             {"Concepto":"PE con Sea Margin", "Valor":PE_kw, "Unidad":"kW"},
         ])
         st.dataframe(df_pe.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
         fig, ax = plt.subplots(figsize=(8, 3.8))
-        ax.bar(["PE sin margen", "PE con margen"], [PE_sin_margen_kw, PE_kw])
+        ax.bar(["PE sin margen", "PE con margen"], [PE_kw_sin_margen, PE_kw])
         ax.set_ylabel("Potencia [kW]")
         ax.set_title("Efecto del Sea Margin sobre PE")
         ax.grid(True, axis="y", linestyle=":", alpha=0.6)
@@ -1935,7 +1935,7 @@ with tab_potencias:
         c2.metric("VA", f"{v_ms:.2f} m/s")
         c3.metric("PT", f"{PT_kw:,.0f} kW")
         df_pt = pd.DataFrame([
-            {"Parámetro":"Resistencia total RT", "Valor":RT_kn, "Unidad":"kN"},
+            {"Parámetro":"Resistencia total RT", "Valor":resistencia_total_kn, "Unidad":"kN"},
             {"Parámetro":"Deducción de empuje t", "Valor":t_fraction, "Unidad":"-"},
             {"Parámetro":"Velocidad de avance VA", "Valor":v_ms, "Unidad":"m/s"},
             {"Parámetro":"Potencia de empuje PT", "Valor":PT_kw, "Unidad":"kW"},
