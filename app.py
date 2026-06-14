@@ -2071,7 +2071,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🔍 Cavitación",
     "📚 Normativa",
     "📋 Clase",
-    "🧬 Dinámica del eje"
+    "⚙️ Integridad dinámica"
 ])
 
 # ==============================================================================
@@ -2222,7 +2222,7 @@ with tab_pdf_comp:
     if rpm_real and rpm_real > 0 and rpm_helice_requerida > 0:
         err_teorico_rpm = error_pct(rpm_helice_requerida, rpm_real)
         estado_html(
-            f"ℹ️ Nota importante sobre RPM: la app calcula una RPM teórica por máxima eficiencia en aguas abiertas de {rpm_helice_requerida:.2f} rpm, mientras que la ficha real trabaja a {rpm_real:.2f} rpm. Esto no necesariamente es malo: la RPM real depende del motor seleccionado, transmisión, limitación de diámetro, cavitación, vibración, margen de servicio y decisiones de diseño del fabricante. Por eso la tabla de validación compara la RPM de servicio real/manual cuando está disponible y deja la RPM teórica como referencia de optimización.",
+            f"ℹ️ Interpretación técnica de RPM: la app identifica una velocidad teórica de máxima eficiencia en aguas abiertas de {rpm_helice_requerida:.2f} rpm y la ficha/entrada de referencia trabaja a {rpm_real:.2f} rpm. Esta diferencia puede ser normal en diseño naval: la RPM final también depende del motor disponible, la transmisión, el diámetro máximo permitido, cavitación, vibración, margen de servicio y decisiones del fabricante. Por eso la RPM real se usa como referencia operativa y la RPM teórica queda como apoyo para optimización hidrodinámica.",
             "warn" if err_teorico_rpm and err_teorico_rpm > 15 else "good"
         )
     st.dataframe(
@@ -2481,14 +2481,16 @@ with tab_opt:
         st.latex(r"\text{Puntaje}=\eta_O(\%) - 0.35\,\text{Error RPM}(\%)")
         st.info("Si no se sube PDF o no existe RPM real, la app ordena principalmente por eficiencia ηO.")
 
-    modo_opt = st.radio("Nivel de búsqueda", ["Rápida", "Detallada"], horizontal=True, help="Usa Rápida para obtener resultado casi inmediato. Detallada revisa más combinaciones.")
-    ejecutar_opt = st.button("▶️ Ejecutar optimización automática", key="btn_opt_helice")
+    st.markdown("### ⚙️ Optimización Wageningen B-Series")
+    st.caption("La app usa la búsqueda detallada por defecto para mantener una evaluación más consistente. Se revisan combinaciones de Z, P/D y Ae/A0 y se pondera la eficiencia junto con la cercanía a la RPM real cuando existe.")
+    modo_opt = "Detallada"
+    ejecutar_opt = st.button("▶️ Ejecutar optimización detallada", key="btn_opt_helice")
 
     if ejecutar_opt:
-        with st.spinner("Calculando combinaciones de hélice... espera unos segundos."):
+        with st.spinner("Calculando combinaciones de hélice con búsqueda detallada... espera unos segundos."):
             st.session_state["opt_df"] = optimizar_helice_wageningen(modo_opt, rpm_real, VA_ms, diam_prop_m)
             st.session_state["opt_modo"] = modo_opt
-        st.success(f"Optimización {modo_opt.lower()} terminada. Se evaluaron {len(st.session_state['opt_df'])} combinaciones.")
+        st.success(f"Optimización detallada terminada. Se evaluaron {len(st.session_state['opt_df'])} combinaciones.")
 
     if "opt_df" in st.session_state:
         opt_df = st.session_state["opt_df"]
@@ -3319,162 +3321,166 @@ with tab_clase:
 # ==============================================================================
 
 # ==============================================================================
-# DINÁMICA DEL EJE PROPULSOR: TVA, BODE, ÓRBITAS Y TRANSITORIO
+# INTEGRIDAD DINÁMICA DEL SISTEMA PROPULSIVO
 # ==============================================================================
 
 with tab_avanzado:
-    st.subheader("🧬 Dinámica avanzada del eje propulsor")
+    st.subheader("⚙️ Integridad dinámica del sistema eje–hélice")
 
     st.markdown("""
     <div class="section-card">
-    Esta pestaña integra análisis complementarios de <b>shafting dynamics</b>: revisión normativa avanzada,
-    modelo torsional de masas discretas, respuesta en frecuencia, órbitas laterales y respuesta transitoria.
-    Su objetivo es explicar cómo se comporta el sistema eje–motor–hélice más allá de la cadena de potencias.
+    Esta pestaña reúne una lectura avanzada del sistema propulsivo desde el punto de vista dinámico.
+    En una embarcación real no basta con que la hélice entregue empuje y que el motor tenga potencia:
+    el eje también debe operar lejos de resonancias, con respuesta vibratoria controlada y sin indicios
+    preliminares de inestabilidad torsional, axial o lateral.
     <br><br>
-    <b>Alcance:</b> los resultados son de prediseño académico. Para aprobación formal de una sociedad de
-    clasificación se requieren datos reales de fabricante: inercias del motor, rigidez de acoplamientos,
-    longitudes reales de eje, chumaceras, amortiguamiento, alineación y modelo TVA certificado.
+    <b>¿Qué hace esta sección?</b> Integra una matriz de cumplimiento, un modelo torsional equivalente,
+    respuesta tipo Bode, órbitas laterales del eje y respuesta transitoria de arranque. Todo se calcula
+    con parámetros de prediseño y sirve para explicar el comportamiento dinámico del tren
+    motor–eje–hélice antes de pasar a un análisis de clase o a mediciones reales.
+    <br><br>
+    <b>Uso correcto:</b> es una herramienta didáctica y de prevalidación. Para aprobación formal se requieren
+    datos certificados de fabricante: inercias reales, rigidez de acoplamientos, chumaceras, alineación,
+    amortiguamiento, modelo TVA completo y verificación de sociedad clasificadora.
     </div>
     """, unsafe_allow_html=True)
 
     dyn_resumen, dyn_tva, dyn_bode, dyn_orbitas, dyn_trans, dyn_interpretacion = st.tabs([
-        "✅ Cumplimiento dinámico",
-        "🔩 TVA torsional",
-        "📉 Respuesta Bode",
-        "🌀 Órbitas del eje",
-        "⏱️ Arranque transitorio",
-        "📚 Teoría y uso"
+        "✅ Cumplimiento",
+        "🔩 Modelo TVA",
+        "📉 Bode",
+        "🌀 Órbitas",
+        "⏱️ Transitorio",
+        "📚 Fundamento"
     ])
 
-    def _style_status_dyn(v):
+    def _status_css(v):
         s = str(v).lower()
         if "cumple" in s and "no" not in s and "revis" not in s:
             return "background-color:#dcfce7;color:#166534;font-weight:800"
-        if "revis" in s or "observ" in s:
+        if "revis" in s or "observ" in s or "precauc" in s:
             return "background-color:#fef3c7;color:#92400e;font-weight:800"
         return "background-color:#fee2e2;color:#991b1b;font-weight:800"
 
-    def _safe_float_dyn(x, default=0.0):
+    def _sf(x, default=0.0):
         try:
             if x is None:
                 return default
-            if isinstance(x, float) and np.isnan(x):
+            y = float(x)
+            if np.isnan(y):
                 return default
-            return float(x)
+            return y
         except Exception:
             return default
 
-    pb_dyn_kw = _safe_float_dyn(globals().get("PB_kw_calc", 0.0), 0.0)
-    rpm_dyn = max(_safe_float_dyn(globals().get("rpm_motor", 0.0), 0.0), 0.1)
-    omega_dyn = 2.0 * math.pi * rpm_dyn / 60.0
-    d_dyn_m = max(_safe_float_dyn(globals().get("diametro_m", 0.0), 0.0), 0.05)
-    L_equiv_dyn = max(_safe_float_dyn(globals().get("eslora", 0.0), 0.0) * 0.18, 8.0)
-    Jp_dyn = math.pi * d_dyn_m**4 / 32.0
+    pb_dyn_kw = _sf(globals().get("PB_kw_calc", globals().get("PB_kw", globals().get("potencia_kw", 0.0))), 0.0)
+    rpm_dyn = max(_sf(globals().get("rpm_motor", globals().get("rpm_real", 0.0)), 75.0), 0.1)
+    d_dyn_m = max(_sf(globals().get("diametro_m", globals().get("diametro_eje_mm", 250.0)/1000.0), 0.25), 0.05)
+    L_equiv_dyn = max(_sf(globals().get("eslora", 100.0), 100.0) * 0.18, 8.0)
     G_steel = 7.9e10
+    Jp_dyn = math.pi * d_dyn_m**4 / 32.0
+    kt_eje_base = G_steel * Jp_dyn / max(L_equiv_dyn, 0.1)
 
     try:
-        campbell_alto = bool((campbell_df["Riesgo"] == "Alto").any())
+        campbell_alto = bool((campbell_df["Riesgo"].astype(str) == "Alto").any())
     except Exception:
         campbell_alto = False
 
+    # Variables globales de dictamen dinámico usadas en varias subpestañas.
+    sep_ax_min = float(axial_df["Separación [%]"].min()) if "axial_df" in globals() and not axial_df.empty else 99.0
+    bode_ratio_default = 1.0
+    orbit_status_default = "Cumple" if lateral_ok else "Revisar"
+    trans_status_default = "Cumple"
+
     with dyn_resumen:
-        st.markdown("### ✅ Matriz profesional de cumplimiento dinámico")
+        st.markdown("### ✅ Matriz de integridad dinámica")
         st.markdown("""
-        Esta matriz resume los criterios que normalmente se revisan antes de aceptar un sistema propulsivo:
-        potencia, transmisión, separación de resonancias, cavitación, régimen de flujo y transparencia de cálculo.
-        No sustituye reglas de clase, pero deja trazable el razonamiento técnico de la app.
+        Esta matriz resume los puntos principales que justifican si el sistema puede considerarse
+        dinámicamente aceptable en etapa preliminar. Un resultado **Revisar** no significa falla: indica
+        que para cerrar el criterio se necesita información más fina, como modelo de shafting, datos de
+        fabricante o medición experimental.
         """)
 
         motor_estado_av = globals().get("motor_norma_estado", globals().get("estado_motor_potencia", "Revisar"))
         transmision_estado_av = "Cumple" if bool(globals().get("transmision_ok", False)) else "Revisar"
 
         cumplimiento_avanzado = pd.DataFrame([
-            {"Sistema": "Potencia propulsiva", "Criterio": "PB requerida compatible con MCR/NCR", "Valor revisado": f"PB={pb_dyn_kw:,.0f} kW", "Referencia técnica": "Fabricante / 85% MCR", "Dictamen": motor_estado_av},
-            {"Sistema": "Transmisión", "Criterio": "RPM motor y RPM hélice compatibles", "Valor revisado": f"n={rpm_dyn:.1f} rpm", "Referencia técnica": "Motor directo o caja reductora", "Dictamen": transmision_estado_av},
-            {"Sistema": "Torsión del eje", "Criterio": "Esfuerzo alternante menor al admisible", "Valor revisado": f"τ={esfuerzo_real_mpa:.2f} MPa / adm={tau_admisible_mpa:.2f} MPa", "Referencia técnica": "IACS UR M68 / DNV Pt.4 Ch.4", "Dictamen": "Cumple" if torsion_ok else "No cumple"},
-            {"Sistema": "Vibración axial", "Criterio": "Órdenes 1P, ZP, 2ZP y 3ZP alejados de fn", "Valor revisado": f"fn axial={f_axial_natural_hz:.2f} Hz", "Referencia técnica": "Shafting vibration practice", "Dictamen": "Cumple" if axial_ok else "Revisar"},
-            {"Sistema": "Vibración lateral", "Criterio": "RPM fuera de zona crítica ±20%", "Valor revisado": f"zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Referencia técnica": "Whirling / critical speed", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
-            {"Sistema": "Campbell", "Criterio": "Sin intersecciones críticas cerca de operación", "Valor revisado": f"RPM operación={rpm_dyn:.1f}", "Referencia técnica": "Campbell diagram", "Dictamen": "Revisar" if campbell_alto else "Cumple"},
-            {"Sistema": "Cavitación", "Criterio": "Burrill, Keller y σ preliminar", "Valor revisado": f"σ={sigma_n:.2f}; Ae/A0={ae_val:.3f}", "Referencia técnica": "Burrill / Keller", "Dictamen": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok) else "Revisar"},
-            {"Sistema": "Flujo", "Criterio": "Reynolds en régimen turbulento naval", "Valor revisado": f"Re={reynolds:.2e}", "Referencia técnica": "ITTC open-water", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
-            {"Sistema": "Trazabilidad", "Criterio": "Entradas visibles o estimadas con explicación", "Valor revisado": "Datos editables en sidebar", "Referencia técnica": "Requisito del proyecto", "Dictamen": "Cumple"},
+            {"Análisis": "Potencia propulsiva", "Qué verifica": "PB requerida compatible con MCR/NCR", "Valor usado": f"PB={pb_dyn_kw:,.0f} kW", "Referencia": "Fabricante / 85% MCR", "Dictamen": motor_estado_av},
+            {"Análisis": "Transmisión", "Qué verifica": "RPM motor y RPM hélice compatibles", "Valor usado": f"n={rpm_dyn:.1f} rpm", "Referencia": "Directa o reductora", "Dictamen": transmision_estado_av},
+            {"Análisis": "Torsión", "Qué verifica": "Esfuerzo alternante menor al admisible", "Valor usado": f"τ={esfuerzo_real_mpa:.2f} MPa / adm={tau_admisible_mpa:.2f} MPa", "Referencia": "IACS UR M68 / DNV Pt.4 Ch.4", "Dictamen": "Cumple" if torsion_ok else "No cumple"},
+            {"Análisis": "Axial", "Qué verifica": "Órdenes 1P, ZP, 2ZP y 3ZP alejadas de fn", "Valor usado": f"separación mín={sep_ax_min:.1f}%", "Referencia": "Práctica shafting", "Dictamen": "Cumple" if axial_ok else "Revisar"},
+            {"Análisis": "Lateral / whirling", "Qué verifica": "RPM fuera de zona crítica ±20%", "Valor usado": f"zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Referencia": "Velocidad crítica lateral", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
+            {"Análisis": "Campbell", "Qué verifica": "Sin cruces críticos cerca de operación", "Valor usado": f"RPM op={rpm_dyn:.1f}", "Referencia": "Órdenes 1P/ZP", "Dictamen": "Revisar" if campbell_alto else "Cumple"},
+            {"Análisis": "Cavitación", "Qué verifica": "Burrill, Keller y σ preliminar", "Valor usado": f"σ={sigma_n:.2f}; Ae/A0={ae_val:.3f}", "Referencia": "Burrill / Keller", "Dictamen": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok) else "Revisar"},
+            {"Análisis": "Reynolds", "Qué verifica": "Flujo turbulento representativo", "Valor usado": f"Re={reynolds:.2e}", "Referencia": "ITTC open-water", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
+            {"Análisis": "Trazabilidad", "Qué verifica": "Entradas visibles o estimadas con explicación", "Valor usado": "Datos editables", "Referencia": "Requisito del proyecto", "Dictamen": "Cumple"},
         ])
 
-        st.dataframe(cumplimiento_avanzado.style.map(_style_status_dyn, subset=["Dictamen"]), use_container_width=True, height=430)
+        st.dataframe(cumplimiento_avanzado.style.map(_status_css, subset=["Dictamen"]), use_container_width=True, height=430)
 
-        total_ok = int((cumplimiento_avanzado["Dictamen"].str.contains("Cumple", case=False, na=False) & ~cumplimiento_avanzado["Dictamen"].str.contains("No", case=False, na=False)).sum())
-        total_rev = int(cumplimiento_avanzado["Dictamen"].str.contains("Revisar|observ", case=False, na=False).sum())
-        total_no = int(cumplimiento_avanzado["Dictamen"].str.contains("No cumple", case=False, na=False).sum())
+        ok = int((cumplimiento_avanzado["Dictamen"].astype(str).str.contains("Cumple", case=False, na=False) & ~cumplimiento_avanzado["Dictamen"].astype(str).str.contains("No", case=False, na=False)).sum())
+        rev = int(cumplimiento_avanzado["Dictamen"].astype(str).str.contains("Revisar|observ", case=False, na=False).sum())
+        no = int(cumplimiento_avanzado["Dictamen"].astype(str).str.contains("No cumple", case=False, na=False).sum())
         c1, c2, c3 = st.columns(3)
-        c1.metric("Criterios que cumplen", total_ok)
-        c2.metric("Criterios a revisar", total_rev)
-        c3.metric("No cumple", total_no)
+        c1.metric("Criterios que cumplen", ok)
+        c2.metric("Criterios a revisar", rev)
+        c3.metric("No cumple", no)
 
-        fig_dyn_status, ax_dyn_status = plt.subplots(figsize=(8.5, 3.8))
-        ax_dyn_status.barh(["Cumple", "Revisar", "No cumple"], [total_ok, total_rev, total_no])
+        fig_dyn_status, ax_dyn_status = plt.subplots(figsize=(8.8, 3.8))
+        labels = ["Cumple", "Revisar", "No cumple"]
+        vals = [ok, rev, no]
+        ax_dyn_status.barh(labels, vals)
         ax_dyn_status.set_xlabel("Número de criterios")
-        ax_dyn_status.set_title("Resumen de cumplimiento dinámico")
-        ax_dyn_status.grid(True, axis="x", linestyle=":", alpha=0.5)
-        for i, v in enumerate([total_ok, total_rev, total_no]):
-            ax_dyn_status.text(v + 0.05, i, str(int(v)), va="center", fontweight="bold")
+        ax_dyn_status.set_title("Resumen de integridad dinámica")
+        ax_dyn_status.grid(True, axis="x", linestyle=":", alpha=0.45)
+        for i, v in enumerate(vals):
+            ax_dyn_status.text(v + 0.05, i, str(v), va="center", fontweight="bold")
         st.pyplot(fig_dyn_status)
 
-        st.info("""
-        Lectura recomendada: si aparece **Cumple**, el prediseño es consistente para una defensa académica.
-        Si aparece **Revisar**, no necesariamente está mal: significa que se necesita hoja técnica, modelo de eje,
-        prueba de canal, datos de fabricante o verificación de clase para cerrar el criterio.
-        """)
+        if no == 0 and rev <= 2:
+            estado_html("✅ Integridad dinámica preliminar aceptable: no se observan fallas críticas en los criterios revisados.", "good")
+        elif no == 0:
+            estado_html("⚠️ Integridad dinámica con observaciones: el sistema puede defenderse, pero conviene explicar los puntos marcados como revisar.", "warn")
+        else:
+            estado_html("❌ Revisar integridad dinámica: existe al menos un criterio crítico marcado como no cumple.", "bad")
 
     with dyn_tva:
         st.markdown("### 🔩 Modelo torsional de masas discretas — TVA")
         st.markdown("""
-        En un análisis TVA el tren propulsor se idealiza como <b>inercias rotatorias</b> conectadas por
-        <b>rigideces torsionales</b>. Este modelo permite estimar frecuencias naturales torsionales,
-        formas modales y posibles zonas de resonancia con los órdenes de excitación del motor y la hélice.
-        """, unsafe_allow_html=True)
+        El modelo TVA representa el tren propulsor como inercias rotatorias conectadas por rigideces torsionales.
+        En ingeniería naval se usa para identificar frecuencias naturales torsionales y modos que podrían coincidir
+        con excitaciones del motor o de la hélice. En esta app se usa como modelo equivalente de prediseño, útil para
+        visualizar la lógica del análisis sin requerir datos confidenciales del fabricante.
+        """)
 
         with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
             st.latex(r"J_p = \frac{\pi d^4}{32}")
             st.latex(r"k_t = \frac{GJ_p}{L}")
             st.latex(r"\mathbf{K}\phi = \omega_n^2\mathbf{M}\phi")
             st.latex(r"f_n = \frac{\omega_n}{2\pi}")
-            st.markdown("""
-            Donde **Jp** es el momento polar del eje, **G** es el módulo de corte, **kt** es la rigidez torsional,
-            **M** es la matriz de inercias, **K** la matriz de rigidez y **φ** la forma modal.
-            """)
+            st.markdown("El modelo no sustituye un TVA de clase; muestra una aproximación transparente a partir de potencia, RPM, diámetro de eje y geometría equivalente.")
 
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
-            n_masas = st.slider("Número de masas discretas", 3, 6, 5, help="Más masas representan mejor el tren motor–acople–eje–hélice.")
+            n_masas = st.slider("Número de masas equivalentes", 3, 6, 4)
         with col_m2:
-            factor_rigidez = st.slider("Factor de rigidez torsional", 0.5, 2.0, 1.0, 0.05)
+            factor_kt = st.slider("Factor de rigidez torsional", 0.50, 2.00, 1.00, 0.05)
         with col_m3:
-            factor_inercia_helice = st.slider("Factor de inercia de hélice", 1.0, 3.5, 1.8, 0.1)
+            factor_inercia = st.slider("Factor de inercia equivalente", 0.50, 2.00, 1.00, 0.05)
 
         try:
-            inercia_base = max((max(pb_dyn_kw, 1.0) * 1000.0) / max(omega_dyn**2, 1e-6), 25.0)
-            L_segmento = max(L_equiv_dyn / max(n_masas - 1, 1), 0.5)
-            k_base = max(G_steel * Jp_dyn / L_segmento, 1.0) * factor_rigidez
+            omega_op = 2 * math.pi * rpm_dyn / 60.0
+            torque_base = safe_div(max(pb_dyn_kw, 1.0) * 1000.0, max(omega_op, 1e-6), default=1.0)
+            inercia_base = max(torque_base / max(omega_op**2, 1e-6), 1.0) * factor_inercia
 
-            etiquetas = ["Motor", "Acople"]
-            if n_masas == 3:
-                etiquetas += ["Hélice"]
-            elif n_masas == 4:
-                etiquetas += ["Eje cola", "Hélice"]
-            elif n_masas == 5:
-                etiquetas += ["Eje intermedio", "Eje cola", "Hélice"]
-            else:
-                etiquetas += ["Eje 1", "Eje 2", "Eje cola", "Hélice"]
-            etiquetas = etiquetas[:n_masas]
-
-            escala_inercias = np.linspace(1.25, 0.70, n_masas)
-            inercias = escala_inercias * inercia_base
-            inercias[-1] *= factor_inercia_helice
-            rigideces = np.ones(n_masas - 1) * k_base
+            nombres_base = ["Motor", "Volante/acople", "Eje intermedio", "Eje de cola", "Bocina", "Hélice"][:n_masas]
+            inercias = np.linspace(0.85, 1.35, n_masas) * inercia_base
+            inercias[-1] *= 1.8
+            rigideces = np.linspace(1.15, 0.85, n_masas-1) * kt_eje_base * factor_kt
 
             M = np.diag(inercias)
             K = np.zeros((n_masas, n_masas))
-            for i in range(n_masas - 1):
+            for i in range(n_masas-1):
                 k = rigideces[i]
                 K[i, i] += k
                 K[i+1, i+1] += k
@@ -3484,99 +3490,62 @@ with tab_avanzado:
             eigvals, eigvecs = np.linalg.eig(np.linalg.pinv(M) @ K)
             eigvals = np.real(eigvals)
             eigvecs = np.real(eigvecs)
-            idx = np.argsort(eigvals)
-            eigvals = eigvals[idx]
-            eigvecs = eigvecs[:, idx]
-            freqs_all = np.sqrt(np.clip(eigvals, 0, None)) / (2*np.pi)
-            valid = freqs_all > 0.05
-            freqs_tva = freqs_all[valid]
-            modos_vec = eigvecs[:, valid]
+            freqs = np.sqrt(np.clip(eigvals, 0, None)) / (2*np.pi)
+            order = np.argsort(freqs)
+            freqs = freqs[order]
+            eigvecs = eigvecs[:, order]
+            freqs_nonzero = freqs[freqs > 1e-3]
 
-            funcion_fisica = []
-            for i, e in enumerate(etiquetas):
-                if i == 0:
-                    funcion_fisica.append("Fuente de par")
-                elif i == len(etiquetas)-1:
-                    funcion_fisica.append("Masa hidrodinámica dominante")
-                elif "Acople" in e:
-                    funcion_fisica.append("Transmisión / acople")
-                else:
-                    funcion_fisica.append("Tramo de eje")
-
-            componentes_df = pd.DataFrame({
-                "Elemento": etiquetas,
+            tva_df = pd.DataFrame({
+                "Elemento": nombres_base,
                 "Inercia equivalente [kg·m²]": inercias,
-                "Rigidez saliente [MN·m/rad]": list(rigideces/1e6) + [np.nan],
-                "Función física": funcion_fisica,
+                "Rigidez hacia siguiente [MN·m/rad]": list(rigideces/1e6) + [np.nan]
             })
-            st.markdown("#### Modelo físico equivalente")
-            st.dataframe(componentes_df.style.format({
-                "Inercia equivalente [kg·m²]": "{:,.1f}",
-                "Rigidez saliente [MN·m/rad]": "{:,.2f}",
-            }), use_container_width=True)
+            st.dataframe(tva_df.style.format({"Inercia equivalente [kg·m²]":"{:,.2f}", "Rigidez hacia siguiente [MN·m/rad]":"{:,.2f}"}), use_container_width=True)
 
-            if len(freqs_tva) == 0:
-                st.warning("El modelo no generó frecuencias naturales útiles con los datos actuales. Revisa potencia, RPM y diámetro de eje.")
+            if len(freqs_nonzero) == 0:
+                estado_html("⚠️ Modelo TVA sin frecuencias útiles. Revisa rigidez, diámetro de eje o potencia.", "warn")
             else:
-                tva_df = pd.DataFrame({
-                    "Modo": [f"Modo {i+1}" for i in range(len(freqs_tva))],
-                    "Frecuencia natural [Hz]": freqs_tva,
-                    "RPM crítica 1P": freqs_tva * 60,
-                    "RPM crítica ZP": freqs_tva * 60 / max(z_val, 1),
-                    "Separación vs operación [%]": [abs(f*60 - rpm_dyn)/max(rpm_dyn,1e-9)*100 for f in freqs_tva],
-                })
-                tva_df["Dictamen"] = tva_df["Separación vs operación [%]"].apply(lambda x: "Revisar" if x < 12 else "Cumple")
+                f1 = float(freqs_nonzero[0])
+                ordenes_hz = np.array([rpm_dyn/60.0, z_val*rpm_dyn/60.0, 2*z_val*rpm_dyn/60.0, 3*z_val*rpm_dyn/60.0])
+                sep_min = float(np.min(np.abs(f1 - ordenes_hz) / max(f1, 1e-9) * 100))
+                estado_tva = "Cumple" if sep_min > 12 else ("Revisar" if sep_min > 5 else "No cumple")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Primera fn torsional", f"{f1:.2f} Hz")
+                c2.metric("Separación mínima", f"{sep_min:.1f}%")
+                c3.metric("Dictamen TVA", estado_tva)
+                estado_html(f"{'✅' if estado_tva=='Cumple' else '⚠️' if estado_tva=='Revisar' else '❌'} Modelo TVA: {estado_tva}. La separación mínima frente a órdenes 1P/ZP es {sep_min:.1f}%.", "good" if estado_tva=="Cumple" else "warn" if estado_tva=="Revisar" else "bad")
 
-                st.markdown("#### Frecuencias naturales torsionales")
-                st.dataframe(tva_df.style.format({
-                    "Frecuencia natural [Hz]": "{:.3f}",
-                    "RPM crítica 1P": "{:,.1f}",
-                    "RPM crítica ZP": "{:,.1f}",
-                    "Separación vs operación [%]": "{:.1f}",
-                }).map(_style_status_dyn, subset=["Dictamen"]), use_container_width=True)
-
-                fig_tva, ax_tva = plt.subplots(figsize=(10.5, 4.8))
-                x = np.arange(1, n_masas+1)
-                for j in range(min(modos_vec.shape[1], 4)):
-                    vec = modos_vec[:, j]
+                fig_modes, ax_modes = plt.subplots(figsize=(10.2, 4.6))
+                modos_a_graficar = min(3, eigvecs.shape[1]-1)
+                x = np.arange(n_masas)
+                for m in range(1, modos_a_graficar+1):
+                    vec = eigvecs[:, m]
                     vec = vec / max(np.max(np.abs(vec)), 1e-9)
-                    ax_tva.plot(x, vec, marker="o", linewidth=2.4, label=f"Modo {j+1}: {freqs_tva[j]:.2f} Hz")
-                ax_tva.axhline(0, linestyle="--", linewidth=1)
-                ax_tva.set_xticks(x)
-                ax_tva.set_xticklabels(etiquetas, rotation=15)
-                ax_tva.set_title("Formas modales torsionales normalizadas")
-                ax_tva.set_xlabel("Elemento del tren propulsor")
-                ax_tva.set_ylabel("Amplitud relativa")
-                ax_tva.grid(True, linestyle=":", alpha=0.55)
-                ax_tva.legend(fontsize=8)
-                st.pyplot(fig_tva)
-
-                fig_freq, ax_freq = plt.subplots(figsize=(10.2, 4.2))
-                ax_freq.bar(tva_df["Modo"], tva_df["Frecuencia natural [Hz]"])
-                ax_freq.axhline(rpm_dyn/60.0, linestyle="--", linewidth=2, label="1P operación")
-                ax_freq.axhline(z_val*rpm_dyn/60.0, linestyle=":", linewidth=2, label="ZP operación")
-                ax_freq.set_title("Frecuencias TVA frente a excitaciones de operación")
-                ax_freq.set_ylabel("Frecuencia [Hz]")
-                ax_freq.grid(True, axis="y", linestyle=":", alpha=0.55)
-                ax_freq.legend()
-                st.pyplot(fig_freq)
-
-                st.success("Modelo TVA resuelto correctamente con parámetros equivalentes de prediseño.")
+                    ax_modes.plot(x, vec, marker="o", linewidth=2.2, label=f"Modo {m} — {freqs[m]:.2f} Hz")
+                ax_modes.axhline(0, linewidth=1)
+                ax_modes.set_xticks(x)
+                ax_modes.set_xticklabels(nombres_base, rotation=20)
+                ax_modes.set_ylabel("Amplitud modal normalizada")
+                ax_modes.set_title("Formas modales torsionales equivalentes")
+                ax_modes.grid(True, linestyle=":", alpha=0.5)
+                ax_modes.legend(fontsize=8)
+                st.pyplot(fig_modes)
         except Exception as e:
             st.error(f"No se pudo resolver el modelo TVA. Detalle técnico: {e}")
 
     with dyn_bode:
         st.markdown("### 📉 Respuesta en frecuencia tipo Bode")
         st.markdown("""
-        Un diagrama de Bode muestra cómo se amplifica la respuesta del sistema al excitarlo con distintas
-        frecuencias. Es útil para explicar por qué conviene alejar la operación de frecuencias naturales.
+        El diagrama de Bode muestra qué tanto se amplifica la respuesta vibratoria cuando el sistema es excitado
+        a diferentes frecuencias. Es útil porque permite identificar si una excitación operacional, como 1P o ZP,
+        cae cerca de una frecuencia natural. Entre más alto sea el pico, mayor sensibilidad dinámica existe.
         """)
-
         with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
             st.latex(r"H(r)=\frac{1}{\sqrt{(1-r^2)^2+(2\zeta r)^2}}")
             st.latex(r"r=\frac{f}{f_n}")
             st.latex(r"\phi=-\tan^{-1}\left(\frac{2\zeta r}{1-r^2}\right)")
-            st.markdown("**ζ** es el amortiguamiento modal; cuando la frecuencia de excitación se acerca a **fn**, la magnitud aumenta.")
+            st.markdown("Criterio didáctico: pico < 3× cumple; 3–5× revisar; >5× no cumple.")
 
         zeta = st.slider("Amortiguamiento modal ζ", 0.01, 0.25, 0.05, 0.01)
         modo_bode = st.selectbox("Modo a visualizar", ["Axial", "Lateral / whirling", "Torsional estimado"])
@@ -3586,12 +3555,16 @@ with tab_avanzado:
         r = f_bode / max(fn_sel, 1e-9)
         mag = 1.0 / np.sqrt((1-r**2)**2 + (2*zeta*r)**2)
         phase = -np.degrees(np.arctan2(2*zeta*r, 1-r**2))
-        peak_idx = int(np.argmax(mag))
+        peak = float(np.nanmax(mag))
+        peak_db = 20*np.log10(max(peak, 1e-9))
+        bode_estado = "Cumple" if peak < 3 else ("Revisar" if peak <= 5 else "No cumple")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Modo seleccionado", modo_bode)
-        c2.metric("Frecuencia natural", f"{fn_sel:.2f} Hz")
-        c3.metric("Pico estimado", f"{20*np.log10(mag[peak_idx]):.1f} dB")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Modo", modo_bode)
+        c2.metric("fn", f"{fn_sel:.2f} Hz")
+        c3.metric("Pico", f"{peak:.2f}× / {peak_db:.1f} dB")
+        c4.metric("Dictamen", bode_estado)
+        estado_html(f"{'✅' if bode_estado=='Cumple' else '⚠️' if bode_estado=='Revisar' else '❌'} Bode: {bode_estado}. Un pico de {peak:.2f}× indica la amplificación máxima estimada del modo seleccionado.", "good" if bode_estado=="Cumple" else "warn" if bode_estado=="Revisar" else "bad")
 
         fig_mag, ax_mag = plt.subplots(figsize=(10.6, 4.4))
         ax_mag.plot(f_bode, 20*np.log10(mag), linewidth=2.6)
@@ -3618,15 +3591,14 @@ with tab_avanzado:
     with dyn_orbitas:
         st.markdown("### 🌀 Órbitas laterales estimadas del eje")
         st.markdown("""
-        Las órbitas representan el movimiento del centro del eje en el plano transversal. En campo se obtienen
-        con sensores de proximidad; aquí se muestran de forma didáctica para interpretar desbalance,
-        desalineación y cercanía a velocidades críticas.
+        Las órbitas muestran el recorrido del centro del eje en el plano transversal. En buques reales se obtienen
+        con sensores de proximidad y acelerómetros. En la app sirven para explicar visualmente desbalance,
+        whirling, anisotropía de apoyos y cercanía a velocidades críticas.
         """)
-
         with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
             st.latex(r"x(t)=X\cos(\Omega t)")
             st.latex(r"y(t)=Y\sin(\Omega t+\phi)")
-            st.markdown("Una órbita casi circular suele asociarse a desbalance; una órbita elíptica o inclinada puede sugerir anisotropía, desalineación o influencia de chumaceras.")
+            st.markdown("Criterio didáctico: amplitudes bajas y órbita estable cumplen; amplitudes elevadas o fase extrema requieren revisión.")
 
         sep_lat = min(abs(rpm_dyn - margen_inf), abs(rpm_dyn - margen_sup)) / max(rpm_dyn, 1e-9) * 100.0
         amp_base_um = 70.0 if lateral_ok else 220.0
@@ -3634,16 +3606,17 @@ with tab_avanzado:
         amp_x = amp_base_um * amplificacion
         amp_y = amp_x * (0.55 if lateral_ok else 0.85)
         fase_deg = 35 if lateral_ok else 75
-        fase_rad = np.deg2rad(fase_deg)
+        orbit_estado = "Cumple" if (lateral_ok and amp_x < 150) else ("Revisar" if amp_x < 300 else "No cumple")
         th = np.linspace(0, 2*np.pi, 720)
         x_orb = amp_x * np.cos(th)
-        y_orb = amp_y * np.sin(th + fase_rad)
+        y_orb = amp_y * np.sin(th + np.deg2rad(fase_deg))
 
         o1, o2, o3, o4 = st.columns(4)
         o1.metric("Amplitud X", f"{amp_x:.1f} µm")
         o2.metric("Amplitud Y", f"{amp_y:.1f} µm")
         o3.metric("Fase", f"{fase_deg}°")
-        o4.metric("Dictamen", "Aceptable" if lateral_ok else "Revisar")
+        o4.metric("Dictamen", orbit_estado)
+        estado_html(f"{'✅' if orbit_estado=='Cumple' else '⚠️' if orbit_estado=='Revisar' else '❌'} Órbitas: {orbit_estado}. La visualización sugiere {'movimiento lateral controlado' if orbit_estado=='Cumple' else 'posible sensibilidad lateral a revisar'}.", "good" if orbit_estado=="Cumple" else "warn" if orbit_estado=="Revisar" else "bad")
 
         fig_orb, ax_orb = plt.subplots(figsize=(6.8, 6.2))
         ax_orb.plot(x_orb, y_orb, linewidth=2.6)
@@ -3660,22 +3633,21 @@ with tab_avanzado:
             {"Parámetro": "Amplitud X estimada", "Valor": amp_x, "Unidad": "µm", "Interpretación": "Componente horizontal de órbita"},
             {"Parámetro": "Amplitud Y estimada", "Valor": amp_y, "Unidad": "µm", "Interpretación": "Componente vertical de órbita"},
             {"Parámetro": "Ángulo de fase", "Valor": fase_deg, "Unidad": "°", "Interpretación": "Inclinación/retardo de la órbita"},
+            {"Parámetro": "Dictamen", "Valor": np.nan, "Unidad": "—", "Interpretación": orbit_estado},
         ])
-        st.dataframe(orb_df.style.format({"Valor": "{:.2f}"}), use_container_width=True)
-        st.info("La órbita es una visualización didáctica. Para aprobación real se requieren mediciones con sensores de proximidad, acelerómetros y análisis de órbitas en pruebas.")
+        st.dataframe(orb_df.style.format({"Valor": lambda x: "—" if pd.isna(x) else f"{x:.2f}"}), use_container_width=True)
 
     with dyn_trans:
         st.markdown("### ⏱️ Respuesta transitoria durante arranque")
         st.markdown("""
-        El arranque del eje no ocurre instantáneamente: la RPM aumenta gradualmente y puede cruzar órdenes de
-        excitación cercanos a frecuencias naturales. Este módulo muestra una simulación didáctica de rampa de
-        arranque y respuesta axial amortiguada.
+        El sistema propulsivo no pasa instantáneamente de reposo a régimen permanente. Durante el arranque puede
+        cruzar frecuencias de excitación cercanas a frecuencias naturales. Este módulo permite observar si la
+        respuesta se amortigua correctamente y si el paso de pala ZP se aproxima a la frecuencia axial.
         """)
-
         with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
             st.latex(r"n(t)=n_{op}\left(1-e^{-t/\tau}\right)")
             st.latex(r"x(t)=x_{est}\left[1-e^{-\zeta\omega_n t}\cos(\omega_n t)\right]")
-            st.markdown("La respuesta depende del amortiguamiento **ζ**, de la frecuencia natural y de la rapidez de arranque.")
+            st.markdown("Criterio didáctico: respuesta amortiguada cumple; sobreimpulso elevado requiere revisión; vibración creciente no cumple.")
 
         t_final = st.slider("Tiempo de simulación [s]", 10, 180, 60)
         zeta_tr = st.slider("Amortiguamiento transitorio ζ", 0.02, 0.25, 0.06, 0.01, key="zeta_transitorio_prof")
@@ -3686,6 +3658,15 @@ with tab_avanzado:
         w_n_ax = 2*np.pi*max(f_axial_natural_hz, 0.1)
         respuesta = (1 - np.exp(-zeta_tr*w_n_ax*t_sim)*np.cos(w_n_ax*t_sim)) * desplazamiento_axial_est_m * 1000
         f_zp_trans = z_val * rpm_sim / 60.0
+        sobreimpulso = (np.nanmax(respuesta) - respuesta[-1]) / max(abs(respuesta[-1]), 1e-9) * 100.0 if len(respuesta) else 0.0
+        distancia_zp = np.nanmin(np.abs(f_zp_trans - f_axial_natural_hz)) / max(f_axial_natural_hz, 1e-9) * 100.0
+        trans_estado = "Cumple" if (sobreimpulso < 25 and distancia_zp > 8) else ("Revisar" if sobreimpulso < 60 else "No cumple")
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Sobreimpulso estimado", f"{sobreimpulso:.1f}%")
+        c2.metric("Separación mínima ZP-fn", f"{distancia_zp:.1f}%")
+        c3.metric("Dictamen", trans_estado)
+        estado_html(f"{'✅' if trans_estado=='Cumple' else '⚠️' if trans_estado=='Revisar' else '❌'} Transitorio: {trans_estado}. La respuesta {'se amortigua de forma aceptable' if trans_estado=='Cumple' else 'debe revisarse por cercanía a resonancia o sobreimpulso'}.", "good" if trans_estado=="Cumple" else "warn" if trans_estado=="Revisar" else "bad")
 
         fig_rpm, ax_rpm = plt.subplots(figsize=(10.5, 4.3))
         ax_rpm.plot(t_sim, rpm_sim, linewidth=2.6, label="RPM del eje")
@@ -3716,26 +3697,27 @@ with tab_avanzado:
         ax_cross.legend(fontsize=8)
         st.pyplot(fig_cross)
 
-        st.success("La respuesta transitoria ayuda a explicar qué ocurre durante arranque/parada, no solo en régimen permanente.")
-
     with dyn_interpretacion:
-        st.markdown("### 📚 Cómo defender esta pestaña")
+        st.markdown("### 📚 Fundamento técnico y defensa oral")
         st.markdown("""
-        Esta pestaña no pretende reemplazar un software de clase, sino dar una lectura avanzada del eje propulsor:
+        **Por qué esta pestaña es importante:** en un sistema propulsivo real, la potencia calculada y la eficiencia
+        de la hélice no garantizan por sí solas una operación segura. El eje trabaja bajo torque, empuje axial,
+        cargas laterales, excitaciones periódicas por paso de pala y cambios transitorios de velocidad. Si alguna
+        excitación coincide con una frecuencia natural, puede aparecer resonancia, aumento de vibración, ruido,
+        fatiga, daño en cojinetes o pérdida de confiabilidad.
 
-        **TVA torsional:** muestra si el tren motor–eje–hélice tiene modos torsionales que pudieran cruzarse con órdenes de excitación.
+        **Qué aporta a la app:**
+        - Convierte el diseño de propulsión en una revisión integral motor–eje–hélice.
+        - Permite justificar por qué se revisan Campbell, Bode, órbitas y transitorio.
+        - Da argumentos claros para explicar que una RPM teórica óptima no siempre coincide con la RPM real.
+        - Sirve como puente entre hidrodinámica, shafting dynamics y criterios de clasificación.
 
-        **Bode:** permite explicar amplificación dinámica; si la frecuencia excitante se acerca a una natural, la respuesta crece.
-
-        **Órbitas:** visualizan el movimiento lateral del eje. Son útiles para explicar desbalance, desalineación y whirling.
-
-        **Transitorio:** muestra el paso de reposo a operación. Sirve para explicar que durante el arranque pueden cruzarse zonas de resonancia.
-
-        **Cumplimiento dinámico:** resume todo como checklist técnico para una defensa oral.
+        **Cómo defenderlo:** estos módulos son preliminares. No sustituyen un software de clase ni un análisis TVA
+        certificado, pero demuestran que el diseño considera riesgos dinámicos relevantes y que los resultados se
+        interpretan con criterio de ingeniería.
         """)
 
         st.warning("""
-        Limitación importante: para diseño final real se requieren datos certificados de fabricante y reglas completas de clase.
-        La app usa modelos equivalentes de prediseño para fines académicos, transparentes y editables.
+        Limitación técnica: para diseño final real se requieren datos certificados de fabricante y reglas completas
+        de clase. La app usa modelos equivalentes de prediseño para fines académicos, transparentes y editables.
         """)
-
