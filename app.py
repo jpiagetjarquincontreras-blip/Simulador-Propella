@@ -659,7 +659,7 @@ def recomendar_reductoras(pb_kw, relacion_necesaria, n=8):
 
 
 @st.cache_data(show_spinner=False)
-def optimizar_helice_wageningen(modo="Rápida"):
+def optimizar_helice_wageningen(modo="Rápida", rpm_referencia=0.0, va_ms_ref=0.0, diametro_ref_m=1.0):
     """
     Optimización ligera para no bloquear la app en Streamlit Cloud.
     Modo Rápida: pocas combinaciones, ideal para clase.
@@ -701,16 +701,29 @@ def optimizar_helice_wageningen(modo="Rápida"):
                 eta_vals = np.where((kt_vals > 0) & (kq_vals > 0), (j_vals_local / (2*np.pi)) * (kt_vals / kq_vals), 0.0)
                 eta_vals = np.where(eta_vals <= 0.85, eta_vals, 0.0)
                 imax = int(np.nanargmax(eta_vals))
+                j_best = float(j_vals_local[imax])
+                eta_pct = float(eta_vals[imax] * 100.0)
+                rpm_est = safe_div(va_ms_ref, max(j_best * diametro_ref_m, 1e-9), default=0.0) * 60.0 if va_ms_ref > 0 else 0.0
+                error_rpm = abs(rpm_est - rpm_referencia) / max(rpm_referencia, 1e-9) * 100.0 if rpm_referencia and rpm_referencia > 0 and rpm_est > 0 else np.nan
+                # Puntaje profesional: maximiza eficiencia, pero penaliza alejarse de la RPM real/PDF si existe.
+                penalizacion_rpm = 0.35 * error_rpm if not np.isnan(error_rpm) else 0.0
+                puntaje = eta_pct - penalizacion_rpm
+                dictamen_rpm = "Cumple" if (np.isnan(error_rpm) or error_rpm <= 10) else ("Revisar" if error_rpm <= 20 else "No cumple")
                 filas.append({
                     "Z": z,
                     "P/D": float(pdv),
                     "Ae/A0": float(aev),
-                    "J óptimo": float(j_vals_local[imax]),
+                    "J óptimo": j_best,
                     "KT": float(kt_vals[imax]),
                     "KQ": float(kq_vals[imax]),
-                    "ηO [%]": float(eta_vals[imax] * 100.0),
+                    "ηO [%]": eta_pct,
+                    "RPM estimada [rpm]": rpm_est,
+                    "Error RPM [%]": error_rpm,
+                    "Puntaje optimizado": puntaje,
+                    "Dictamen RPM": dictamen_rpm,
                 })
-    return pd.DataFrame(filas).sort_values("ηO [%]", ascending=False).reset_index(drop=True)
+    df_opt = pd.DataFrame(filas)
+    return df_opt.sort_values("Puntaje optimizado", ascending=False).reset_index(drop=True)
 
 
 # ==============================================================================
@@ -1907,6 +1920,12 @@ with tab_pdf_comp:
     colv2.metric("Error máximo", "—" if errores_validos.empty else f"{errores_validos.max():.2f}%")
     colv3.metric("Parámetros comparados", f"{len(errores_validos)}")
 
+    rpm_err_row = comparacion_prof_df[comparacion_prof_df["Parámetro"].astype(str).str.contains("RPM", case=False, na=False)]
+    if not rpm_err_row.empty:
+        err_val = pd.to_numeric(rpm_err_row.iloc[0].get("Error [%]"), errors="coerce")
+        if pd.notna(err_val) and err_val > 10:
+            estado_html(f"⚠️ La RPM calculada se aleja {err_val:.2f}% de la RPM real. Revisa diámetro, P/D y usa la optimización con restricción de RPM para acercar el diseño al buque real.", "warn")
+
 # ==============================================================================
 # CADENA DE POTENCIAS
 # ==============================================================================
@@ -2066,6 +2085,15 @@ with tab_potencias:
 
 with tab_motor:
     st.subheader("🛠️ Selección de motor real y transmisión")
+    with st.expander("📘 Teoría y fórmulas de motor / reductora", expanded=False):
+        st.markdown("""
+        El motor se selecciona comparando la potencia al freno requerida contra el MCR disponible. Para operación continua se usa como referencia el 85% del MCR. Si el motor gira a más RPM que la hélice, se requiere una caja reductora.
+        """)
+        st.latex(r"P_{85\%MCR}=0.85\,MCR")
+        st.latex(r"MCR_{req}=\frac{P_B}{0.85}")
+        st.latex(r"i=\frac{n_{motor}}{n_{helice}}")
+        st.markdown("Si PB ≤ 85% MCR, cumple ideal. Si PB está entre 85% MCR y MCR, cumple con observación. Si PB > MCR, no cumple.")
+
     st.markdown("""
     <div class="section-card">
     El motor se valida contra la potencia al freno calculada. El criterio pedido por el proyecto es que la potencia de diseño trabaje aproximadamente al 85% del MCR, dejando 15% de reserva operativa.
@@ -2144,17 +2172,28 @@ with tab_opt:
     st.subheader("⭐ Optimización automática de hélice Wageningen")
     st.markdown("""
     <div class="section-card">
-    Esta herramienta no cambia tus datos automáticamente: prueba combinaciones comerciales de número de palas Z, P/D y Ae/A0, calcula sus curvas Wageningen, encuentra el máximo ηO de cada una y ordena las alternativas por eficiencia. Sirve para comparar tu hélice actual contra una propuesta preliminar más eficiente.
+    Esta herramienta no cambia tus datos automáticamente: prueba combinaciones comerciales de número de palas Z, P/D y Ae/A0, calcula sus curvas Wageningen y genera una propuesta preliminar. Si existe RPM real cargada desde el PDF o entrada manual, la optimización no solo busca eficiencia: también penaliza las configuraciones que se alejan demasiado de la RPM real de servicio.
     Para evitar que la app se quede cargando y bloquee las pestañas siguientes, la optimización se ejecuta solo cuando el usuario presiona el botón.
     </div>
     """, unsafe_allow_html=True)
+
+    with st.expander("📘 Teoría y fórmulas de optimización", expanded=False):
+        st.markdown("""
+        La optimización evalúa combinaciones de geometría de hélice dentro de rangos comerciales. Para cada combinación se calcula la curva de aguas abiertas, se localiza la máxima eficiencia y, si existe dato real del PDF, se compara la RPM estimada contra la RPM real del buque.
+        """)
+        st.latex(r"J=\frac{V_A}{nD}")
+        st.latex(r"n=\frac{V_A}{JD}")
+        st.latex(r"\eta_O=\frac{J}{2\pi}\frac{K_T}{K_Q}")
+        st.latex(r"\text{Error RPM}=\frac{|n_{calc}-n_{real}|}{n_{real}}\times100")
+        st.latex(r"\text{Puntaje}=\eta_O(\%) - 0.35\,\text{Error RPM}(\%)")
+        st.info("Si no se sube PDF o no existe RPM real, la app ordena principalmente por eficiencia ηO.")
 
     modo_opt = st.radio("Nivel de búsqueda", ["Rápida", "Detallada"], horizontal=True, help="Usa Rápida para obtener resultado casi inmediato. Detallada revisa más combinaciones.")
     ejecutar_opt = st.button("▶️ Ejecutar optimización automática", key="btn_opt_helice")
 
     if ejecutar_opt:
         with st.spinner("Calculando combinaciones de hélice... espera unos segundos."):
-            st.session_state["opt_df"] = optimizar_helice_wageningen(modo_opt)
+            st.session_state["opt_df"] = optimizar_helice_wageningen(modo_opt, rpm_real, VA_ms, diam_prop_m)
             st.session_state["opt_modo"] = modo_opt
         st.success(f"Optimización {modo_opt.lower()} terminada. Se evaluaron {len(st.session_state['opt_df'])} combinaciones.")
 
@@ -2167,32 +2206,37 @@ with tab_opt:
                 "J óptimo":"{:.3f}",
                 "KT":"{:.4f}",
                 "KQ":"{:.4f}",
-                "ηO [%]":"{:.2f}"
-            }),
+                "ηO [%]":"{:.2f}",
+                "RPM estimada [rpm]":"{:.2f}",
+                "Error RPM [%]":"{:.2f}",
+                "Puntaje optimizado":"{:.2f}"
+            }).map(style_estado, subset=["Dictamen RPM"]),
             use_container_width=True,
             height=520
         )
         mejor = opt_df.iloc[0]
-        estado_html(f"Mejor combinación encontrada: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%.", "good")
+        estado_html(f"Mejor combinación encontrada por puntaje: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%, RPM estimada={mejor['RPM estimada [rpm]']:.2f} rpm.", "good")
 
         st.markdown("### 📊 Visualización de mejores alternativas")
         top_opt = opt_df.head(10).copy()
         top_opt["Configuración"] = top_opt.apply(lambda r: f"Z{int(r['Z'])} | P/D {r['P/D']:.2f} | Ae {r['Ae/A0']:.2f}", axis=1)
         fig_opt, ax_opt = plt.subplots(figsize=(10.5, 5.0))
-        ax_opt.barh(top_opt["Configuración"][::-1], top_opt["ηO [%]"][::-1])
-        ax_opt.set_xlabel("Eficiencia en aguas abiertas ηO [%]")
-        ax_opt.set_title("Top 10 combinaciones optimizadas de hélice", fontsize=12, fontweight="bold")
+        ax_opt.barh(top_opt["Configuración"][::-1], top_opt["Puntaje optimizado"][::-1])
+        ax_opt.set_xlabel("Puntaje optimizado [-]")
+        ax_opt.set_title("Top 10 combinaciones por eficiencia y cercanía a RPM real", fontsize=12, fontweight="bold")
         ax_opt.grid(True, axis="x", linestyle=":", alpha=0.55)
-        for y, val in enumerate(top_opt["ηO [%]"][::-1]):
-            ax_opt.text(val + 0.15, y, f"{val:.2f}%", va="center", fontsize=8)
+        for y, val in enumerate(top_opt["Puntaje optimizado"][::-1]):
+            ax_opt.text(val + 0.15, y, f"{val:.2f}", va="center", fontsize=8)
         st.pyplot(fig_opt)
 
         st.markdown("### 📌 Comparación contra la configuración actual")
         comp_opt = pd.DataFrame([
-            {"Concepto":"Actual", "Z":z_val, "P/D":pd_val, "Ae/A0":ae_val, "J óptimo":j_opt, "ηO [%]":max_eff*100},
-            {"Concepto":"Óptima encontrada", "Z":int(mejor['Z']), "P/D":mejor['P/D'], "Ae/A0":mejor['Ae/A0'], "J óptimo":mejor['J óptimo'], "ηO [%]":mejor['ηO [%]']},
+            {"Concepto":"Actual", "Z":z_val, "P/D":pd_val, "Ae/A0":ae_val, "J óptimo":j_opt, "ηO [%]":max_eff*100, "RPM estimada [rpm]":rpm_helice_requerida, "Error RPM [%]": error_pct(rpm_helice_requerida, rpm_real)},
+            {"Concepto":"Óptima encontrada", "Z":int(mejor['Z']), "P/D":mejor['P/D'], "Ae/A0":mejor['Ae/A0'], "J óptimo":mejor['J óptimo'], "ηO [%]":mejor['ηO [%]'], "RPM estimada [rpm]":mejor['RPM estimada [rpm]'], "Error RPM [%]":mejor['Error RPM [%]']},
         ])
-        st.dataframe(comp_opt.style.format({"P/D":"{:.3f}", "Ae/A0":"{:.3f}", "J óptimo":"{:.3f}", "ηO [%]":"{:.2f}"}), use_container_width=True)
+        st.dataframe(comp_opt.style.format({"P/D":"{:.3f}", "Ae/A0":"{:.3f}", "J óptimo":"{:.3f}", "ηO [%]":"{:.2f}", "RPM estimada [rpm]":"{:.2f}", "Error RPM [%]":"{:.2f}"}), use_container_width=True)
+        if rpm_real and rpm_real > 0:
+            st.info("Para bajar el error de RPM puedes usar la configuración óptima sugerida como referencia y ajustar D, P/D o Ae/A0 en el panel de entrada hasta acercarte a la RPM real del PDF.")
     else:
         st.info("Presiona el botón para iniciar la optimización. Mientras no lo hagas, la app seguirá cargando rápido y todas las pestañas estarán disponibles.")
 
@@ -2609,6 +2653,13 @@ with tab_balanceo:
 
 with tab_campbell:
     st.subheader("🗺️ Diagrama de Campbell")
+    with st.expander("📘 Teoría y fórmulas del Campbell", expanded=False):
+        st.markdown("""
+        El diagrama de Campbell compara las frecuencias naturales del sistema contra órdenes de excitación generados por el giro del eje y el paso de palas. Una intersección cerca de la RPM de operación indica riesgo de resonancia.
+        """)
+        st.latex(r"f_{exc}=k\frac{n}{60}")
+        st.latex(r"f_{ZP}=Z\frac{n}{60}")
+        st.latex(r"n_{cruce}=\frac{60f_n}{k}")
 
     st.markdown("""
     <div class="section-card">
