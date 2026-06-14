@@ -204,6 +204,182 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<!-- =============================================================
+     FIX DE CONTRASTE UNIVERSAL
+     Evita textos blancos/invisibles cuando el navegador, Streamlit
+     o el sistema operativo abren la app con tema oscuro o alto contraste.
+     ============================================================= -->
+<style>
+    /* Fondo y texto base */
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%) !important;
+        color: #0f172a !important;
+    }
+
+    /* Texto general dentro de la aplicación */
+    .stApp p,
+    .stApp span,
+    .stApp label,
+    .stApp div,
+    .stApp h1,
+    .stApp h2,
+    .stApp h3,
+    .stApp h4,
+    .stApp h5,
+    .stApp h6,
+    .stMarkdown,
+    .stMarkdown p,
+    [data-testid="stMarkdownContainer"],
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span {
+        color: #0f172a !important;
+    }
+
+    /* Mantener textos claros solo donde el fondo realmente es oscuro */
+    .hero-box,
+    .hero-box h1,
+    .hero-box h2,
+    .hero-box h3,
+    .hero-box p,
+    .hero-box span,
+    .hero-box div,
+    .stTabs [aria-selected="true"],
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] span,
+    .stTabs [aria-selected="true"] div {
+        color: #ffffff !important;
+    }
+
+    .hero-box p {
+        color: rgba(255,255,255,0.86) !important;
+    }
+
+    /* Tarjetas, métricas y contenedores blancos */
+    div[data-testid="stMetric"],
+    .section-card,
+    .status-good,
+    .status-warn,
+    .status-bad,
+    [data-testid="stForm"],
+    [data-testid="stExpander"],
+    [data-testid="stDataFrame"],
+    [data-testid="stTable"],
+    .stAlert,
+    .stPlotlyChart,
+    .stDataFrame,
+    .stTable {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+
+    div[data-testid="stMetric"] * {
+        color: #0f172a !important;
+    }
+
+    div[data-testid="stMetricValue"] {
+        color: #4c1d95 !important;
+    }
+
+    div[data-testid="stMetricLabel"] {
+        color: #334155 !important;
+    }
+
+    div[data-testid="stMetricDelta"] {
+        color: #475569 !important;
+    }
+
+    /* Inputs, selectores, number inputs y text boxes */
+    input,
+    textarea,
+    select,
+    [data-baseweb="input"] input,
+    [data-baseweb="textarea"] textarea,
+    [data-baseweb="select"],
+    [data-baseweb="select"] *,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextInput"] input,
+    [data-testid="stSelectbox"] *,
+    [data-testid="stMultiSelect"] *,
+    [data-testid="stSlider"] *,
+    [data-testid="stFileUploader"] *,
+    [data-testid="stRadio"] *,
+    [data-testid="stCheckbox"] * {
+        color: #0f172a !important;
+    }
+
+    [data-baseweb="input"],
+    [data-baseweb="textarea"],
+    [data-baseweb="select"] > div,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextInput"] input,
+    textarea {
+        background-color: #ffffff !important;
+        border-color: #cbd5e1 !important;
+    }
+
+    /* Botones */
+    button,
+    button * {
+        color: #0f172a !important;
+    }
+
+    button[kind="primary"],
+    button[kind="primary"] * {
+        color: #ffffff !important;
+    }
+
+    /* Sidebar */
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] * {
+        color: #0f172a !important;
+    }
+
+    [data-testid="stSidebar"] {
+        background-color: #f1f5f9 !important;
+    }
+
+    /* Tabs no seleccionadas */
+    .stTabs [data-baseweb="tab"] *,
+    .stTabs [data-baseweb="tab"] p,
+    .stTabs [data-baseweb="tab"] span {
+        color: #334155 !important;
+    }
+
+    .stTabs [aria-selected="true"] *,
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] span {
+        color: #ffffff !important;
+    }
+
+    /* DataFrames y tablas */
+    [data-testid="stDataFrame"] div,
+    [data-testid="stDataFrame"] span,
+    [data-testid="stTable"] div,
+    [data-testid="stTable"] span,
+    table,
+    table * {
+        color: #0f172a !important;
+    }
+
+    thead tr th,
+    tbody tr td {
+        color: #0f172a !important;
+        background-color: #ffffff !important;
+    }
+
+    /* Captions y textos secundarios */
+    .small-muted,
+    .author-footer,
+    .stCaptionContainer,
+    [data-testid="stCaptionContainer"],
+    caption {
+        color: #64748b !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # Firma de autoría: se conserva únicamente en el pie final de la aplicación y en el reporte PDF.
 # No se muestra nombre en la barra lateral para mantener una interfaz más limpia y profesional.
 
@@ -2832,72 +3008,414 @@ def construir_resumen_dataframe():
     return pd.DataFrame(datos)
 
 
+
+# ==============================================================================
+# EXPORTACIÓN INTEGRAL: TODAS LAS TABLAS Y GRÁFICAS PRINCIPALES
+# ===============================================================================
+
+def _safe_sheet_name(name):
+    """Nombre de hoja compatible con Excel."""
+    name = re.sub(r"[\\/*?:\[\]]", "_", str(name))
+    return name[:31]
+
+
+def _safe_num(x, default=0.0):
+    try:
+        if x is None or (isinstance(x, float) and np.isnan(x)):
+            return default
+        return float(x)
+    except Exception:
+        return default
+
+
+def construir_tablas_exportacion_completas():
+    """Construye, en el momento de exportar, todas las tablas técnicas principales.
+    Se evita depender de tablas creadas dentro de pestañas posteriores para que el
+    botón de descarga funcione siempre desde Resumen.
+    """
+    tablas = {}
+
+    tablas["01_Resumen"] = construir_resumen_dataframe()
+
+    tablas["02_Datos_Entrada"] = pd.DataFrame([
+        ["Modo de referencia", modo_guia, "Entrada del usuario / valor por defecto"],
+        ["Lpp", f"{eslora:.3f} m", "Geometría principal"],
+        ["LWL", f"{lwl:.3f} m", "Geometría principal"],
+        ["Manga B", f"{manga:.3f} m", "Geometría principal"],
+        ["Puntal", f"{puntal:.3f} m", "Geometría principal"],
+        ["Calado", f"{calado:.3f} m", "Geometría principal"],
+        ["Velocidad de servicio", f"{velocidad:.3f} kn", "Condición de operación"],
+        ["Superficie mojada sin timón", f"{superficie_mojada_sin_timon_m2:,.1f} m²", "Entrada / ficha técnica"],
+        ["Superficie mojada con timón", f"{superficie_mojada_con_timon_m2:,.1f} m²", "Entrada / ficha técnica"],
+        ["RT", f"{resistencia_total_kn:,.1f} kN", rt_fuente],
+        ["Sea Margin", f"{margen_servicio:.1f} %", "Margen de servicio"],
+        ["w", f"{estela:.3f}", "Fracción de estela"],
+        ["t", f"{t_fraction:.3f}", "Fracción de deducción de empuje"],
+        ["ηR", f"{eta_r:.3f}", "Eficiencia rotativa relativa"],
+        ["Z", f"{z_val}", "Número de palas"],
+        ["D hélice", f"{diam_prop_m:.3f} m", "Diámetro de propulsor"],
+        ["P/D", f"{pd_val:.3f}", "Relación paso-diámetro"],
+        ["Ae/A0", f"{ae_val:.3f}", "Relación de área expandida"],
+        ["Hub ratio", f"{hub_ratio:.3f}", "Relación de cubo"],
+        ["Inmersión del eje", f"{inmersion_eje_m:.3f} m", "Cavitación"],
+        ["Material de eje", material_seleccionado, "Propiedades mecánicas"],
+    ], columns=["Parámetro", "Valor", "Comentario"])
+
+    tablas["03_Hipotesis_Metodo"] = pd.DataFrame([
+        ["Propiedades del fluido", f"ρ={rho_auto:.3f} kg/m³, Pv={p_vap_auto:.1f} Pa", "Agua salada / condiciones de referencia"],
+        ["Potencia efectiva", "PE = RT · Vs", "Convierte resistencia al avance en potencia"],
+        ["Velocidad de avance", "VA = Vs(1-w)", "Incluye efecto de estela"],
+        ["Eficiencia de casco", "ηH = (1-t)/(1-w)", "Interacción casco-hélice"],
+        ["Potencia entregada", "PD = PT/ηO", "Potencia requerida en hélice"],
+        ["Potencia al eje", "PS = PD/ηS", "Incluye pérdidas de eje"],
+        ["Potencia al freno", "PB = PS/ηG", "Potencia requerida en motor"],
+        ["MCR requerido", "MCR = PB/0.85", "Reserva operativa aproximada del 15%"],
+        ["Burrill", "τc vs τ admisible", "Carga de pala y cavitación preliminar"],
+        ["Keller", "Ae/A0 actual vs mínimo", "Área expandida mínima para cavitación"],
+        ["Campbell", "Órdenes 1P, ZP, 2ZP, 3ZP vs fn", "Revisión preliminar de resonancia"],
+    ], columns=["Tema", "Fórmula / criterio", "Uso técnico"])
+
+    tablas["04_Cadena_Potencias"] = power_chain_df.copy()
+    tablas["05_Eficiencias"] = efficiency_prof_df.copy() if "efficiency_prof_df" in globals() else pd.DataFrame()
+    tablas["06_Comparacion_Real"] = comparacion_df.copy()
+    tablas["07_Wageningen_Datos"] = res.copy()
+
+    tablas["08_Cavitacion"] = pd.DataFrame([
+        {"Análisis": "Reynolds", "Resultado": reynolds, "Límite/Referencia": "> 1e7", "Dictamen": "Cumple" if reynolds_ok else "Revisar", "Lectura": "Régimen turbulento típico de hélices navales."},
+        {"Análisis": "Sigma cavitación", "Resultado": sigma_n, "Límite/Referencia": "> 0.20 preliminar", "Dictamen": "Cumple" if cavitacion_ok else "Revisar", "Lectura": "Mayor σ indica menor tendencia inicial a cavitar."},
+        {"Análisis": "Burrill τc", "Resultado": tau_c_burrill, "Límite/Referencia": tau_c_admisible, "Dictamen": "Cumple" if burrill_ok else "Revisar", "Lectura": "Compara carga de pala contra límite preliminar admisible."},
+        {"Análisis": "Keller Ae/A0", "Resultado": ae_val, "Límite/Referencia": keller_ae_min, "Dictamen": "Cumple" if keller_ok else "No cumple", "Lectura": "Verifica área expandida mínima."},
+    ])
+
+    tablas["09_Vibracion_Torsional"] = pd.DataFrame([
+        ["Torque nominal", f"{torque_nominal/1000:,.3f} kN·m", "Par transmitido por el eje"],
+        ["Esfuerzo torsional", f"{esfuerzo_real_mpa:.3f} MPa", "Resultado de torsión"],
+        ["Límite admisible", f"{tau_admisible_mpa:.3f} MPa", "Referencia preliminar"],
+        ["Factor de utilización", f"{safe_div(esfuerzo_real_mpa, tau_admisible_mpa, 0):.3f}", "Debe mantenerse bajo 1"],
+        ["Dictamen", "Cumple" if torsion_ok else "No cumple", "Revisión preliminar del eje"],
+    ], columns=["Parámetro", "Valor", "Interpretación"])
+
+    tablas["10_Vibracion_Axial"] = axial_df.copy()
+    tablas["11_Campbell"] = campbell_df.copy()
+
+    tablas["12_Vibracion_Lateral"] = pd.DataFrame([
+        ["Frecuencia natural lateral", f"{f_natural_hz:.3f} Hz", "Modo lateral estimado"],
+        ["RPM crítica lateral", f"{rpm_critica_lateral:.3f} rpm", "Velocidad crítica estimada"],
+        ["Banda inferior", f"{margen_inf:.3f} rpm", "Límite inferior de zona crítica"],
+        ["Banda superior", f"{margen_sup:.3f} rpm", "Límite superior de zona crítica"],
+        ["RPM operación", f"{rpm_motor:.3f} rpm", "Punto de operación"],
+        ["Dictamen", "Cumple" if lateral_ok else "No cumple", "Separación frente a velocidad crítica"],
+    ], columns=["Parámetro", "Valor", "Interpretación"])
+
+    tablas["13_Balanceo"] = pd.DataFrame([
+        ["Masa equivalente de hélice", f"{peso_helice_kg:,.2f} kg", "Masa rotativa estimada/entrada"],
+        ["RPM operación", f"{rpm_motor:.3f}", "Velocidad de giro"],
+        ["Fuerza de desbalance", f"{fuerza_desbalance_n:,.2f} N", "Fuerza dinámica 1P estimada"],
+        ["Riesgo", riesgo_desbalance, "Clasificación preliminar"],
+        ["Dictamen", "Cumple" if desbalance_ok else "No cumple", "Evaluación conceptual"],
+    ], columns=["Parámetro", "Valor", "Interpretación"])
+
+    try:
+        opt_df = optimizar_helice_wageningen("Detallada", rpm_helice_objetivo, VA_ms, diam_prop_m).head(30)
+    except Exception:
+        opt_df = pd.DataFrame()
+    tablas["14_Optimizacion"] = opt_df
+
+    try:
+        rec_motores_export = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo, n=30)
+    except Exception:
+        rec_motores_export = pd.DataFrame()
+    tablas["15_Motores_Recomendados"] = rec_motores_export
+
+    try:
+        relacion_nec = safe_div(rpm_motor_real if rpm_motor_real > 0 else mcr_rpm_manual, rpm_helice_objetivo, default=relacion_reduccion)
+        rec_red = recomendar_reductoras(PB_kw_calc, relacion_nec, n=20)
+    except Exception:
+        rec_red = pd.DataFrame()
+    tablas["16_Reductoras"] = rec_red
+
+    motor_norma_estado = "Sin dato real"
+    try:
+        if mcr_real_disponible > 0:
+            if PB_kw_calc <= 0.85 * mcr_real_disponible:
+                motor_norma_estado = "Cumple ideal"
+            elif PB_kw_calc <= mcr_real_disponible:
+                motor_norma_estado = "Cumple con observación"
+            else:
+                motor_norma_estado = "No cumple"
+    except Exception:
+        pass
+    tablas["17_Normativa"] = pd.DataFrame([
+        {"Área": "Condición del agua", "Referencia técnica": "ITTC @ 15 °C", "Variable de la app": f"ρ={rho_auto:.1f} kg/m³, Pv={p_vap_auto:.0f} Pa", "Dictamen": "Cumple"},
+        {"Área": "Resistencia al avance", "Referencia técnica": "ITTC/Holtrop/ficha técnica", "Variable de la app": f"RT={resistencia_total_kn:,.0f} kN ({rt_fuente})", "Dictamen": "Calculada" if rt_modo == "Automática preliminar" else "Dato manual"},
+        {"Área": "Margen de servicio", "Referencia técnica": "ITTC Speed/Power Trials", "Variable de la app": f"Sea Margin={margen_servicio:.1f}%", "Dictamen": "Cumple" if margen_servicio >= 10 else "Revisar"},
+        {"Área": "Hélice Wageningen", "Referencia técnica": "B-Series / ITTC Open Water", "Variable de la app": f"ηO máx={max_eff*100:.2f}%, J={j_opt:.3f}", "Dictamen": "Cumple" if hidro_ok else "Revisar"},
+        {"Área": "Cavitación Burrill", "Referencia técnica": "Diagrama σ-τc", "Variable de la app": f"τc={tau_c_burrill:.3f}, τadm={tau_c_admisible:.3f}", "Dictamen": "Cumple" if burrill_ok else "Revisar"},
+        {"Área": "Cavitación Keller", "Referencia técnica": "Área expandida mínima", "Variable de la app": f"Ae/A0={ae_val:.3f}, mínimo={keller_ae_min:.3f}", "Dictamen": "Cumple" if keller_ok else "No cumple"},
+        {"Área": "Reynolds", "Referencia técnica": "ITTC / similitud", "Variable de la app": f"Re={reynolds:.2e}", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
+        {"Área": "Motor", "Referencia técnica": "Fabricante / 85% MCR", "Variable de la app": f"PB={PB_kw_calc:,.0f} kW, MCR real={mcr_real_disponible:,.0f} kW", "Dictamen": motor_norma_estado},
+        {"Área": "Transmisión", "Referencia técnica": "Fabricante de caja", "Variable de la app": f"Tipo={transmision_tipo}, i={relacion_reduccion:.2f}", "Dictamen": "Cumple" if transmision_ok else "Revisar"},
+        {"Área": "Torsión de eje", "Referencia técnica": "ABS/DNV/IACS UR M68", "Variable de la app": f"τ={esfuerzo_real_mpa:.2f} MPa, τadm={tau_admisible_mpa:.2f} MPa", "Dictamen": "Cumple" if torsion_ok else "No cumple"},
+        {"Área": "Vibración lateral", "Referencia técnica": "Velocidad crítica", "Variable de la app": f"Operación={rpm_motor:.1f} rpm, zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
+        {"Área": "Vibración axial", "Referencia técnica": "Órdenes 1P/ZP", "Variable de la app": f"Riesgo axial={riesgo_axial_global}", "Dictamen": "Cumple" if axial_ok else "No cumple"},
+        {"Área": "Campbell", "Referencia técnica": "Resonancia rotativa", "Variable de la app": "Intersecciones 1P, ZP, 2ZP, 3ZP", "Dictamen": "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "No cumple"},
+        {"Área": "Balanceo", "Referencia técnica": "ISO 1940", "Variable de la app": f"Riesgo={riesgo_desbalance}", "Dictamen": "Cumple" if desbalance_ok else "No cumple"},
+    ])
+
+    tablas["18_Visual_3D"] = pd.DataFrame([
+        ["Sistema propulsivo 3D", "D, Z, d eje, PB, RPM, transmisión", "Representa el arreglo motor-transmisión-eje-hélice."],
+        ["Hélice 3D paramétrica", "D, Z, P/D, Ae/A0, hub ratio", "Muestra cómo la geometría cambia con los parámetros de entrada."],
+        ["Prueba de mar virtual", "V, RT, PE, PB, σ, ηD", "Simula el aumento de demanda energética al acelerar hasta servicio."],
+        ["Mapa de carga en hélice", "D, Z, P/D, Ae/A0, σ, KT, KQ", "Localiza zonas de mayor demanda hidrodinámica sobre las palas."],
+    ], columns=["Módulo visual", "Datos que usa", "Interpretación"])
+
+    tablas["19_Recomendaciones"] = pd.DataFrame({"Recomendación técnica": recomendaciones})
+    return tablas
+
+
+def _fig_axial_export():
+    fig, ax = plt.subplots(figsize=(10.2, 4.8))
+    df = axial_df.copy()
+    ax.bar(df["Orden de excitación"], df["Frecuencia excitante [Hz]"])
+    ax.axhline(f_axial_natural_hz, linestyle="--", linewidth=2, label=f"fn axial = {f_axial_natural_hz:.2f} Hz")
+    ax.set_title("Órdenes axiales vs frecuencia natural del sistema")
+    ax.set_xlabel("Orden de excitación")
+    ax.set_ylabel("Frecuencia [Hz]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    for i, row in df.iterrows():
+        ax.text(i, row["Frecuencia excitante [Hz]"], f"{row['Frecuencia excitante [Hz]']:.2f} Hz\nsep. {row['Separación [%]']:.1f}%", ha="center", va="bottom", fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def _fig_lateral_export():
+    fig, ax = plt.subplots(figsize=(9.6, 3.9))
+    ax.axvspan(margen_inf, margen_sup, alpha=0.18, label="Banda crítica ±20%")
+    ax.axvline(rpm_critica_lateral, linestyle="--", linewidth=2, label=f"RPM crítica {rpm_critica_lateral:.1f}")
+    ax.scatter([rpm_motor], [1], s=140, label=f"Operación {rpm_motor:.1f} rpm")
+    ax.set_title("Margen frente a velocidad crítica lateral")
+    ax.set_xlabel("RPM")
+    ax.set_yticks([])
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+def _fig_balanceo_export():
+    fig, ax = plt.subplots(figsize=(9.5, 4.2))
+    rpm_range = np.linspace(max(1, rpm_motor*0.35), max(rpm_motor*1.65, rpm_motor+20), 120)
+    fuerza = fuerza_desbalance_n * (rpm_range / max(rpm_motor, 1e-9))**2
+    ax.plot(rpm_range, fuerza, linewidth=2.8, label="Fuerza de desbalance estimada")
+    ax.scatter([rpm_motor], [fuerza_desbalance_n], s=120, label="Operación")
+    ax.set_title("Fuerza de desbalance contra RPM")
+    ax.set_xlabel("RPM")
+    ax.set_ylabel("Fuerza [N]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_optimizacion_export():
+    try:
+        opt = optimizar_helice_wageningen("Detallada", rpm_helice_objetivo, VA_ms, diam_prop_m).head(10).copy()
+        labels = [f"Z{int(r.Z)} | P/D {r['P/D']:.2f} | Ae {r['Ae/A0']:.2f}" for _, r in opt.iterrows()]
+        vals = opt["Puntaje optimizado"].to_numpy()
+    except Exception:
+        labels, vals = ["Sin datos"], [0]
+    fig, ax = plt.subplots(figsize=(11, 5.2))
+    y = np.arange(len(labels))[::-1]
+    ax.barh(y, vals[::-1])
+    ax.set_yticks(y); ax.set_yticklabels(labels[::-1], fontsize=8)
+    ax.set_title("Top 10 combinaciones de optimización Wageningen")
+    ax.set_xlabel("Puntaje optimizado")
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    fig.tight_layout()
+    return fig
+
+
+def _fig_bode_export():
+    zeta = 0.05
+    fn = max(f_axial_natural_hz, 0.1)
+    f = np.linspace(0.05, max(fn*3.0, 30), 400)
+    r = f / fn
+    H = 1 / np.sqrt((1-r**2)**2 + (2*zeta*r)**2)
+    fig, ax = plt.subplots(figsize=(9.5, 4.2))
+    ax.semilogy(f, H, linewidth=2.4)
+    ax.axvline(fn, linestyle="--", label=f"fn={fn:.2f} Hz")
+    ax.set_title("Bode de magnitud — referencia axial")
+    ax.set_xlabel("Frecuencia [Hz]")
+    ax.set_ylabel("Amplificación [x]")
+    ax.grid(True, which="both", linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_orbita_export():
+    amp_x = max(5.0, min(120.0, 0.75 * fuerza_desbalance_n / max(peso_helice_kg, 1)))
+    amp_y = amp_x * 0.55
+    fase = np.deg2rad(55)
+    t = np.linspace(0, 2*np.pi, 260)
+    x = amp_x * np.cos(t)
+    y = amp_y * np.sin(t + fase)
+    fig, ax = plt.subplots(figsize=(6.5, 6.0))
+    ax.plot(x, y, linewidth=2.5, label="Órbita estimada")
+    ax.scatter([0], [0], marker="+", s=130, label="Centro nominal")
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_title("Órbita lateral estimada del eje")
+    ax.set_xlabel("X [µm]")
+    ax.set_ylabel("Y [µm]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_prueba_mar_export():
+    v = np.linspace(0.1, max(velocidad*1.10, 1), 80)
+    rt = resistencia_total_kn*(v/max(velocidad, 0.1))**2.15
+    pe = PE_kw*(v/max(velocidad, 0.1))**3.15
+    pb = PB_kw_calc*(v/max(velocidad, 0.1))**3.15
+    fig, ax = plt.subplots(figsize=(10.5, 4.8))
+    ax.plot(v, rt, label="RT [kN]", linewidth=2.4)
+    ax.plot(v, pe, label="PE [kW]", linewidth=2.4)
+    ax.plot(v, pb, label="PB [kW]", linewidth=2.4)
+    ax.axvline(velocidad, linestyle="--", label=f"Servicio {velocidad:.1f} kn")
+    ax.set_title("Prueba de mar virtual — curvas escaladas de prediseño")
+    ax.set_xlabel("Velocidad [kn]")
+    ax.set_ylabel("Magnitud")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_carga_helice_export():
+    r = np.linspace(max(hub_ratio, 0.05), 1.0, 140)
+    carga = 0.45 + 0.65*np.exp(-((r-0.72)/0.18)**2) + 0.25*np.clip(0.35-sigma_n, 0, 1)
+    fig, ax = plt.subplots(figsize=(9.5, 4.3))
+    ax.plot(r, carga, linewidth=2.8)
+    ax.fill_between(r, carga, alpha=0.16)
+    ax.axvline(0.7, linestyle="--", label="zona típica 0.7R")
+    ax.set_title("Distribución radial de carga relativa en la pala")
+    ax.set_xlabel("Radio relativo r/R")
+    ax.set_ylabel("Carga relativa [-]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def construir_graficas_exportacion_completas():
+    """Devuelve lista de tuplas: (titulo, pestaña, descripción, figura matplotlib)."""
+    graficas = []
+    def add(titulo, pestana, desc, fig_fn):
+        try:
+            fig = fig_fn()
+            if fig is not None:
+                graficas.append((titulo, pestana, desc, fig))
+        except Exception as e:
+            # No se interrumpe la exportación por una gráfica opcional.
+            pass
+    add("Comparación contra dato real", "PDF / Comparación", "Error porcentual entre resultados calculados y datos reales/manuales.", lambda: crear_figura_comparacion(comparacion_df))
+    add("Curvas Wageningen Serie B", "Hidrodinámica", "KT, 10KQ y ηO en función del coeficiente de avance J.", lambda: crear_figura_wageningen(res, j_opt))
+    add("Cadena completa de potencias", "Potencias", "Progresión energética RT → PE → PT → PD → PS → PB → MCR.", lambda: crear_figura_cadena_potencias_profesional(power_chain_df))
+    add("Efecto del Sea Margin", "Potencias", "Aumento de PE por margen de servicio.", lambda: crear_figura_waterfall_pe(PE_kw_sin_margen, PE_kw, margen_servicio))
+    add("Conversión PE a PT", "Potencias", "Conversión de potencia efectiva a potencia de empuje.", lambda: crear_figura_empuje_profesional(PE_kw, PT_kw, VA_ms, thrust_req_N/1000))
+    add("Eficiencias propulsivas", "Potencias", "ηH, ηO, ηR y ηD.", lambda: crear_figura_eficiencias_propulsivas(eta_h, max_eff, eta_r, eta_d))
+    add("Motor y MCR", "Motor / Reductora", "Pérdidas mecánicas y reserva de potencia del motor.", lambda: crear_figura_motor_mcr(PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw))
+    add("Mapa de eficiencias", "Potencias", "Eficiencias adoptadas en la cadena de potencia.", lambda: crear_figura_mapa_eficiencias(efficiency_prof_df))
+    add("Criterio de Burrill", "Cavitación", "Revisión σ vs τc para riesgo de cavitación.", lambda: crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
+    add("Criterio de Keller", "Cavitación", "Ae/A0 actual contra área expandida mínima.", lambda: crear_figura_keller(keller_ae_min, ae_val))
+    add("Diagrama de Campbell", "Campbell", "Órdenes de excitación contra frecuencias naturales.", lambda: crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val))
+    add("Órdenes axiales", "Vibración", "Órdenes 1P/ZP/2ZP/3ZP contra frecuencia natural axial.", _fig_axial_export)
+    add("Margen lateral", "Vibración", "RPM de operación frente a zona crítica lateral.", _fig_lateral_export)
+    add("Balanceo", "Balanceo", "Fuerza de desbalance estimada contra RPM.", _fig_balanceo_export)
+    add("Optimización Wageningen", "Optimización", "Top de combinaciones por eficiencia y cercanía a RPM real.", _fig_optimizacion_export)
+    add("Bode de magnitud", "Integridad dinámica", "Amplificación dinámica de referencia alrededor de la frecuencia natural.", _fig_bode_export)
+    add("Órbita del eje", "Integridad dinámica", "Órbita lateral estimada del eje.", _fig_orbita_export)
+    add("Prueba de mar virtual", "Integración visual 3D", "Curvas de RT, PE y PB durante aceleración virtual.", _fig_prueba_mar_export)
+    add("Carga radial de hélice", "Integración visual 3D", "Distribución conceptual de carga relativa sobre la pala.", _fig_carga_helice_export)
+    return graficas
+
+
+def insertar_figura_excel_con_texto(writer, fig, sheet_name, descripcion=""):
+    """Crea una hoja de Excel con descripción técnica + imagen."""
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        tmp.close()
+        fig.savefig(tmp.name, format="png", dpi=170, bbox_inches="tight")
+        ws = writer.book.create_sheet(_safe_sheet_name(sheet_name))
+        ws["A1"] = "Descripción técnica"
+        ws["A1"].font = ws["A1"].font.copy(bold=True)
+        ws["A2"] = descripcion
+        ws["A2"].alignment = ws["A2"].alignment.copy(wrap_text=True)
+        ws.column_dimensions["A"].width = 95
+        img = XLImage(tmp.name)
+        img.anchor = "A4"
+        ws.add_image(img)
+        return tmp.name
+    except Exception:
+        return None
+
+
 def generar_excel():
+    """Exporta un libro Excel completo con TODAS las tablas y gráficas principales."""
     output = BytesIO()
-    resumen_df = construir_resumen_dataframe()
     tmp_files = []
+    tablas = construir_tablas_exportacion_completas()
+    graficas = construir_graficas_exportacion_completas()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        resumen_df.to_excel(writer, sheet_name="Resumen", index=False)
-        res.to_excel(writer, sheet_name="Wageningen_Datos", index=False)
-        power_chain_df.to_excel(writer, sheet_name="Cadena_Potencias", index=False)
-        comparacion_df.to_excel(writer, sheet_name="Comparacion_Real", index=False)
+        indice_tablas = []
+        for nombre, df in tablas.items():
+            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                continue
+            sheet = _safe_sheet_name(nombre)
+            df.to_excel(writer, sheet_name=sheet, index=False)
+            indice_tablas.append({"Hoja": sheet, "Tipo": "Tabla", "Filas": len(df), "Columnas": len(df.columns)})
+            ws = writer.sheets[sheet]
+            ws.freeze_panes = "A2"
+            try:
+                from openpyxl.styles import Font, PatternFill
+                for cell in ws[1]:
+                    cell.font = Font(bold=True, color="FFFFFF")
+                    cell.fill = PatternFill("solid", fgColor="1E1B4B")
+                for col in ws.columns:
+                    max_len = 8
+                    col_letter = col[0].column_letter
+                    for cell in col[:80]:
+                        max_len = max(max_len, len(str(cell.value)) if cell.value is not None else 0)
+                    ws.column_dimensions[col_letter].width = min(max_len + 2, 42)
+            except Exception:
+                pass
 
-        cumplimiento = pd.DataFrame({
-            "Criterio": [
-                "Hidrodinámica", "Reynolds", "Cavitación sigma",
-                "Burrill", "Keller", "Motor", "Transmisión/reductora",
-                "Vibración torsional", "Vibración lateral", "Vibración axial", "Balanceo/desbalance"
-            ],
-            "Resultado": [
-                "Cumple" if hidro_ok else "Observación",
-                "Cumple" if reynolds_ok else "Observación",
-                "Cumple" if cavitacion_ok else "No cumple",
-                "Cumple" if burrill_ok else "Revisar",
-                "Cumple" if keller_ok else "No cumple",
-                "Cumple ideal" if motor_cumple_ideal else ("Cumple con observación" if motor_cumple_observacion else "No cumple"),
-                "Cumple" if caja_cumple else "Revisar",
-                "Cumple" if torsion_ok else "No cumple",
-                "Cumple" if lateral_ok else "No cumple",
-                "Cumple" if axial_ok else "No cumple",
-                "Cumple" if desbalance_ok else "No cumple"
-            ]
-        })
-        cumplimiento.to_excel(writer, sheet_name="Cumplimiento", index=False)
-        axial_df.to_excel(writer, sheet_name="Vibracion_Axial", index=False)
-        campbell_df.to_excel(writer, sheet_name="Campbell_Datos", index=False)
-        rec_motores_export = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo, n=20)
-        rec_motores_export.to_excel(writer, sheet_name="Motores_Recomendados", index=False)
-
-        cav_df = pd.DataFrame([
-            {"Análisis": "Reynolds", "Resultado": reynolds, "Límite/Referencia": "> 1e7", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
-            {"Análisis": "Sigma cavitación", "Resultado": sigma_n, "Límite/Referencia": "> 0.20 preliminar", "Dictamen": "Cumple" if cavitacion_ok else "Revisar"},
-            {"Análisis": "Burrill τc", "Resultado": tau_c_burrill, "Límite/Referencia": tau_c_admisible, "Dictamen": "Cumple" if burrill_ok else "Revisar"},
-            {"Análisis": "Keller Ae/A0", "Resultado": ae_val, "Límite/Referencia": keller_ae_min, "Dictamen": "Cumple" if keller_ok else "No cumple"},
-        ])
-        cav_df.to_excel(writer, sheet_name="Cavitacion_Resultados", index=False)
-
-        graf_desc = pd.DataFrame([
-            {"Hoja": "Graf_Wageningen", "Pestaña de origen": "Hidrodinámica", "Descripción": "Curvas KT, 10KQ y eficiencia ηO de la hélice Wageningen Serie B. Sirve para identificar el comportamiento en aguas abiertas y el J óptimo."},
-            {"Hoja": "Graf_Comparacion", "Pestaña de origen": "PDF / Comparación", "Descripción": "Comparación de error porcentual entre resultados calculados y datos reales detectados o ingresados desde la ficha técnica del buque."},
-            {"Hoja": "Graf_Burrill", "Pestaña de origen": "Cavitación", "Descripción": "Criterio preliminar de Burrill. Compara el coeficiente de cavitación σ contra el coeficiente de carga τc para estimar riesgo de cavitación."},
-            {"Hoja": "Graf_Keller", "Pestaña de origen": "Cavitación", "Descripción": "Criterio de Keller. Verifica si el Ae/A0 actual es mayor o igual al área expandida mínima requerida."},
-            {"Hoja": "Graf_Campbell", "Pestaña de origen": "Campbell", "Descripción": "Diagrama de Campbell. Relaciona RPM de operación, órdenes de excitación y modos naturales lateral, torsional y axial."},
-        ])
-        graf_desc.to_excel(writer, sheet_name="Guia_Graficas", index=False)
-
-        figs = [
-            (crear_figura_wageningen(res, j_opt), "Graf_Wageningen"),
-            (crear_figura_comparacion(comparacion_df), "Graf_Comparacion"),
-            (crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible), "Graf_Burrill"),
-            (crear_figura_keller(keller_ae_min, ae_val), "Graf_Keller"),
-            (crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val), "Graf_Campbell"),
-        ]
-        for fig, sheet in figs:
-            tmp = insertar_figura_excel(writer, fig, sheet)
+        indice_graficas = []
+        for idx, (titulo, pestana, desc, fig) in enumerate(graficas, start=1):
+            sheet = _safe_sheet_name(f"G{idx:02d}_{titulo}")
+            tmp = insertar_figura_excel_con_texto(writer, fig, sheet, f"Pestaña de origen: {pestana}. {desc}")
             if tmp:
                 tmp_files.append(tmp)
-            plt.close(fig)
+            indice_graficas.append({"Hoja": sheet, "Tipo": "Gráfica", "Pestaña de origen": pestana, "Descripción": desc})
+            try:
+                plt.close(fig)
+            except Exception:
+                pass
+
+        # Índice al final para no cambiar nombres de hojas técnicas ya escritas.
+        indice_df = pd.DataFrame(indice_tablas + indice_graficas)
+        indice_df.to_excel(writer, sheet_name="Indice_Contenido", index=False)
+        ws = writer.sheets["Indice_Contenido"]
+        ws.freeze_panes = "A2"
+        for col in ws.columns:
+            try:
+                ws.column_dimensions[col[0].column_letter].width = 32
+            except Exception:
+                pass
 
     for tmp in tmp_files:
         try:
@@ -2909,8 +3427,9 @@ def generar_excel():
 
 
 def generar_pdf():
+    """Genera un PDF tipo memoria técnica con todas las tablas y gráficas principales."""
     try:
-        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.lib.pagesizes import letter
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
@@ -2921,13 +3440,19 @@ def generar_pdf():
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=28, leftMargin=28, topMargin=28, bottomMargin=28)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("CustomTitle", parent=styles["Title"], textColor=colors.HexColor("#1e1b4b"), fontSize=18, leading=22)
+    h1 = ParagraphStyle("H1", parent=styles["Heading1"], textColor=colors.HexColor("#1e1b4b"), fontSize=15, leading=18, spaceAfter=8)
     h2 = styles["Heading2"]
     body = styles["BodyText"]
 
-    def add_table(story, df, col_widths=None, max_rows=35):
+    def add_table(story, df, max_rows=38):
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            story.append(Paragraph("Sin datos disponibles para esta tabla.", body))
+            story.append(Spacer(1, 8))
+            return
         data = tabla_a_reportlab(df, max_rows=max_rows)
-        if col_widths is None:
-            col_widths = [max(70, min(170, 500 / max(len(data[0]), 1)))] * len(data[0])
+        ncols = len(data[0]) if data else 1
+        usable = 535
+        col_widths = [usable / ncols] * ncols
         table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1e1b4b")),
@@ -2936,134 +3461,76 @@ def generar_pdf():
             ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
             ("BACKGROUND", (0,1), (-1,-1), colors.HexColor("#F8FAFC")),
             ("VALIGN", (0,0), (-1,-1), "TOP"),
-            ("FONTSIZE", (0,0), (-1,-1), 7),
+            ("FONTSIZE", (0,0), (-1,-1), 6.4),
+            ("LEADING", (0,0), (-1,-1), 7.5),
         ]))
         story.append(table)
+        if len(df) > max_rows:
+            story.append(Paragraph(f"Nota: se muestran {max_rows} de {len(df)} filas. El Excel incluye la tabla completa.", body))
         story.append(Spacer(1, 12))
 
-    def add_fig(story, fig, title=None, caption=None, source_tab=None, width=500):
-        if title:
-            story.append(Paragraph(title, styles["Heading3"]))
-        if source_tab:
-            story.append(Paragraph(f"Pestaña de origen: {source_tab}", body))
-        if caption:
-            story.append(Paragraph(caption, body))
-            story.append(Spacer(1, 4))
+    def add_fig(story, fig, titulo, pestana, desc, width=500):
+        story.append(Paragraph(titulo, styles["Heading3"]))
+        story.append(Paragraph(f"<b>Pestaña de origen:</b> {pestana}", body))
+        story.append(Paragraph(desc, body))
+        story.append(Spacer(1, 4))
         img_buf = fig_to_bytes(fig)
         story.append(Image(img_buf, width=width, height=width*0.55))
         story.append(Spacer(1, 12))
-        plt.close(fig)
+        try:
+            plt.close(fig)
+        except Exception:
+            pass
+
+    tablas = construir_tablas_exportacion_completas()
+    graficas = construir_graficas_exportacion_completas()
 
     story = []
     story.append(Paragraph("Universal Ship Propulsion & Shafting Analysis Suite", title_style))
-    story.append(Paragraph("Reporte técnico integral de diseño de sistema propulsor", h2))
-    story.append(Paragraph("Buque de referencia: KVLCC2 / buque tanque VLCC", styles["Heading3"]))
-    story.append(Paragraph("El presente documento funciona como memoria técnica automática. Integra datos de entrada, hipótesis, metodología de cálculo, resultados, gráficas, dictámenes y recomendaciones para el prediseño del sistema propulsor naval.", body))
-    story.append(Spacer(1, 12))
-
-    story.append(Paragraph("1. Objetivo", h2))
-    story.append(Paragraph("Diseñar y verificar preliminarmente el sistema de propulsión de un buque mediante la cadena de potencia, curvas Wageningen B-Series, selección de motor, transmisión, cavitación Burrill/Keller, vibraciones del eje y comparación con datos reales o de ficha técnica.", body))
+    story.append(Paragraph("Memoria técnica integral exportada automáticamente", h2))
     story.append(Spacer(1, 8))
-
-    story.append(Paragraph("2. Datos principales de entrada", h2))
-    datos_entrada_pdf = pd.DataFrame([
-        ["Tipo de buque", modo_guia, "Entrada del usuario / valor por defecto"],
-        ["Lpp", f"{eslora:.3f} m", "Dato principal"],
-        ["LWL", f"{lwl:.3f} m", "Dato principal"],
-        ["Manga B", f"{manga:.3f} m", "Dato principal"],
-        ["Puntal", f"{puntal:.3f} m", "Dato principal"],
-        ["Calado", f"{calado:.3f} m", "Dato principal"],
-        ["Velocidad de servicio", f"{velocidad:.3f} kn", "Dato principal"],
-        ["Superficie mojada sin timón", f"{superficie_mojada_sin_timon_m2:,.1f} m²", "Dato visible"],
-        ["Superficie mojada con timón", f"{superficie_mojada_con_timon_m2:,.1f} m²", "Dato visible"],
-        ["RT", f"{resistencia_total_kn:,.1f} kN", "Entrada o estimación"],
-        ["Sea Margin", f"{margen_servicio:.1f} %", "Criterio ITTC / usuario"],
-        ["w", f"{estela:.3f}", "Interacción casco-propulsor"],
-        ["t", f"{t_fraction:.3f}", "Interacción casco-propulsor"],
-        ["ηR", f"{eta_r:.3f}", "Eficiencia rotativa relativa"],
-        ["Z", f"{z_val}", "Geometría hélice"],
-        ["D hélice", f"{diam_prop_m:.3f} m", "Geometría hélice"],
-        ["P/D", f"{pd_val:.3f}", "Geometría hélice"],
-        ["Ae/A0", f"{ae_val:.3f}", "Geometría hélice"],
-        ["Hub ratio", f"{hub_ratio:.3f}", "Geometría hélice"],
-        ["Inmersión del eje", f"{inmersion_eje_m:.3f} m", "Cavitación"],
-    ], columns=["Parámetro", "Valor", "Comentario"])
-    add_table(story, datos_entrada_pdf, col_widths=[170, 120, 220], max_rows=30)
-
-    story.append(Paragraph("3. Hipótesis y metodología", h2))
-    hipotesis_df = pd.DataFrame([
-        ["Propiedades del fluido", f"ρ={rho_auto:.3f} kg/m³, ν=1.1883e-6 m²/s, Pv={p_vap_auto:.1f} Pa", "Agua salada a 15 °C / ITTC"],
-        ["Potencia efectiva", "PE = RT · Vs", "Convierte resistencia al avance en potencia"],
-        ["Velocidad de avance", "VA = Vs(1-w)", "Incluye efecto de estela"],
-        ["Eficiencia de casco", "ηH = (1-t)/(1-w)", "Interacción casco-hélice"],
-        ["Potencia al freno", "PB = PS / ηG", "Potencia requerida en motor"],
-        ["MCR requerido", "MCR = PB / 0.85", "Margen operativo del 15%"],
-        ["Burrill", "Comparación τc vs τ admisible", "Riesgo preliminar de cavitación"],
-        ["Keller", "Ae/A0 actual vs Ae/A0 mínimo", "Área expandida mínima"],
-        ["Vibración", "Comparación de frecuencias naturales y órdenes 1P/ZP", "Revisión preliminar, no sustituye TVA de clase"],
-    ], columns=["Tema", "Fórmula / criterio", "Uso"])
-    add_table(story, hipotesis_df, col_widths=[120, 190, 200], max_rows=25)
-
-    story.append(Paragraph(f"4. Dictamen general: {dictamen}", h2))
-    story.append(Paragraph("El dictamen resume los módulos principales de la aplicación. Cuando aparece una observación, no implica necesariamente falla de diseño; indica que el valor debe revisarse, justificarse o compararse contra una restricción real del buque.", body))
-    add_table(story, construir_resumen_dataframe(), col_widths=[230, 250], max_rows=55)
+    story.append(Paragraph(
+        "Este reporte reúne las tablas, gráficas, criterios de revisión y resultados principales de la aplicación. "
+        "Las visualizaciones interactivas y animadas de la app se documentan aquí mediante capturas/gráficas estáticas equivalentes para dejar trazabilidad técnica en el PDF.", body))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(f"<b>Dictamen global:</b> {dictamen} — score {score:.0f}%", body))
+    story.append(Paragraph("<b>Alcance:</b> prediseño académico/técnico. Para aprobación final se requieren datos certificados de fabricante, ensayos de canal o CFD, planos de línea de ejes y revisión formal por sociedad clasificadora.", body))
 
     story.append(PageBreak())
-    story.append(Paragraph("5. Cadena de potencias", h2))
-    story.append(Paragraph("Esta sección documenta la progresión RT → PE → PT → PD → PS → PB. Permite rastrear las pérdidas desde el casco hasta el motor y verificar el efecto del Sea Margin y de las eficiencias adoptadas.", body))
-    add_table(story, power_chain_df, col_widths=[90, 240, 90, 60])
+    story.append(Paragraph("Índice de contenido exportado", h1))
+    idx_tab = pd.DataFrame([{"Sección": k, "Tipo": "Tabla", "Filas": len(v)} for k, v in tablas.items() if isinstance(v, pd.DataFrame) and not v.empty])
+    idx_graf = pd.DataFrame([{"Sección": t, "Tipo": "Gráfica", "Pestaña": p} for t, p, d, f in graficas])
+    add_table(story, idx_tab, max_rows=60)
+    add_table(story, idx_graf, max_rows=60)
 
-    story.append(Paragraph("Comparación con datos reales", h2))
-    add_table(story, comparacion_df, col_widths=[180, 90, 90, 70])
-    add_fig(story, crear_figura_comparacion(comparacion_df), title="Gráfica de comparación", source_tab="PDF / Comparación", caption="Muestra el error porcentual entre los resultados calculados por la aplicación y los datos reales del buque. Permite validar qué tan cercano es el prediseño frente a la ficha técnica.")
+    # Tablas completas por bloques
+    for nombre, df in tablas.items():
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        story.append(PageBreak())
+        story.append(Paragraph(nombre.replace("_", " "), h1))
+        add_table(story, df, max_rows=45)
 
-    story.append(PageBreak())
-    story.append(Paragraph("Curvas Wageningen Serie B", h2))
-    add_fig(story, crear_figura_wageningen(res, j_opt), title="Curvas Wageningen Serie B", source_tab="Hidrodinámica", caption="Presenta KT, 10KQ y ηO en función del coeficiente de avance J. El máximo de ηO identifica el punto de operación hidrodinámicamente más eficiente para la geometría evaluada.")
-    story.append(Paragraph("Cavitación: Burrill y Keller", h2))
-    cav_df = pd.DataFrame([
-        {"Análisis": "Sigma", "Resultado": sigma_n, "Referencia": "> 0.20 preliminar", "Dictamen": "Cumple" if cavitacion_ok else "Revisar"},
-        {"Análisis": "Burrill τc", "Resultado": tau_c_burrill, "Referencia": tau_c_admisible, "Dictamen": "Cumple" if burrill_ok else "Revisar"},
-        {"Análisis": "Keller Ae/A0", "Resultado": ae_val, "Referencia": keller_ae_min, "Dictamen": "Cumple" if keller_ok else "No cumple"},
-    ])
-    add_table(story, cav_df, col_widths=[120, 90, 120, 100])
-    add_fig(story, crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible), title="Criterio de Burrill", source_tab="Cavitación", caption="Relaciona el coeficiente de cavitación σ con el coeficiente de carga τc. Si el punto del diseño queda dentro de la zona aceptable, el riesgo preliminar de cavitación es bajo.")
-    add_fig(story, crear_figura_keller(keller_ae_min, ae_val), title="Criterio de Keller", source_tab="Cavitación", caption="Compara el Ae/A0 actual con el Ae/A0 mínimo requerido. Si el valor actual supera la línea mínima, la hélice tiene área expandida suficiente según la revisión preliminar de Keller.")
+    # Gráficas completas
+    for titulo, pestana, desc, fig in graficas:
+        story.append(PageBreak())
+        add_fig(story, fig, titulo, pestana, desc)
 
     story.append(PageBreak())
-    story.append(Paragraph("Diagrama de Campbell", h2))
-    add_fig(story, crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val), title="Diagrama de Campbell", source_tab="Campbell", caption="Cruza los órdenes de excitación con las frecuencias naturales lateral, torsional y axial. Sirve para identificar posibles zonas de resonancia cerca de la RPM de operación.")
-    story.append(Paragraph("Recomendaciones", h2))
+    story.append(Paragraph("Conclusión técnica final", h1))
+    story.append(Paragraph(
+        "La memoria integra el cálculo hidrodinámico, cadena de potencias, selección de motor/transmisión, cavitación, vibración, Campbell, balanceo, normativa preliminar y visualizaciones 3D de apoyo. "
+        "Los resultados permiten defender el prediseño y ubicar de forma clara los puntos que cumplen, requieren revisión o necesitan ajuste.", body))
     for rec in recomendaciones:
         story.append(Paragraph(f"• {rec}", body))
 
-
-    story.append(PageBreak())
-    story.append(Paragraph("8. Visualizaciones interactivas y sistema propulsivo 3D", h2))
-    story.append(Paragraph("La aplicación incorpora visualizaciones interactivas en Plotly para reforzar la trazabilidad: flujo energético, modelo conceptual 3D del tren propulsor, hélice paramétrica, cavitación visual, Campbell interactivo, órbitas del eje y respuesta dinámica. En el PDF se documentan sus variables de entrada y la interpretación técnica, aunque las animaciones completas se revisan directamente en la aplicación.", body))
-    visual_df = pd.DataFrame([
-        ["Flujo interactivo de potencias", "PE, PD, PS, PB, MCR", "Ubica pérdidas propulsivas, pérdidas de eje y reserva de motor"],
-        ["Sistema propulsivo 3D", "D, Z, d eje, PB, RPM, transmisión", "Representa el arreglo motor-transmisión-eje-hélice y sus componentes"],
-        ["Hélice 3D paramétrica", "D, Z, P/D, Ae/A0, hub ratio", "Muestra cómo los parámetros hidrodinámicos modifican la geometría visual"],
-        ["Cavitación visual", "σ, Burrill, Keller", "Relaciona el riesgo de cavitación con partículas y zona de operación"],
-        ["Campbell interactivo", "RPM, 1P, ZP, 2ZP, 3ZP, fn", "Permite inspeccionar cruces teóricos y separación frente a operación"],
-        ["Órbitas animadas", "amplitud X/Y, fase, velocidad", "Representa movimiento lateral estimado del eje"],
-        ["Laboratorio virtual 3D", "casco, flujo, empuje, vibración y prueba de mar", "Integra visualmente el sistema propulsivo para defensa técnica"],
-        ["Mapa de carga en hélice", "D, Z, P/D, Ae/A0, σ, KT y KQ", "Muestra zonas de mayor carga hidrodinámica en las palas"],
-    ], columns=["Módulo visual", "Datos que usa", "Interpretación"])
-    add_table(story, visual_df, col_widths=[150, 160, 210], max_rows=20)
-
-    story.append(Paragraph("9. Síntesis técnica final", h2))
-    story.append(Paragraph("La sección final de la aplicación funciona como concentrado ejecutivo: resume áreas que cumplen, puntos a revisar, criterios normativos preliminares y recomendaciones. Su finalidad es que el evaluador pueda identificar rápidamente el estado global del prediseño y la trazabilidad de los cálculos.", body))
-
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("10. Conclusión técnica", h2))
-    story.append(Paragraph("El sistema propulsor evaluado presenta un prediseño verificable con entradas editables y trazabilidad de cálculo. Los resultados deben interpretarse como una evaluación académica/preliminar: para aprobación de clase se requerirían datos definitivos de pruebas de canal, fabricante, planos de línea de ejes y revisión formal de sociedad clasificadora.", body))
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("Desarrollo del software", h1))
+    story.append(Paragraph("Naval Propulsion & Shaft Dynamics Pro · v1.0<br/>© 2026", body))
 
     doc.build(story)
     buffer.seek(0)
     return buffer
-
 
 
 # ==============================================================================
