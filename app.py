@@ -191,9 +191,18 @@ def _limpiar_trazas_plotly(fig, titulo_base="Gráfica"):
         return fig
     for idx, tr in enumerate(fig.data):
         nombre = getattr(tr, "name", None)
-        if nombre is None or str(nombre).strip() == "" or str(nombre).startswith("_child") or str(nombre).lower().startswith("trace"):
+        if nombre is None or str(nombre).strip() == "" or str(nombre).startswith("_child") or str(nombre).lower().startswith("trace") or str(nombre).lower().startswith("serie"):
             try:
-                tr.name = f"Serie {idx+1}"
+                tipo_tr = getattr(tr, "type", "")
+                modo_tr = str(getattr(tr, "mode", ""))
+                if tipo_tr == "bar":
+                    tr.name = "Valor evaluado"
+                elif tipo_tr == "scatter" and "markers" in modo_tr and "lines" not in modo_tr:
+                    tr.name = "Punto de diseño"
+                elif tipo_tr == "scatter" and "lines" in modo_tr:
+                    tr.name = "Curva de referencia"
+                else:
+                    tr.name = "Resultado técnico"
             except Exception:
                 pass
         try:
@@ -282,6 +291,142 @@ def dataframe_profesional(df, height=360):
         st.dataframe(df, use_container_width=True, height=height, hide_index=True)
     except TypeError:
         st.dataframe(df, use_container_width=True, height=height)
+
+
+# ==============================================================================
+# VISUALIZACIONES PLOTLY PROFESIONALES (REEMPLAZAN CONVERSIONES MATPLOTLIB)
+# ==============================================================================
+def _plotly_config():
+    return {"displaylogo": False, "scrollZoom": True,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+            "toImageButtonOptions": {"format": "png", "scale": 2}}
+
+def _layout_prof(fig, title, x_title="", y_title="", height=520, legend=True):
+    if go is None or fig is None:
+        return fig
+    fig.update_layout(
+        title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color="#0f172a")),
+        xaxis_title=x_title, yaxis_title=y_title,
+        template="plotly_white", height=height,
+        margin=dict(l=70, r=60 if legend else 30, t=85, b=70),
+        hovermode="closest", font=dict(family="Arial", size=13, color="#0f172a"),
+        paper_bgcolor="white", plot_bgcolor="white",
+        transition=dict(duration=550, easing="cubic-in-out"),
+        legend=dict(title=None, bgcolor="rgba(255,255,255,0.88)", bordercolor="#e2e8f0", borderwidth=1) if legend else dict(visible=False),
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    return fig
+
+def plotly_waterfall_pe_prof(pe_sin, pe_con, margen_pct):
+    if go is None:
+        return None
+    inc = max(float(pe_con) - float(pe_sin), 0.0)
+    fig = go.Figure()
+    fig.add_trace(go.Waterfall(
+        name="Secuencia de PE", orientation="v", measure=["absolute", "relative", "total"],
+        x=["PE base", f"Sea Margin {margen_pct:.1f}%", "PE de diseño"],
+        y=[pe_sin, inc, pe_con],
+        text=[f"{pe_sin:,.0f} kW", f"+{inc:,.0f} kW", f"{pe_con:,.0f} kW"],
+        textposition="outside",
+        connector={"line": {"color": "#94a3b8", "dash": "dot"}},
+        increasing={"marker": {"color": "#f59e0b"}},
+        decreasing={"marker": {"color": "#ef4444"}},
+        totals={"marker": {"color": "#059669"}},
+        hovertemplate="<b>%{x}</b><br>Potencia=%{y:,.2f} kW<br>Texto=%{text}<extra></extra>"
+    ))
+    fig.add_annotation(x=1, y=pe_sin + inc/2, text="Incremento por margen de servicio", showarrow=False,
+                       bgcolor="rgba(255,255,255,.85)", bordercolor="#e2e8f0", font=dict(size=12))
+    return _layout_prof(fig, "Potencia efectiva y efecto del Sea Margin", "Concepto", "Potencia [kW]", height=520, legend=False)
+
+def plotly_burrill_prof(sigma_actual, tau_actual, tau_adm_actual):
+    if go is None:
+        return None
+    sigma_actual = float(sigma_actual); tau_actual = float(tau_actual); tau_adm_actual = float(tau_adm_actual)
+    xmax = max(1.2, sigma_actual*1.18)
+    sig = np.linspace(0.05, xmax, 260)
+    tau_adm = 0.22 + 0.18*sig
+    cumple = tau_actual <= tau_adm_actual
+    margen = tau_adm_actual - tau_actual
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=sig, y=tau_adm, mode="lines", name="Límite admisible Burrill", line=dict(color="#2563eb", width=3), hovertemplate="σ=%{x:.3f}<br>τ admisible=%{y:.3f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=np.r_[sig, sig[::-1]], y=np.r_[np.zeros_like(sig), tau_adm[::-1]], fill="toself", mode="lines", line=dict(color="rgba(16,185,129,0)"), fillcolor="rgba(16,185,129,0.12)", name="Zona aceptable", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[sigma_actual], y=[tau_actual], mode="markers+text", name="Diseño actual", marker=dict(size=16, color="#059669" if cumple else "#dc2626", line=dict(color="white", width=2)), text=["Cumple" if cumple else "Revisar"], textposition="top center", hovertemplate=f"<b>Diseño actual</b><br>σ={sigma_actual:.3f}<br>τc={tau_actual:.3f}<br>τadm={tau_adm_actual:.3f}<br>Margen={margen:.3f}<extra></extra>"))
+    fig.add_vline(x=sigma_actual, line_dash="dot", line_color="#64748b")
+    fig.add_hline(y=tau_actual, line_dash="dot", line_color="#64748b")
+    fig.add_annotation(x=0.03, y=0.98, xref="paper", yref="paper", align="left", showarrow=False,
+                       text=("✅ Carga de pala dentro del límite" if cumple else "⚠️ Carga de pala a revisar") + f"<br>Margen τ = {margen:.3f}",
+                       bgcolor="rgba(255,255,255,.88)", bordercolor="#e2e8f0")
+    return _layout_prof(fig, "Criterio de Burrill — carga de pala vs cavitación", "Coeficiente de cavitación σ [-]", "Coeficiente de carga τc [-]", height=560)
+
+def plotly_keller_prof(ae_min, ae_actual):
+    if go is None:
+        return None
+    ae_min = float(ae_min); ae_actual = float(ae_actual)
+    margen = ae_actual - ae_min
+    cumple = margen >= 0
+    xmax = max(0.75, ae_actual*1.35, ae_min*1.45)
+    fig = go.Figure()
+    fig.add_vrect(x0=0, x1=ae_min, fillcolor="#fee2e2", opacity=0.38, line_width=0, annotation_text="Área insuficiente", annotation_position="top left")
+    fig.add_vrect(x0=ae_min, x1=xmax, fillcolor="#dcfce7", opacity=0.35, line_width=0, annotation_text="Zona aceptable", annotation_position="top right")
+    fig.add_vline(x=ae_min, line_dash="dash", line_color="#dc2626", annotation_text=f"Keller mínimo {ae_min:.3f}")
+    fig.add_trace(go.Bar(x=[ae_actual], y=["Ae/A0 actual"], orientation="h", name="Diseño actual", marker=dict(color="#059669" if cumple else "#dc2626"), text=[f"{ae_actual:.3f}"], textposition="outside", hovertemplate=f"<b>Ae/A0 actual</b><br>Valor={ae_actual:.3f}<br>Mínimo={ae_min:.3f}<br>Margen={margen:.3f}<extra></extra>"))
+    fig.add_annotation(x=ae_actual, y="Ae/A0 actual", text=(f"✅ margen +{margen:.3f}" if cumple else f"❌ déficit {abs(margen):.3f}"), showarrow=True, ax=70, ay=-45, bgcolor="rgba(255,255,255,.90)", bordercolor="#cbd5e1")
+    fig.update_xaxes(range=[0, xmax])
+    return _layout_prof(fig, "Criterio de Keller — área expandida mínima", "Relación de área expandida Ae/A0 [-]", "", height=450, legend=False)
+
+def plotly_reynolds_prof(reynolds):
+    if go is None:
+        return None
+    thresholds = pd.DataFrame({"Régimen": ["Laminar", "Transición", "Turbulento naval", "Diseño actual"], "Re": [2e3, 4e3, 1e7, float(reynolds)]})
+    fig = go.Figure()
+    colors = ["#94a3b8", "#f59e0b", "#2563eb", "#059669" if reynolds >= 1e7 else "#f97316"]
+    fig.add_trace(go.Bar(x=thresholds["Re"], y=thresholds["Régimen"], orientation="h", name="Reynolds", marker=dict(color=colors), text=[f"{v:.2e}" for v in thresholds["Re"]], textposition="outside", hovertemplate="<b>%{y}</b><br>Re=%{x:.3e}<extra></extra>"))
+    fig.update_xaxes(type="log")
+    return _layout_prof(fig, "Comparación de régimen de flujo", "Número de Reynolds Re [escala log]", "", height=420, legend=False)
+
+def plotly_sigma_prof(sigma_n):
+    if go is None:
+        return None
+    sigma_n = float(sigma_n)
+    xmax = max(1.2, sigma_n*1.18)
+    fig = go.Figure()
+    fig.add_vrect(x0=0, x1=0.20, fillcolor="#fee2e2", opacity=0.45, line_width=0, annotation_text="Riesgo alto", annotation_position="top left")
+    fig.add_vrect(x0=0.20, x1=0.50, fillcolor="#fef3c7", opacity=0.55, line_width=0, annotation_text="Precaución", annotation_position="top left")
+    fig.add_vrect(x0=0.50, x1=xmax, fillcolor="#dcfce7", opacity=0.40, line_width=0, annotation_text="Zona favorable", annotation_position="top right")
+    fig.add_trace(go.Indicator(mode="gauge+number", value=sigma_n, title={"text":"Coeficiente σ del diseño"}, gauge={"axis":{"range":[0, xmax]}, "bar":{"color":"#059669" if sigma_n>0.5 else "#f59e0b"}, "threshold":{"line":{"color":"#dc2626","width":3}, "thickness":0.75, "value":0.20}}, domain={"x":[0.06,0.94],"y":[0.10,0.90]}))
+    return _layout_prof(fig, "Riesgo general de cavitación por σ", "", "", height=420, legend=False)
+
+def plotly_axial_orders_prof(axial_df, f_axial_natural_hz):
+    if go is None:
+        return None
+    df = axial_df.copy()
+    df["Frecuencia excitante [Hz]"] = pd.to_numeric(df["Frecuencia excitante [Hz]"], errors="coerce")
+    df["Separación [%]"] = pd.to_numeric(df["Separación [%]"], errors="coerce")
+    colors = df["Riesgo axial"].map({"Bajo":"#059669", "Medio":"#f59e0b", "Alto":"#dc2626"}).fillna("#2563eb")
+    fig = go.Figure()
+    fig.add_hrect(y0=f_axial_natural_hz*0.95, y1=f_axial_natural_hz*1.05, fillcolor="#fee2e2", opacity=.30, line_width=0, annotation_text="Zona crítica ±5%")
+    fig.add_hrect(y0=f_axial_natural_hz*0.88, y1=f_axial_natural_hz*1.12, fillcolor="#fef3c7", opacity=.22, line_width=0, annotation_text="Precaución ±12%")
+    fig.add_hline(y=f_axial_natural_hz, line_dash="dash", line_color="#0f172a", annotation_text=f"fn axial {f_axial_natural_hz:.2f} Hz")
+    fig.add_trace(go.Bar(x=df["Orden de excitación"], y=df["Frecuencia excitante [Hz]"], marker=dict(color=list(colors)), name="Excitaciones axiales", text=[f"{f:.2f} Hz<br>sep. {s:.1f}%" for f,s in zip(df["Frecuencia excitante [Hz]"], df["Separación [%]"])], textposition="outside", hovertemplate="<b>%{x}</b><br>Frecuencia=%{y:.3f} Hz<br>%{text}<extra></extra>"))
+    ymax = max(float(df["Frecuencia excitante [Hz]"].max())*1.25, f_axial_natural_hz*1.25, 1)
+    fig.update_yaxes(range=[0, ymax])
+    return _layout_prof(fig, "Órdenes axiales vs frecuencia natural del sistema", "Orden de excitación", "Frecuencia [Hz]", height=540, legend=False)
+
+def plotly_lateral_margin_prof(rpm_operacion, rpm_critica, margen_inf, margen_sup):
+    if go is None:
+        return None
+    rpm_operacion = float(rpm_operacion); rpm_critica = float(rpm_critica)
+    sep = abs(rpm_operacion-rpm_critica)/max(rpm_critica,1e-9)*100
+    estado = "Cumple" if sep > 20 else ("Revisar" if sep > 10 else "No cumple")
+    fig = go.Figure()
+    fig.add_vrect(x0=margen_inf, x1=margen_sup, fillcolor="#fef3c7", opacity=0.45, line_width=0, annotation_text="Banda ±20% de velocidad crítica", annotation_position="top left")
+    fig.add_vline(x=rpm_critica, line_dash="dash", line_color="#dc2626", annotation_text=f"Crítica {rpm_critica:.1f} rpm")
+    fig.add_trace(go.Scatter(x=[rpm_operacion], y=[1], mode="markers+text", name="RPM de operación", marker=dict(size=18, color="#059669" if estado=="Cumple" else "#f59e0b"), text=[f"{rpm_operacion:.1f} rpm"], textposition="top center", hovertemplate=f"<b>RPM operación</b><br>{rpm_operacion:.2f} rpm<br>RPM crítica={rpm_critica:.2f}<br>Separación={sep:.1f}%<br>Dictamen={estado}<extra></extra>"))
+    fig.update_yaxes(visible=False, range=[0.7,1.25])
+    fig.update_xaxes(range=[max(0, min(rpm_operacion, margen_inf)*0.75), max(rpm_operacion, margen_sup)*1.18])
+    fig.add_annotation(x=0.02, y=0.95, xref="paper", yref="paper", showarrow=False, align="left", text=f"Dictamen: <b>{estado}</b><br>Separación frente a crítica: {sep:.1f}%", bgcolor="rgba(255,255,255,.9)", bordercolor="#e2e8f0")
+    return _layout_prof(fig, "Margen frente a velocidad crítica lateral", "RPM", "", height=420, legend=False)
 
 # ==============================================================================
 # FUNCIONES AUXILIARES
@@ -2879,7 +3024,7 @@ def generar_pdf():
     ], columns=["Módulo visual", "Datos que usa", "Interpretación"])
     add_table(story, visual_df, col_widths=[150, 160, 210], max_rows=20)
 
-    story.append(Paragraph("9. Recopilación final", h2))
+    story.append(Paragraph("9. Dictamen técnico final", h2))
     story.append(Paragraph("La sección final de la aplicación funciona como concentrado ejecutivo: resume áreas que cumplen, puntos a revisar, criterios normativos preliminares y recomendaciones. Su finalidad es que el evaluador pueda identificar rápidamente el estado global del prediseño y la trazabilidad de los cálculos.", body))
 
     story.append(Spacer(1, 10))
@@ -2907,7 +3052,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "📚 Normativa",
     "🧩 Sistema propulsivo 3D",
     "⚙️ Integridad dinámica",
-    "🧾 Recopilación final"
+    "🧾 Dictamen técnico final"
 ])
 
 # ==============================================================================
@@ -3172,8 +3317,11 @@ with tab_potencias:
             {"Parámetro":"PE con margen", "Valor":PE_kw, "Unidad":"kW", "Fuente/criterio":"PE(1+SM)", "Dictamen":"Cumple"},
         ])
         st.dataframe(df_pe.style.format({"Valor":"{:,.3f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
-        fig = crear_figura_waterfall_pe(PE_kw_sin_margen, PE_kw, margen_servicio)
-        st.pyplot(fig)
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_waterfall_pe_prof(PE_kw_sin_margen, PE_kw, margen_servicio), use_container_width=True, config=_plotly_config())
+        else:
+            fig = crear_figura_waterfall_pe(PE_kw_sin_margen, PE_kw, margen_servicio)
+            st.pyplot(fig)
 
     with pot_pt:
         st.markdown("### 🌀 Potencia de empuje PT")
@@ -3635,25 +3783,22 @@ with tab_vibracion:
     
         st.markdown("### 📈 Mapa profesional de separación axial")
         st.caption("La gráfica compara cada orden de excitación contra la frecuencia natural axial. Mientras más lejos quede cada punto de la línea natural, menor riesgo de resonancia.")
-        fig_a, ax_a = plt.subplots(figsize=(10.8, 4.8))
-        axial_plot = axial_df.copy()
-        x = np.arange(len(axial_plot))
-        f_exc_vals = axial_plot["Frecuencia excitante [Hz]"].to_numpy()
-        sep_vals = axial_plot["Separación [%]"].to_numpy()
-        ax_a.axhspan(f_axial_natural_hz*0.95, f_axial_natural_hz*1.05, alpha=0.16, label="Zona crítica ±5%")
-        ax_a.axhspan(f_axial_natural_hz*0.88, f_axial_natural_hz*1.12, alpha=0.08, label="Zona de precaución ±12%")
-        ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.6, label=f"Frecuencia natural axial = {f_axial_natural_hz:.2f} Hz")
-        ax_a.vlines(x, 0, f_exc_vals, linewidth=4, alpha=0.55)
-        ax_a.scatter(x, f_exc_vals, s=180, zorder=5, label="Excitación calculada")
-        for i, (f, sep, riesgo) in enumerate(zip(f_exc_vals, sep_vals, axial_plot["Riesgo axial"])):
-            ax_a.text(i, f + max(f_axial_natural_hz*0.035, 0.15), f"{f:.2f} Hz\nsep. {sep:.1f}%", ha="center", va="bottom", fontsize=8)
-        ax_a.set_xticks(x)
-        ax_a.set_xticklabels(axial_plot["Orden de excitación"].tolist())
-        ax_a.set_ylabel("Frecuencia [Hz]")
-        ax_a.set_title("Órdenes axiales vs frecuencia natural del sistema", fontsize=12, fontweight="bold")
-        ax_a.grid(True, axis="y", linestyle=":", alpha=0.55)
-        ax_a.legend(loc="best", fontsize=8)
-        st.pyplot(fig_a)
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_axial_orders_prof(axial_df, f_axial_natural_hz), use_container_width=True, config=_plotly_config())
+        else:
+            fig_a, ax_a = plt.subplots(figsize=(10.8, 4.8))
+            axial_plot = axial_df.copy()
+            x = np.arange(len(axial_plot))
+            f_exc_vals = axial_plot["Frecuencia excitante [Hz]"].to_numpy()
+            ax_a.axhspan(f_axial_natural_hz*0.95, f_axial_natural_hz*1.05, alpha=0.16, label="Zona crítica ±5%")
+            ax_a.axhspan(f_axial_natural_hz*0.88, f_axial_natural_hz*1.12, alpha=0.08, label="Zona de precaución ±12%")
+            ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.6, label=f"Frecuencia natural axial = {f_axial_natural_hz:.2f} Hz")
+            ax_a.vlines(x, 0, f_exc_vals, linewidth=4, alpha=0.55)
+            ax_a.scatter(x, f_exc_vals, s=180, zorder=5, label="Excitación calculada")
+            ax_a.set_xticks(x); ax_a.set_xticklabels(axial_plot["Orden de excitación"].tolist())
+            ax_a.set_ylabel("Frecuencia [Hz]"); ax_a.set_title("Órdenes axiales vs frecuencia natural del sistema", fontsize=12, fontweight="bold")
+            ax_a.grid(True, axis="y", linestyle=":", alpha=0.55); ax_a.legend(loc="best", fontsize=8)
+            st.pyplot(fig_a)
     
         st.markdown("### 🧾 Lectura técnica automática")
         peor_ax = axial_df.sort_values("Separación [%]").iloc[0]
@@ -3731,16 +3876,16 @@ with tab_vibracion:
                 estado_html("❌ Alerta: la RPM de operación cae dentro de la zona crítica.", "bad")
     
         with c2:
-            fig_l, ax_l = plt.subplots(figsize=(8, 3.8))
-            ax_l.axvline(x=rpm_critica_lateral, linestyle="--", linewidth=2, label="RPM crítica")
-            ax_l.axvspan(margen_inf, margen_sup, alpha=0.20, label="Zona ±20%")
-            ax_l.scatter([rpm_motor], [1], s=160, zorder=5, label="RPM operación")
-            ax_l.set_yticks([])
-            ax_l.set_xlabel("RPM")
-            ax_l.set_title("Margen frente a velocidad crítica lateral")
-            ax_l.grid(True, axis="x", linestyle=":", alpha=0.6)
-            ax_l.legend()
-            st.pyplot(fig_l)
+            if HAS_PLOTLY:
+                st.plotly_chart(plotly_lateral_margin_prof(rpm_motor, rpm_critica_lateral, margen_inf, margen_sup), use_container_width=True, config=_plotly_config())
+            else:
+                fig_l, ax_l = plt.subplots(figsize=(8, 3.8))
+                ax_l.axvline(x=rpm_critica_lateral, linestyle="--", linewidth=2, label="RPM crítica")
+                ax_l.axvspan(margen_inf, margen_sup, alpha=0.20, label="Zona ±20%")
+                ax_l.scatter([rpm_motor], [1], s=160, zorder=5, label="RPM operación")
+                ax_l.set_yticks([]); ax_l.set_xlabel("RPM"); ax_l.set_title("Margen frente a velocidad crítica lateral")
+                ax_l.grid(True, axis="x", linestyle=":", alpha=0.6); ax_l.legend()
+                st.pyplot(fig_l)
     
 
 # ==============================================================================
@@ -3964,7 +4109,7 @@ with tab_cav:
             {"Criterio": "Keller", "Valor": "Cumple" if keller_ok else "Revisar", "Lectura": "Evalúa si Ae/A0 es suficiente para limitar cavitación."},
             {"Criterio": "Ae/A0 actual", "Valor": f"{ae_val:.3f}", "Lectura": "Más área expandida reduce carga de pala, aunque puede penalizar eficiencia."},
         ])
-        st.dataframe(cav_visual_df, use_container_width=True, height=220)
+        dataframe_profesional(cav_visual_df, height=240)
         if keller_ok and burrill_ok and sigma_n > 0.20:
             estado_html("✅ Visualización favorable: los criterios preliminares de cavitación son aceptables.", "good")
         else:
@@ -3979,7 +4124,10 @@ with tab_cav:
         b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
         b3.metric("Margen", f"{(tau_c_admisible - tau_c_burrill):.3f}")
         estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala es elevada.", "good" if burrill_ok else "warn")
-        st.pyplot(crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_burrill_prof(sigma_n, tau_c_burrill, tau_c_admisible), use_container_width=True, config=_plotly_config())
+        else:
+            st.pyplot(crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
 
     with cav_keller:
         st.markdown("### 📐 Criterio de Keller")
@@ -3990,7 +4138,10 @@ with tab_cav:
         k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
         k3.metric("Margen", f"{(ae_val - keller_ae_min):.3f}")
         estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido." if keller_ok else "❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga.", "good" if keller_ok else "bad")
-        st.pyplot(crear_figura_keller(keller_ae_min, ae_val))
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_keller_prof(keller_ae_min, ae_val), use_container_width=True, config=_plotly_config())
+        else:
+            st.pyplot(crear_figura_keller(keller_ae_min, ae_val))
 
     with cav_flujo:
         st.markdown("### 🌊 Reynolds y coeficiente de cavitación σ")
@@ -4001,30 +4152,32 @@ with tab_cav:
         c3.metric("σ", f"{sigma_n:.3f}")
         col_re, col_sig = st.columns(2)
         with col_re:
-            fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
-            etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
-            valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
-            ax_re.barh(etiquetas_re, valores_re)
-            ax_re.set_xscale("log")
-            ax_re.set_xlabel("Número de Reynolds Re [escala log]")
-            ax_re.set_title("Comparación de régimen de flujo")
-            ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
-            st.pyplot(fig_re)
+            if HAS_PLOTLY:
+                st.plotly_chart(plotly_reynolds_prof(reynolds), use_container_width=True, config=_plotly_config())
+            else:
+                fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
+                etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
+                valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
+                ax_re.barh(etiquetas_re, valores_re)
+                ax_re.set_xscale("log"); ax_re.set_xlabel("Número de Reynolds Re [escala log]"); ax_re.set_title("Comparación de régimen de flujo")
+                ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
+                st.pyplot(fig_re)
             if reynolds_ok:
                 st.success("✅ Flujo turbulento típico de hélices navales.")
             else:
                 st.warning("⚠️ Reynolds bajo para escala naval.")
         with col_sig:
-            fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
-            etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
-            valores_sig = [0.20, 0.50, 1.00, sigma_n]
-            ax_sig.barh(etiquetas_sig, valores_sig)
-            ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite preliminar σ = 0.20")
-            ax_sig.set_xlabel("Coeficiente de cavitación σ")
-            ax_sig.set_title("Riesgo general de cavitación")
-            ax_sig.grid(True, linestyle=":", alpha=0.55)
-            ax_sig.legend(fontsize=8)
-            st.pyplot(fig_sig)
+            if HAS_PLOTLY:
+                st.plotly_chart(plotly_sigma_prof(sigma_n), use_container_width=True, config=_plotly_config())
+            else:
+                fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
+                etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
+                valores_sig = [0.20, 0.50, 1.00, sigma_n]
+                ax_sig.barh(etiquetas_sig, valores_sig)
+                ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite preliminar σ = 0.20")
+                ax_sig.set_xlabel("Coeficiente de cavitación σ"); ax_sig.set_title("Riesgo general de cavitación")
+                ax_sig.grid(True, linestyle=":", alpha=0.55); ax_sig.legend(fontsize=8)
+                st.pyplot(fig_sig)
             if cavitacion_ok:
                 st.success("🟢 σ favorable frente a cavitación.")
             else:
@@ -4149,7 +4302,7 @@ with tab_normativa:
 # ==============================================================================
 
 with tab_clase:
-    st.subheader("🧾 Recopilación final y conclusión técnica")
+    st.subheader("🧾 Dictamen técnico final y cierre ejecutivo")
 
     st.markdown("""
     <div class="section-card">
