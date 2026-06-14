@@ -3150,7 +3150,15 @@ with tab_motor:
     st.markdown("### 📊 Validación visual motor–transmisión")
     st.markdown("Esta gráfica resume si el motor tiene reserva suficiente y si la transmisión es coherente con la RPM objetivo de la hélice. Sirve para defender de forma visual el criterio del 85% MCR y la relación de reducción.")
     if HAS_PLOTLY:
-        fig_motor_trans = crear_figura_motor_transmision_interactiva(PB_kw_calc, motor_mcr_kw if motor_mcr_kw>0 else MCR_requerido_kw, motor_rpm, rpm_helice_objetivo, relacion_reduccion, transmision_tipo, motor_nombre)
+        fig_motor_trans = crear_figura_motor_transmision_interactiva(
+            PB_kw_calc,
+            motor_mcr_kw if motor_mcr_kw > 0 else MCR_requerido_kw,
+            motor_ncr_rpm if motor_ncr_rpm > 0 else rpm_helice_objetivo,
+            rpm_helice_objetivo,
+            relacion_reduccion,
+            transmision_tipo,
+            motor_nombre
+        )
         st.plotly_chart(fig_motor_trans, use_container_width=True)
     else:
         st.info("Instala plotly para ver el diagrama interactivo motor–transmisión.")
