@@ -958,34 +958,73 @@ def _add_cuboid(fig, center, size, name="Bloque", opacity=0.75, color="#475569",
 
 
 def _add_hull_envelope(fig, D, Lpp, shaft_len):
-    """Crea una silueta de casco semitransparente para que el gemelo se lea como un buque."""
-    L_vis = max(shaft_len + 2.8*D, 18.0)
-    x = np.linspace(-1.45*D, shaft_len + 1.35*D, 46)
-    s = (x - x.min()) / max(x.max() - x.min(), 1e-9)
-    beam = 1.36*D * (np.sin(np.pi*s)**0.42) * (0.92 + 0.08*np.cos(2*np.pi*s))
-    depth = 0.62*D * (np.sin(np.pi*s)**0.30)
-    theta = np.linspace(0, 2*np.pi, 42)
-    X, T = np.meshgrid(x, theta)
-    B = np.interp(X[0], x, beam)[None, :]
-    H = np.interp(X[0], x, depth)[None, :]
-    # Se muestra una envolvente alrededor del tren, no un casco CAD final.
-    Y = B*np.cos(T)
-    Z = -0.22*D + 0.55*H*np.sin(T) - 0.12*D
-    fig.add_trace(go.Surface(
-        x=X, y=Y, z=Z,
-        colorscale=[[0,"#dbeafe"],[1,"#bfdbfe"]],
-        opacity=0.18, showscale=False, name="Envolvente del casco",
-        hovertemplate=("<b>Envolvente conceptual del casco</b><br>"
-                       "Representa la zona de popa y el volumen del buque alrededor del tren propulsor.<br>"
-                       "No sustituye al modelo de casco CAD/hidrostático.<extra></extra>")
-    ))
-    # Quilla / línea de crujía.
+    """Silueta técnica de casco de popa, sin volumen ovalado.
+
+    Se dibuja como líneas/curvas de referencia para que el tren propulsor se lea
+    dentro de un buque, pero sin tapar la hélice ni hacer pesada la escena 3D.
+    """
+    D = max(float(D), 0.2)
+    x_min = -1.55*D
+    x_max = shaft_len + 1.45*D
+    x = np.linspace(x_min, x_max, 120)
+    s = (x - x_min) / max(x_max - x_min, 1e-9)
+
+    # Perfil de popa/casco visto como wireframe: más fino en proa/popas, más lleno al centro.
+    half_beam = 1.10*D * (np.sin(np.pi*s)**0.50) * (0.78 + 0.22*s)
+    keel = -0.72*D + 0.10*D*np.sin(np.pi*s)
+    deck = 0.46*D * (np.sin(np.pi*s)**0.18) + 0.10*D
+
+    line_color = "rgba(30,64,175,0.42)"
+    keel_color = "rgba(15,23,42,0.78)"
+
+    # Bordas/deck y quilla longitudinal.
+    for ysign, nombre in [(1, "Borda de estribor"), (-1, "Borda de babor")]:
+        fig.add_trace(go.Scatter3d(
+            x=x, y=ysign*half_beam, z=deck,
+            mode="lines", line=dict(width=4, color=line_color), name=nombre,
+            hovertemplate=(f"<b>{nombre}</b><br>Silueta conceptual del casco alrededor del tren propulsor.<br>"
+                           "Permite ubicar motor, línea de ejes y hélice dentro del buque.<extra></extra>")
+        ))
+        fig.add_trace(go.Scatter3d(
+            x=x, y=ysign*0.68*half_beam, z=keel+0.10*D,
+            mode="lines", line=dict(width=3, color="rgba(59,130,246,0.24)"), showlegend=False,
+            hovertemplate="<b>Línea lateral inferior</b><br>Referencia de volumen sumergido de popa.<extra></extra>"
+        ))
+
     fig.add_trace(go.Scatter3d(
-        x=[x.min(), x.max()], y=[0,0], z=[-0.68*D, -0.68*D], mode="lines",
-        line=dict(width=5, color="#0f172a"), name="Línea de crujía / quilla",
-        hovertemplate="<b>Línea de crujía</b><br>Referencia longitudinal del buque.<extra></extra>"
+        x=x, y=np.zeros_like(x), z=keel,
+        mode="lines", line=dict(width=6, color=keel_color), name="Quilla / crujía",
+        hovertemplate="<b>Quilla / línea de crujía</b><br>Referencia longitudinal central del buque.<extra></extra>"
     ))
 
+    # Cuadernas/frames conceptuales, pocas para no saturar ni volver lenta la escena.
+    for idx, sx in enumerate(np.linspace(0.10, 0.92, 7)):
+        xi = x_min + sx*(x_max-x_min)
+        hb = np.interp(xi, x, half_beam)
+        ztop = np.interp(xi, x, deck)
+        zbot = np.interp(xi, x, keel)
+        ang = np.linspace(0, np.pi, 50)
+        yy = hb*np.cos(ang)
+        zz = zbot + (ztop-zbot)*(np.sin(ang)**0.72)
+        fig.add_trace(go.Scatter3d(
+            x=np.full_like(yy, xi), y=yy, z=zz,
+            mode="lines", line=dict(width=2.2, color="rgba(15,23,42,0.23)"),
+            name="Cuadernas conceptuales" if idx == 0 else "", showlegend=bool(idx == 0),
+            hovertemplate="<b>Cuaderna conceptual</b><br>Sección transversal simplificada del casco de popa.<extra></extra>"
+        ))
+
+    # Espejo de popa cerca de la hélice.
+    xi = shaft_len + 0.28*D
+    hb = np.interp(min(xi, x_max), x, half_beam)
+    ztop = np.interp(min(xi, x_max), x, deck)
+    zbot = np.interp(min(xi, x_max), x, keel)
+    yy = np.array([-hb, hb, hb*0.86, -hb*0.86, -hb])
+    zz = np.array([zbot+0.10*D, zbot+0.10*D, ztop, ztop, zbot+0.10*D])
+    fig.add_trace(go.Scatter3d(
+        x=np.full_like(yy, xi), y=yy, z=zz,
+        mode="lines", line=dict(width=4, color="rgba(14,116,144,0.42)"), name="Espejo / popa",
+        hovertemplate="<b>Zona de popa</b><br>Salida del eje, bocina y ubicación del propulsor.<extra></extra>"
+    ))
 
 def _rotar_xy(x, y, ang):
     x = np.asarray(x, dtype=float)
@@ -1047,7 +1086,7 @@ def crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw, MCR_kw):
     return fig
 
 
-def _propeller_mesh_arrays(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, phase=0.0, x_offset=0.0, axis="z", detail=34):
+def _propeller_mesh_arrays(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, phase=0.0, x_offset=0.0, axis="z", detail=24):
     """Genera una hélice conceptual pero más refinada: pala con cuerda radial, twist, skew, rake y espesor.
     axis='z' orienta la hélice en el plano XY; axis='x' orienta el disco en YZ para el tren propulsor.
     """
@@ -1109,57 +1148,95 @@ def _propeller_mesh_arrays(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, pha
 
 
 def crear_helice_3d_parametrica(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, rpm=75.0, animar=True):
+    """Hélice paramétrica interactiva en vista de perfil naval.
+
+    Eje longitudinal en X y disco de hélice en YZ, como se observa en un arreglo
+    propulsivo real. El modelo cambia con D, Z, P/D, Ae/A0 y hub ratio.
+    """
     if go is None:
         return None
     R = max(D/2.0, 0.1)
     Rhub = max(hub_ratio*R, 0.08*R)
-    x, y, z, i, j, k, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0, axis="z", detail=38)
+
+    # Menor densidad cuando hay animación para que el giro sea más fluido.
+    detail = 26 if animar else 38
+    x, y, z, i, j, k, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0, axis="x", detail=detail)
     fig = go.Figure()
+    hover_pala = (
+        f"<b>Pala paramétrica</b><br>"
+        f"D={D:.2f} m · Z={Z}<br>P/D={PD:.3f}<br>Ae/A0={AeAo:.3f}<br>"
+        "Radio normalizado=%{intensity:.2f}<br>La cuerda y torsión visual cambian con los datos de entrada.<extra></extra>"
+    )
     fig.add_trace(go.Mesh3d(
         x=x, y=y, z=z, i=i, j=j, k=k,
         intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False,
-        name="Palas paramétricas", hovertemplate="Pala paramétrica<br>radio normalizado=%{intensity:.2f}<extra></extra>", showscale=False
+        name="Palas paramétricas", hovertemplate=hover_pala, showscale=False
     ))
-    # borde exterior de disco de referencia
-    theta = np.linspace(0, 2*np.pi, 220)
-    fig.add_trace(go.Scatter3d(x=R*np.cos(theta), y=R*np.sin(theta), z=np.zeros_like(theta), mode="lines", line=dict(width=3, color="#94a3b8"), name="Disco de hélice"))
-    # Cubo y eje corto.
-    Xh, Yh, Zh = _cylinder_surface(radius=Rhub, length=0.46*R, x0=-0.23*R, axis="z", n_theta=72, n_len=14)
-    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.98, name="Cubo"))
-    Xs, Ys, Zs = _cylinder_surface(radius=max(0.055*R, Rhub*0.22), length=1.50*R, x0=-1.02*R, axis="z", n_theta=60, n_len=12)
-    fig.add_trace(go.Surface(x=Xs, y=Ys, z=Zs, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.88, name="Eje"))
+
+    # Anillos de referencia del disco de hélice en plano YZ.
+    theta = np.linspace(0, 2*np.pi, 180)
+    for rr, name, width in [(R, "Disco de hélice", 4), (0.70*R, "Radio 0.7R", 2)]:
+        fig.add_trace(go.Scatter3d(
+            x=np.zeros_like(theta), y=rr*np.cos(theta), z=rr*np.sin(theta), mode="lines",
+            line=dict(width=width, color="#94a3b8" if rr == R else "#10b981"), name=name,
+            hovertemplate=f"<b>{name}</b><br>Referencia radial del propulsor.<extra></extra>"
+        ))
+
+    # Cubo y eje corto alineados en X.
+    Xh, Yh, Zh = _cylinder_surface(radius=Rhub, length=0.46*R, x0=-0.23*R, axis="x", n_theta=60, n_len=10)
+    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.98, name="Cubo", hovertemplate=f"<b>Cubo de hélice</b><br>Hub ratio={hub_ratio:.3f}<br>Radio cubo≈{Rhub:.2f} m<extra></extra>"))
+    Xs, Ys, Zs = _cylinder_surface(radius=max(0.055*R, Rhub*0.22), length=1.55*R, x0=-1.05*R, axis="x", n_theta=52, n_len=10)
+    fig.add_trace(go.Surface(x=Xs, y=Ys, z=Zs, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.88, name="Eje", hovertemplate="<b>Eje de referencia</b><br>Permite visualizar la orientación real del propulsor.<extra></extra>"))
+
+    # Flecha de empuje/flujo en perfil.
+    fig.add_trace(go.Cone(
+        x=[0.95*R], y=[0], z=[0], u=[0.9*R], v=[0], w=[0], sizemode="absolute", sizeref=0.40*R,
+        anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0284c7"]], showscale=False, name="Empuje",
+        hovertemplate="<b>Empuje</b><br>Dirección conceptual de la fuerza propulsiva en el eje longitudinal.<extra></extra>"
+    ))
 
     if animar:
         frames=[]
-        for n, ang in enumerate(np.linspace(0, 2*np.pi, 24, endpoint=False)):
-            xr, yr = _rotar_xy(x, y, ang)
-            xdr, ydr = _rotar_xy(R*np.cos(theta), R*np.sin(theta), ang)
+        y0 = np.asarray(y, dtype=float); z0 = np.asarray(z, dtype=float)
+        yd0 = R*np.cos(theta); zd0 = R*np.sin(theta)
+        y07 = 0.70*R*np.cos(theta); z07 = 0.70*R*np.sin(theta)
+        # 18 cuadros: más liviano y más fluido en Streamlit Cloud.
+        for n, ang in enumerate(np.linspace(0, 2*np.pi, 18, endpoint=False)):
+            ca, sa = np.cos(ang), np.sin(ang)
+            yr = ca*y0 - sa*z0
+            zr = sa*y0 + ca*z0
+            ydr = ca*yd0 - sa*zd0
+            zdr = sa*yd0 + ca*zd0
+            y7r = ca*y07 - sa*z07
+            z7r = sa*y07 + ca*z07
             frames.append(go.Frame(data=[
-                go.Mesh3d(x=xr, y=yr, z=z, i=i, j=j, k=k, intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False, showscale=False),
-                go.Scatter3d(x=xdr, y=ydr, z=np.zeros_like(theta), mode="lines", line=dict(width=3, color="#94a3b8"))
-            ], traces=[0,1], name=str(n)))
+                go.Mesh3d(x=x, y=yr, z=zr, i=i, j=j, k=k, intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False, showscale=False, hovertemplate=hover_pala),
+                go.Scatter3d(x=np.zeros_like(theta), y=ydr, z=zdr, mode="lines", line=dict(width=4, color="#94a3b8")),
+                go.Scatter3d(x=np.zeros_like(theta), y=y7r, z=z7r, mode="lines", line=dict(width=2, color="#10b981")),
+            ], traces=[0,1,2], name=str(n)))
         fig.frames = frames
         fig.update_layout(updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
-            dict(label="▶ Girar", method="animate", args=[None, {"frame":{"duration":80, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+            dict(label="▶ Giro continuo", method="animate", args=[None, {"frame":{"duration":45, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
             dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
         ])])
 
     fig.update_layout(
-        title=dict(text=f"Hélice 3D paramétrica — Z={Z}, D={D:.2f} m, P/D={PD:.3f}, Ae/A0={AeAo:.3f}, n≈{rpm:.1f} rpm", x=0.02, xanchor="left"),
+        title=dict(text=f"Hélice 3D paramétrica de perfil — Z={Z}, D={D:.2f} m, P/D={PD:.3f}, Ae/A0={AeAo:.3f}, n≈{rpm:.1f} rpm", x=0.02, xanchor="left"),
         scene=dict(
-            xaxis_title="X [m]", yaxis_title="Y [m]", zaxis_title="Eje / paso visual [m]",
+            xaxis_title="Eje longitudinal X [m]", yaxis_title="Radio transversal Y [m]", zaxis_title="Radio vertical Z [m]",
             aspectmode="data", bgcolor="white",
-            camera=dict(eye=dict(x=1.65, y=1.65, z=1.05)),
+            camera=dict(eye=dict(x=1.90, y=1.95, z=0.95)),
+            dragmode="orbit",
             xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
             yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
             zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
         ),
-        height=680,
+        height=640,
         margin=dict(l=0, r=0, t=70, b=0),
-        paper_bgcolor="white"
+        paper_bgcolor="white",
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a")
     )
     return fig
-
 
 def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Directa", relacion=1.0, PB=25000, rpm=75, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155):
     """Gemelo digital 3D del tren propulsor.
@@ -1236,7 +1313,7 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
         ))
 
     # Hélice paramétrica en plano YZ al final del eje.
-    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0.0, x_offset=shaft_len+0.05*D, axis="x", detail=34)
+    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0.0, x_offset=shaft_len+0.05*D, axis="x", detail=24)
     prop_trace = len(fig.data)
     fig.add_trace(go.Mesh3d(
         x=xp, y=yp, z=zp, i=ii, j=jj, k=kk, intensity=inten, colorscale="Viridis", opacity=0.97,
@@ -1264,26 +1341,14 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
             hovertemplate="<b>Flujo de agua</b><br>Representación conceptual de la estela hacia el propulsor.<extra></extra>"
         ))
 
-    # Etiquetas informativas flotantes.
-    labels = [
-        (-0.72*D, 0.68*D, 0.55*D, "Motor"),
-        (0.65*D, 0.62*D, 0.22*D, "Cojinetes"),
-        (shaft_len*0.58, 0.55*D, 0.20*D, "Eje"),
-        (shaft_len+0.12*D, 0.85*D, 0.35*D, "Hélice"),
-        (shaft_len+1.05*D, 0.30*D, 0.30*D, "Empuje"),
-    ]
-    fig.add_trace(go.Scatter3d(
-        x=[p[0] for p in labels], y=[p[1] for p in labels], z=[p[2] for p in labels],
-        mode="text", text=[p[3] for p in labels], textfont=dict(size=12, color="#0f172a"),
-        name="Etiquetas", hoverinfo="skip"
-    ))
+    # Las etiquetas flotantes se omiten para evitar texto borroso; la información aparece en hover y tablas.
 
     # Animación: rota la hélice alrededor del eje X. El usuario también puede mover todo con el mouse.
     frames = []
     y0 = np.asarray(yp, dtype=float)
     z0 = np.asarray(zp, dtype=float)
     zcenter = 0.0
-    for n, ang in enumerate(np.linspace(0, 2*np.pi, 30, endpoint=False)):
+    for n, ang in enumerate(np.linspace(0, 2*np.pi, 18, endpoint=False)):
         ca, sa = np.cos(ang), np.sin(ang)
         yr = ca*y0 - sa*(z0-zcenter)
         zr = sa*y0 + ca*(z0-zcenter) + zcenter
@@ -1293,7 +1358,7 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
         ))
     fig.frames = frames
     fig.update_layout(updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
-        dict(label="▶ Animar hélice", method="animate", args=[None, {"frame":{"duration":70, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+        dict(label="▶ Animar hélice", method="animate", args=[None, {"frame":{"duration":45, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
         dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
     ])])
 
@@ -1302,12 +1367,12 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
         scene=dict(
             xaxis_title="Longitud del tren [m]", yaxis_title="Manga conceptual", zaxis_title="Vertical",
             aspectmode="data", bgcolor="white",
-            camera=dict(eye=dict(x=1.85, y=1.25, z=0.85)),
+            camera=dict(eye=dict(x=1.75, y=1.65, z=0.92)),
             xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
             yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
             zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
         ),
-        height=720,
+        height=660,
         margin=dict(l=0, r=0, t=70, b=0),
         paper_bgcolor="white",
         hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a")
@@ -1316,6 +1381,7 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
 
 
 def crear_cavitacion_3d_visual(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, sigma=1.0, keller_ok=True, burrill_ok=True):
+    """Visualización animada conceptual de cavitación alrededor de la hélice."""
     if go is None:
         return None
     fig = crear_helice_3d_parametrica(D=D, Z=Z, PD=PD, AeAo=AeAo, hub_ratio=hub_ratio, rpm=0, animar=False)
@@ -1323,26 +1389,71 @@ def crear_cavitacion_3d_visual(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155,
         return None
     riesgo = 0.18 if (keller_ok and burrill_ok and sigma > 0.2) else 0.78
     rng = np.random.default_rng(7)
-    n = int(35 + 130*riesgo)
+    n = int(34 + 95*riesgo)
     R = D/2
-    theta = rng.uniform(0, 2*np.pi, n)
-    rr = rng.uniform(0.63*R, 1.08*R, n)
-    x = rr*np.cos(theta)
-    y = rr*np.sin(theta)
-    z = rng.normal(0.12*R, 0.075*R, n)
-    size = 3.5 + 7.0*riesgo
-    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="markers", marker=dict(size=size, opacity=0.38, color="#38bdf8"), name="Burbujas simbólicas"))
-    # anillo de zona de punta donde suele aumentar riesgo
+
+    # Nube de burbujas cerca de punta y cara de succión, en perfil YZ.
+    theta_b = rng.uniform(0, 2*np.pi, n)
+    rr = rng.uniform(0.62*R, 1.05*R, n)
+    xb = rng.normal(0.10*R, 0.18*R, n)
+    yb = rr*np.cos(theta_b)
+    zb = rr*np.sin(theta_b)
+    size = 3.2 + 6.0*riesgo
+    bubble_trace = len(fig.data)
+    fig.add_trace(go.Scatter3d(
+        x=xb, y=yb, z=zb, mode="markers",
+        marker=dict(size=size, opacity=0.42, color="#38bdf8"), name="Burbujas simbólicas",
+        hovertemplate=(f"<b>Burbujas de cavitación simbólicas</b><br>σ={sigma:.3f}<br>"
+                       f"Burrill={'Cumple' if burrill_ok else 'Revisar'}<br>Keller={'Cumple' if keller_ok else 'Revisar'}<br>"
+                       "La densidad visual aumenta cuando el riesgo preliminar es mayor.<extra></extra>")
+    ))
+
     th = np.linspace(0, 2*np.pi, 180)
-    fig.add_trace(go.Scatter3d(x=0.95*R*np.cos(th), y=0.95*R*np.sin(th), z=np.full_like(th, 0.18*R), mode="lines", line=dict(width=5, color="#f59e0b" if riesgo>0.4 else "#10b981"), name="Zona de punta"))
-    fig.update_layout(title=dict(text="Visualización conceptual de cavitación y zona de punta", x=0.02, xanchor="left"))
+    fig.add_trace(go.Scatter3d(
+        x=np.full_like(th, 0.10*R), y=0.95*R*np.cos(th), z=0.95*R*np.sin(th), mode="lines",
+        line=dict(width=5, color="#f59e0b" if riesgo>0.4 else "#10b981"), name="Zona de punta",
+        hovertemplate="<b>Zona de punta</b><br>Región donde suelen aparecer las primeras señales de cavitación de punta.<extra></extra>"
+    ))
+
+    # Líneas de flujo animadas.
+    flow_traces = []
+    for idx, yy in enumerate(np.linspace(-0.82*R, 0.82*R, 5)):
+        flow_traces.append(len(fig.data))
+        xx = np.linspace(-1.6*R, 0.9*R, 80)
+        zz = 0.12*R*np.sin(np.linspace(0, 2*np.pi, 80) + idx)
+        fig.add_trace(go.Scatter3d(
+            x=xx, y=np.full_like(xx, yy), z=zz, mode="lines",
+            line=dict(width=3, color="rgba(14,165,233,0.38)"), name="Líneas de flujo" if idx==0 else "", showlegend=idx==0,
+            hovertemplate="<b>Línea de flujo</b><br>Representa la estela que llega al disco de la hélice.<extra></extra>"
+        ))
+
+    frames=[]
+    for nframe, ang in enumerate(np.linspace(0, 2*np.pi, 20, endpoint=False)):
+        # Las burbujas orbitan suavemente y avanzan un poco en X.
+        ca, sa = np.cos(ang), np.sin(ang)
+        ybr = ca*yb - sa*zb
+        zbr = sa*yb + ca*zb
+        xbr = xb + 0.10*R*np.sin(ang + theta_b)
+        frame_data = [go.Scatter3d(x=xbr, y=ybr, z=zbr, mode="markers", marker=dict(size=size, opacity=0.42, color="#38bdf8"))]
+        traces = [bubble_trace]
+        for idx, tr in enumerate(flow_traces):
+            xx = np.linspace(-1.6*R, 0.9*R, 80)
+            zz = 0.12*R*np.sin(np.linspace(0, 2*np.pi, 80) + idx + ang)
+            frame_data.append(go.Scatter3d(x=xx, y=np.full_like(xx, np.linspace(-0.82*R,0.82*R,5)[idx]), z=zz, mode="lines", line=dict(width=3, color="rgba(14,165,233,0.38)")))
+            traces.append(tr)
+        frames.append(go.Frame(data=frame_data, traces=traces, name=f"cav_{nframe}"))
+    fig.frames = frames
+    fig.update_layout(
+        title=dict(text="Cavitación visual animada — zona de punta, burbujas y estela", x=0.02, xanchor="left"),
+        updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
+            dict(label="▶ Animar cavitación", method="animate", args=[None, {"frame":{"duration":55, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+            dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
+        ])],
+        scene=dict(camera=dict(eye=dict(x=1.9, y=1.8, z=0.95)), dragmode="orbit"),
+        height=640
+    )
     return fig
 
-# ==============================================================================
-# CARGA DEL ARCHIVO WAGENINGEN
-# ==============================================================================
-
-@st.cache_data
 def load_coefficients():
     try:
         kt_df = pd.read_excel("Tabla 1.xlsx", sheet_name="KT")
@@ -3835,7 +3946,7 @@ with tab_gemelo:
 
         with twin_sistema:
             st.markdown("""
-            ### Tren propulsor 3D interactivo
+            ### Tren propulsor 3D interactivo de popa
             El modelo representa el arreglo conceptual **motor → transmisión → línea de ejes → cojinetes → hélice → empuje** dentro de una envolvente de casco.
             Puedes rotarlo, acercarlo y moverlo con el mouse; además, al pasar el cursor sobre cada componente aparece información técnica del elemento. La escala cambia automáticamente con el diámetro de hélice, diámetro de eje, potencia, RPM y tipo de transmisión.
             """)
@@ -3864,7 +3975,7 @@ with tab_gemelo:
 
         with twin_helice:
             st.markdown("""
-            ### Hélice 3D paramétrica animada
+            ### Hélice 3D paramétrica de perfil y animada
             Esta hélice no es una pieza CAD final, pero sí es un modelo paramétrico: cambia con el **número de palas, diámetro, P/D, Ae/A0 y hub ratio**.
             Puedes rotarla manualmente con el mouse o usar el botón **Girar** dentro de la gráfica. El objetivo es visualizar cómo los parámetros hidrodinámicos se traducen en forma geométrica del propulsor.
             """)
@@ -3882,7 +3993,7 @@ with tab_gemelo:
 
         with twin_cavitacion:
             st.markdown("""
-            ### Cavitación visual conceptual
+            ### Cavitación visual conceptual animada
             Esta vista transforma los resultados de **σ**, **Burrill** y **Keller** en una nube simbólica de cavitación. 
             No es CFD, pero ayuda a explicar visualmente por qué aumentar Ae/A0, diámetro o inmersión puede reducir el riesgo de cavitación.
             """)
