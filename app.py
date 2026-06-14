@@ -835,6 +835,72 @@ def recomendar_reductoras(pb_kw, relacion_necesaria, n=8):
     return db.head(n).reset_index(drop=True)
 
 
+
+def crear_figura_motor_transmision_interactiva(pb_kw, mcr_kw, rpm_motor_val, rpm_helice_val, relacion_val, tipo_trans, motor_nombre_txt="Motor seleccionado"):
+    """Diagrama interactivo para la pestaña Motor/Reductora.
+    Muestra reserva MCR, punto de operación al 85% y compatibilidad de transmisión.
+    """
+    if go is None:
+        return None
+    pb_kw = float(max(pb_kw, 0.0))
+    mcr_kw = float(max(mcr_kw, pb_kw if pb_kw > 0 else 1.0))
+    p85 = 0.85*mcr_kw
+    reserva = max(mcr_kw - pb_kw, 0.0)
+    uso_mcr = safe_div(pb_kw, mcr_kw, default=0.0)*100.0
+    rpm_motor_val = float(max(rpm_motor_val, 0.0))
+    rpm_helice_val = float(max(rpm_helice_val, 0.0))
+    relacion_real = safe_div(rpm_motor_val, rpm_helice_val, default=relacion_val if relacion_val else 1.0)
+    fig = go.Figure()
+
+    # Barras de potencia: MCR, 85% MCR y PB.
+    fig.add_trace(go.Bar(
+        x=["MCR motor", "85% MCR", "PB requerida"],
+        y=[mcr_kw, p85, pb_kw],
+        text=[f"{mcr_kw:,.0f} kW", f"{p85:,.0f} kW", f"{pb_kw:,.0f} kW"],
+        textposition="outside",
+        name="Potencia",
+        hovertemplate="<b>%{x}</b><br>%{y:,.0f} kW<extra></extra>",
+        marker=dict(color=["#312e81", "#2563eb", "#059669"])
+    ))
+    fig.add_hline(y=p85, line_dash="dash", line_color="#2563eb", annotation_text="Referencia 85% MCR", annotation_position="top left")
+    fig.add_hline(y=mcr_kw, line_dash="dot", line_color="#312e81", annotation_text="MCR disponible", annotation_position="top right")
+
+    # Diagrama simplificado motor -> transmisión -> hélice en coordenadas de papel.
+    shapes = [
+        (0.08,0.15,0.28,0.31,"#312e81","Motor"),
+        (0.40,0.15,0.56,0.31,"#475569","Transmisión"),
+        (0.72,0.15,0.92,0.31,"#0891b2","Hélice"),
+    ]
+    for x0,y0,x1,y1,col,label in shapes:
+        fig.add_shape(type="rect", xref="paper", yref="paper", x0=x0, y0=y0, x1=x1, y1=y1,
+                      line=dict(color=col, width=2), fillcolor="rgba(255,255,255,0.96)")
+        fig.add_annotation(xref="paper", yref="paper", x=(x0+x1)/2, y=(y0+y1)/2+0.025,
+                           text=f"<b>{label}</b>", showarrow=False, font=dict(color="#0f172a", size=12))
+    fig.add_annotation(xref="paper", yref="paper", x=0.18, y=0.18, text=f"{rpm_motor_val:,.0f} rpm", showarrow=False, font=dict(color="#312e81", size=11))
+    fig.add_annotation(xref="paper", yref="paper", x=0.48, y=0.18, text=f"i≈{relacion_real:.2f}:1", showarrow=False, font=dict(color="#475569", size=11))
+    fig.add_annotation(xref="paper", yref="paper", x=0.82, y=0.18, text=f"{rpm_helice_val:,.1f} rpm", showarrow=False, font=dict(color="#0891b2", size=11))
+    fig.add_shape(type="line", xref="paper", yref="paper", x0=0.28, y0=0.23, x1=0.40, y1=0.23, line=dict(color="#94a3b8", width=6))
+    fig.add_shape(type="line", xref="paper", yref="paper", x0=0.56, y0=0.23, x1=0.72, y1=0.23, line=dict(color="#94a3b8", width=6))
+
+    estado = "Cumple ideal" if pb_kw <= p85 else ("Cumple con observación" if pb_kw <= mcr_kw else "No cumple")
+    color_estado = "#059669" if estado == "Cumple ideal" else ("#f59e0b" if estado == "Cumple con observación" else "#dc2626")
+    fig.add_annotation(xref="paper", yref="paper", x=0.50, y=0.03, showarrow=False,
+                       text=(f"<b>Dictamen:</b> <span style='color:{color_estado}'>{estado}</span> · "
+                             f"uso del MCR ≈ {uso_mcr:.1f}% · reserva ≈ {reserva:,.0f} kW"),
+                       font=dict(size=13, color="#0f172a"))
+    fig.update_layout(
+        title=dict(text=f"Validación visual de motor y transmisión — {motor_nombre_txt}", x=0.02, xanchor="left"),
+        height=430,
+        margin=dict(l=30, r=30, t=70, b=30),
+        yaxis=dict(title="Potencia [kW]", gridcolor="#e2e8f0", zeroline=False),
+        xaxis=dict(gridcolor="#ffffff"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        showlegend=False,
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a")
+    )
+    return fig
+
+
 @st.cache_data(show_spinner=False)
 def optimizar_helice_wageningen(modo="Rápida", rpm_referencia=0.0, va_ms_ref=0.0, diametro_ref_m=1.0):
     """
@@ -1401,6 +1467,25 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
         hovertemplate=f"<b>Cubo de hélice</b><br>Hub ratio={hub_ratio:.3f}<br>Conecta pala y eje propulsor.<extra></extra>"
     ))
 
+    # Timón y skeg/aftbody conceptual para que el conjunto se lea más como un buque real.
+    rud_x = shaft_len + 0.72*D
+    rud_y = np.array([-0.08*D, 0.08*D, 0.08*D, -0.08*D])
+    rud_z = np.array([-0.92*D, -0.92*D, 0.78*D, 0.78*D])
+    rud_xs = np.full_like(rud_y, rud_x)
+    fig.add_trace(go.Mesh3d(
+        x=rud_xs, y=rud_y, z=rud_z, i=[0,0], j=[1,2], k=[2,3],
+        color="#0f766e", opacity=0.38, name="Timón / plano de gobierno",
+        hovertemplate="<b>Timón conceptual</b><br>Plano de gobierno ubicado aguas abajo de la hélice. En un modelo real afectaría la estela, maniobra y pérdidas por apéndices.<extra></extra>"
+    ))
+    skeg_x = np.array([shaft_len-0.72*D, shaft_len+0.18*D, shaft_len+0.05*D, shaft_len-0.52*D])
+    skeg_y = np.array([0,0,0,0])
+    skeg_z = np.array([-0.24*D, -0.16*D, -0.72*D, -0.78*D])
+    fig.add_trace(go.Mesh3d(
+        x=skeg_x, y=skeg_y, z=skeg_z, i=[0,0], j=[1,2], k=[2,3],
+        color="#1d4ed8", opacity=0.26, name="Skeg / soporte de popa",
+        hovertemplate="<b>Skeg conceptual</b><br>Representa el soporte hidrodinámico de popa y la zona de salida del eje.<extra></extra>"
+    ))
+
     # Empuje y flujo de agua conceptual con tooltip.
     fig.add_trace(go.Cone(
         x=[shaft_len+0.68*D], y=[0], z=[0], u=[0.95*D], v=[0], w=[0], sizemode="absolute", sizeref=0.62*D,
@@ -1437,7 +1522,7 @@ def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Direct
     ])])
 
     fig.update_layout(
-        title=dict(text=f"Gemelo digital del tren propulsor — PB={PB:,.0f} kW, n={rpm:.1f} rpm, D={D:.2f} m", x=0.02, xanchor="left"),
+        title=dict(text=f"Sistema propulsivo 3D — PB={PB:,.0f} kW, n={rpm:.1f} rpm, D={D:.2f} m", x=0.02, xanchor="left"),
         scene=dict(
             xaxis_title="Longitud del tren [m]", yaxis_title="Manga conceptual", zaxis_title="Vertical",
             aspectmode="data", bgcolor="white",
@@ -2698,7 +2783,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🔍 Cavitación",
     "📚 Normativa",
     "📋 Clase",
-    "🚢 Gemelo Digital",
+    "🧩 Sistema propulsivo 3D",
     "⚙️ Integridad dinámica"
 ])
 
@@ -2930,6 +3015,13 @@ with tab_potencias:
         if HAS_PLOTLY:
             fig_sankey = crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw)
             st.plotly_chart(fig_sankey, use_container_width=True)
+            eficiencia_pb_pe = safe_div(PE_kw, PB_kw_calc, default=0.0)*100.0
+            if eficiencia_pb_pe >= 70:
+                estado_html(f"✅ Flujo energético favorable: la eficiencia global PB→PE es aproximadamente {eficiencia_pb_pe:.1f}% y las pérdidas son coherentes para un prediseño naval.", "good")
+            elif eficiencia_pb_pe >= 58:
+                estado_html(f"⚠️ Flujo energético a revisar: la eficiencia global PB→PE es {eficiencia_pb_pe:.1f}%. No implica falla, pero conviene revisar eficiencias, RT y margen.", "warn")
+            else:
+                estado_html(f"❌ Flujo energético deficiente: la eficiencia global PB→PE es {eficiencia_pb_pe:.1f}%. Revisar cadena de potencias y supuestos.", "bad")
         else:
             estado_html("⚠️ Para activar el flujo interactivo instala Plotly agregando `plotly` a requirements.txt.", "warn")
         sankey_df = pd.DataFrame([
@@ -3054,6 +3146,14 @@ with tab_motor:
         estado_html(f"⚠️ Motor compatible con observación: {motor_nombre}. La PB calculada queda {exceso_sobre_85_pct:.1f}% arriba del 85% MCR, pero aún está por debajo del MCR. Es válido como alerta de revisión, no como falla automática.", "warn")
     else:
         estado_html(f"❌ Motor insuficiente: {motor_nombre}. Se requiere un MCR mínimo aproximado de {MCR_requerido_kw:,.0f} kW.", "bad")
+
+    st.markdown("### 📊 Validación visual motor–transmisión")
+    st.markdown("Esta gráfica resume si el motor tiene reserva suficiente y si la transmisión es coherente con la RPM objetivo de la hélice. Sirve para defender de forma visual el criterio del 85% MCR y la relación de reducción.")
+    if HAS_PLOTLY:
+        fig_motor_trans = crear_figura_motor_transmision_interactiva(PB_kw_calc, motor_mcr_kw if motor_mcr_kw>0 else MCR_requerido_kw, motor_rpm, rpm_helice_objetivo, relacion_reduccion, transmision_tipo, motor_nombre)
+        st.plotly_chart(fig_motor_trans, use_container_width=True)
+    else:
+        st.info("Instala plotly para ver el diagrama interactivo motor–transmisión.")
 
     st.markdown("### 🧠 Recomendación automática desde base de motores")
     st.caption("Base didáctica amplia para preselección. Antes de entregar, confirma el modelo exacto con hoja técnica del fabricante.")
@@ -3995,23 +4095,23 @@ with tab_clase:
 
 
 with tab_gemelo:
-    st.subheader("🚢 Gemelo Digital Paramétrico del Sistema Propulsivo")
+    st.subheader("🧩 Sistema propulsivo 3D e integración visual")
     st.markdown("""
     <div class="section-card">
-    <b>Objetivo del módulo:</b> convertir los resultados numéricos de la app en una visualización técnica interactiva del sistema propulsivo.
-    El módulo funciona como un <b>gemelo digital conceptual</b>: cuando el usuario cambia diámetro, número de palas, P/D, Ae/A0, potencia, RPM, transmisión o cavitación, las gráficas y modelos se actualizan automáticamente.
+    <b>Objetivo del módulo:</b> convertir los resultados numéricos de la app en una visualización técnica interactiva del sistema eje–hélice.
+    El módulo funciona como una <b>integración 3D paramétrica del sistema propulsivo</b>: cuando el usuario cambia diámetro, número de palas, P/D, Ae/A0, potencia, RPM, transmisión o cavitación, las gráficas y modelos se actualizan automáticamente.
     <br><br>
     <span class="small-muted">
-    Nota técnica: el modelo 3D es paramétrico y didáctico. No sustituye CAD de fabricación, CFD, planos aprobados ni modelo de astillero; sirve para prediseño, presentación, revisión de consistencia y explicación visual del sistema motor–transmisión–eje–hélice.
+    Nota técnica: el modelo 3D es paramétrico, didáctico y de prediseño. No sustituye CAD de fabricación, CFD, planos aprobados ni modelo de astillero; sirve para prediseño, presentación, revisión de consistencia y explicación visual del sistema motor–transmisión–eje–hélice.
     </span>
     </div>
     """, unsafe_allow_html=True)
 
     if go is None:
-        estado_html("⚠️ Para activar el Gemelo Digital instala Plotly agregando `plotly` a requirements.txt.", "warn")
+        estado_html("⚠️ Para activar el módulo 3D instala Plotly agregando `plotly` a requirements.txt.", "warn")
     else:
         twin_resumen, twin_sistema, twin_helice = st.tabs([
-            "📌 Panel digital", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada"
+            "📌 Panel técnico", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada"
         ])
 
         with twin_resumen:
@@ -4020,13 +4120,13 @@ with tab_gemelo:
             c2.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
             c3.metric("Hélice", f"Z={z_val} · D={diam_prop_m:.2f} m")
             c4.metric("RPM ref.", f"{rpm_helice_objetivo:.1f} rpm")
-            estado_html("✅ Gemelo digital activo: las visualizaciones se alimentan de los datos actuales de entrada y resultados calculados por la app.", "good")
+            estado_html("✅ Sistema 3D activo: las visualizaciones se alimentan de los datos actuales de entrada y resultados calculados por la app.", "good")
 
             st.markdown("""
             ### ¿Qué evalúa esta pestaña?
             - **Tren propulsor:** representa motor, transmisión/reductora, eje, cojinetes, hélice y dirección de empuje.
             - **Hélice paramétrica:** cambia con Z, D, P/D, Ae/A0 y hub ratio.
-            - **Integración visual:** concentra la parte geométrica del sistema eje-hélice, mientras que el flujo energético vive en Potencias y la cavitación animada vive en Cavitación.
+            - **Integración visual:** concentra solo la parte geométrica 3D del sistema eje-hélice. El flujo energético se ubica en Potencias y la cavitación visual se ubica en Cavitación para que cada análisis esté en su sección correspondiente.
             - **Defensa del proyecto:** permite explicar el sistema como si fuera un software de diseño, no solo una hoja de cálculo.
             """)
 
@@ -4047,6 +4147,11 @@ with tab_gemelo:
             El modelo representa el arreglo conceptual **motor → transmisión → línea de ejes → cojinetes → hélice → empuje** dentro de una envolvente de casco.
             Puedes rotarlo, acercarlo y moverlo con el mouse; además, al pasar el cursor sobre cada componente aparece información técnica del elemento. La escala cambia automáticamente con el diámetro de hélice, diámetro de eje, potencia, RPM y tipo de transmisión.
             """)
+            sistema_ok = (diametro_eje_mm > 0) and (diam_prop_m > 0) and caja_cumple and (PB_kw_calc <= max(MCR_requerido_kw, PB_kw_calc)*1.02)
+            if sistema_ok:
+                estado_html("✅ Integración 3D coherente: el tren propulsor representa una configuración compatible entre potencia, eje, hélice y transmisión para prediseño.", "good")
+            else:
+                estado_html("⚠️ Integración 3D con observaciones: revisar potencia, RPM de transmisión o dimensiones del eje antes de interpretar el modelo como configuración final.", "warn")
             fig_sys = crear_sistema_propulsor_3d(
                 D=diam_prop_m,
                 eje_d_mm=diametro_eje_mm,
@@ -4076,6 +4181,11 @@ with tab_gemelo:
             Esta hélice no es una pieza CAD final, pero sí es un modelo paramétrico: cambia con el **número de palas, diámetro, P/D, Ae/A0 y hub ratio**.
             Puedes rotarla manualmente con el mouse o usar el botón **Girar** dentro de la gráfica. El objetivo es visualizar cómo los parámetros hidrodinámicos se traducen en forma geométrica del propulsor.
             """)
+            helice_geom_ok = (3 <= z_val <= 7) and (0.50 <= pd_val <= 1.40) and (0.30 <= ae_val <= 1.00) and (ae_val >= keller_ae_min) and (diam_prop_m > 0)
+            if helice_geom_ok:
+                estado_html("✅ Hélice 3D coherente: la geometría visual se encuentra dentro de rangos típicos de prediseño y cumple el área mínima Keller preliminar.", "good")
+            else:
+                estado_html("⚠️ Hélice 3D con observaciones: la geometría puede visualizarse, pero alguno de los parámetros está fuera de rango o no cubre el área mínima preliminar.", "warn")
             fig_prop = crear_helice_3d_parametrica(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, rpm=rpm_helice_objetivo, animar=True)
             st.plotly_chart(fig_prop, use_container_width=True)
             helice_visual_df = pd.DataFrame([
