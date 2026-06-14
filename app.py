@@ -1662,7 +1662,7 @@ def generar_pdf():
 
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_formulas = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_formulas, tab_avanzado = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -1679,7 +1679,8 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🔍 Cavitación",
     "📚 Normativa",
     "📋 Clase",
-    "🧮 Fórmulas / Guía"
+    "🧮 Fórmulas / Guía",
+    "🧠 Avanzado"
 ])
 
 # ==============================================================================
@@ -2970,3 +2971,271 @@ with tab_formulas:
         - **Keller:** revisa área expandida mínima.
         - **Campbell:** detección de posibles resonancias.
         """)
+
+
+# ==============================================================================
+# MÓDULOS AVANZADOS: TVA, BODE, ÓRBITAS Y TRANSITORIO
+# ==============================================================================
+
+with tab_avanzado:
+    st.subheader("🧠 Módulos avanzados de shafting y vibraciones")
+
+    st.markdown("""
+    <div class="section-card">
+    Esta sección agrega herramientas de análisis avanzado para elevar la aplicación a nivel de
+    proyecto final: modelo torsional de masas discretas, respuesta en frecuencia tipo Bode,
+    órbitas laterales del eje, respuesta transitoria y matriz de cumplimiento normativo.
+    Los resultados son preliminares y didácticos; no sustituyen un cálculo certificado por ABS, DNV,
+    Lloyd's Register u otra sociedad de clasificación.
+    </div>
+    """, unsafe_allow_html=True)
+
+    av1, av2, av3, av4, av5 = st.tabs([
+        "✅ Cumplimiento",
+        "🔩 Modelo TVA",
+        "📉 Bode",
+        "🌀 Órbitas",
+        "⏱️ Transitorio"
+    ])
+
+    with av1:
+        st.markdown("### ✅ Matriz de cumplimiento técnico preliminar")
+        st.markdown("""
+        Esta tabla resume si el diseño cumple los criterios principales que normalmente se revisarían
+        antes de pasar a un análisis formal de clase. La columna de referencia indica de dónde sale el criterio.
+        """)
+
+        cumplimiento_avanzado = pd.DataFrame({
+            "Área": [
+                "Agua de cálculo", "Sea Margin", "Cavitación Burrill", "Cavitación Keller",
+                "Potencia/MCR", "Transmisión", "Torsión", "Vibración axial",
+                "Vibración lateral", "Campbell", "Reynolds", "Trazabilidad"
+            ],
+            "Criterio revisado": [
+                "Propiedades de agua salada a 15 °C", "Margen aplicado a la potencia",
+                "Carga de pala frente a límite admisible", "Ae/A0 actual contra Ae/A0 mínimo",
+                "PB requerida frente a MCR disponible", "RPM motor / RPM hélice o transmisión directa",
+                "Esfuerzo torsional alternante frente al admisible", "Separación de órdenes 1P, ZP, 2ZP, 3ZP",
+                "RPM fuera de zona crítica lateral", "Intersecciones lejos de RPM de operación",
+                "Régimen turbulento representativo", "Datos visibles, editables o estimados claramente"
+            ],
+            "Resultado": [
+                "Cumple", "Cumple" if margen_servicio >= 10 else "Revisar",
+                "Cumple" if burrill_ok else "Revisar", "Cumple" if keller_ok else "Revisar",
+                estado_motor_potencia if 'estado_motor_potencia' in globals() else "Revisar",
+                "Cumple" if transmision_ok else "Revisar",
+                "Cumple" if torsion_ok else "Revisar", "Cumple" if axial_ok else "Revisar",
+                "Cumple" if lateral_ok else "Revisar", "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "Revisar",
+                "Cumple" if reynolds_ok else "Revisar", "Cumple"
+            ],
+            "Referencia": [
+                "ITTC @15 °C", "ITTC 7.5-02-03-01.4", "Burrill", "Keller",
+                "Fabricante / MCR-NCR", "Fabricante de motor o caja", "IACS UR M68 / DNV Pt.4 Ch.4",
+                "Shafting vibration practice", "Shaft whirling / lateral critical speed",
+                "Campbell diagram", "ITTC Open Water", "Requisito de transparencia del proyecto"
+            ]
+        })
+
+        def color_resultado(v):
+            txt = str(v).lower()
+            if "cumple" in txt and "observ" not in txt:
+                return "background-color:#dcfce7;color:#166534;font-weight:bold"
+            if "observ" in txt or "revis" in txt:
+                return "background-color:#fef3c7;color:#92400e;font-weight:bold"
+            return "background-color:#fee2e2;color:#991b1b;font-weight:bold"
+
+        st.dataframe(
+            cumplimiento_avanzado.style.map(color_resultado, subset=["Resultado"]),
+            use_container_width=True,
+            height=450
+        )
+
+        st.info("""
+        Lectura: esta matriz sirve para defensa del proyecto. Si un profesor pregunta por qué el diseño
+        se considera aceptable, aquí se ve cada criterio, su resultado y la referencia técnica usada.
+        """)
+
+    with av2:
+        st.markdown("### 🔩 Modelo torsional de masas discretas para TVA")
+        st.markdown("""
+        El sistema propulsor se representa como masas rotatorias unidas por rigideces torsionales.
+        Este modelo permite estimar frecuencias naturales torsionales y visualizar modos de vibración.
+        """)
+
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            n_masas = st.slider("Número de masas discretas", 3, 6, 4)
+        with col_m2:
+            factor_rigidez = st.slider("Factor de rigidez torsional", 0.5, 2.0, 1.0, 0.05)
+
+        try:
+            G_mod = 7.9e10
+            d_eje_m = max(diametro_m, 0.05)
+            J_polar = math.pi * d_eje_m**4 / 32.0
+            L_total_tva = max(eslora * 0.18, 8.0)
+            k_base = max(G_mod * J_polar / max(L_total_tva / max(n_masas-1, 1), 0.1), 1.0) * factor_rigidez
+
+            omega_op = max(omega, 0.1)
+            inercia_base = max((potencia_kw_calc * 1000.0) / (omega_op**2), 10.0)
+            inercias = np.linspace(1.25, 0.70, n_masas) * inercia_base
+            inercias[-1] *= 1.8  # hélice como masa dominante final
+            rigideces = np.ones(n_masas - 1) * k_base
+
+            M = np.diag(inercias)
+            K = np.zeros((n_masas, n_masas))
+            for i in range(n_masas - 1):
+                k = rigideces[i]
+                K[i, i] += k
+                K[i+1, i+1] += k
+                K[i, i+1] -= k
+                K[i+1, i] -= k
+
+            # Se elimina el modo rígido usando pseudo-inversa; se filtran frecuencias casi cero.
+            eigvals, eigvecs = np.linalg.eig(np.linalg.pinv(M) @ K)
+            eigvals = np.real(eigvals)
+            eigvecs = np.real(eigvecs)
+            idx = np.argsort(eigvals)
+            eigvals = eigvals[idx]
+            eigvecs = eigvecs[:, idx]
+            freqs_tva = np.sqrt(np.clip(eigvals, 0, None)) / (2*np.pi)
+            freqs_tva = freqs_tva[freqs_tva > 0.05]
+
+            tva_df = pd.DataFrame({
+                "Modo torsional": [f"Modo {i+1}" for i in range(len(freqs_tva))],
+                "Frecuencia natural [Hz]": freqs_tva,
+                "RPM equivalente 1P": freqs_tva * 60,
+                "RPM equivalente ZP": freqs_tva * 60 / max(z_val, 1)
+            })
+
+            st.dataframe(tva_df.style.format({
+                "Frecuencia natural [Hz]": "{:.3f}",
+                "RPM equivalente 1P": "{:.1f}",
+                "RPM equivalente ZP": "{:.1f}"
+            }), use_container_width=True)
+
+            fig_tva, ax_tva = plt.subplots(figsize=(10, 4.5))
+            masas_x = np.arange(1, n_masas + 1)
+            for j in range(min(len(freqs_tva), eigvecs.shape[1]-1)):
+                vec = eigvecs[:, j+1]
+                vec = vec / max(np.max(np.abs(vec)), 1e-9)
+                ax_tva.plot(masas_x, vec, marker="o", linewidth=2, label=f"Modo {j+1}: {freqs_tva[j]:.2f} Hz")
+            ax_tva.axhline(0, linestyle="--", linewidth=1)
+            ax_tva.set_title("Formas modales torsionales normalizadas")
+            ax_tva.set_xlabel("Elemento discreto del tren propulsor")
+            ax_tva.set_ylabel("Amplitud relativa")
+            ax_tva.grid(True, linestyle=":", alpha=0.6)
+            ax_tva.legend(fontsize=8)
+            st.pyplot(fig_tva)
+
+            st.caption("Modelo equivalente: motor — acople — eje intermedio — eje de cola — hélice, según el número de masas seleccionado.")
+        except Exception as e:
+            st.warning(f"No se pudo resolver el modelo TVA con los datos actuales: {e}")
+
+    with av3:
+        st.markdown("### 📉 Diagramas de Bode preliminares")
+        st.markdown("""
+        El diagrama de Bode muestra cómo responde el sistema cuando se excita a distintas frecuencias.
+        Cerca de una frecuencia natural, la magnitud aumenta y aparece cambio fuerte de fase.
+        """)
+
+        zeta = st.slider("Amortiguamiento modal ζ", 0.01, 0.20, 0.05, 0.01)
+        fmax_bode = max(f_axial_natural_hz, f_natural_hz, f_torsional_est, 1.0) * 3.0
+        f_bode = np.linspace(0.05, fmax_bode, 600)
+
+        def bode_sdoF(freq_nat):
+            r = f_bode / max(freq_nat, 1e-9)
+            mag = 1.0 / np.sqrt((1-r**2)**2 + (2*zeta*r)**2)
+            phase = -np.degrees(np.arctan2(2*zeta*r, 1-r**2))
+            return mag, phase
+
+        modo_bode = st.selectbox("Modo a visualizar", ["Axial", "Lateral", "Torsional estimado"])
+        fn_sel = {"Axial": f_axial_natural_hz, "Lateral": f_natural_hz, "Torsional estimado": f_torsional_est}[modo_bode]
+        mag, phase = bode_sdoF(fn_sel)
+
+        fig_mag, ax_mag = plt.subplots(figsize=(10, 4.2))
+        ax_mag.plot(f_bode, 20*np.log10(mag), linewidth=2.4)
+        ax_mag.axvline(fn_sel, linestyle="--", linewidth=2, label=f"fn = {fn_sel:.2f} Hz")
+        ax_mag.set_title(f"Bode de magnitud — modo {modo_bode}")
+        ax_mag.set_xlabel("Frecuencia [Hz]")
+        ax_mag.set_ylabel("Magnitud [dB]")
+        ax_mag.grid(True, linestyle=":", alpha=0.6)
+        ax_mag.legend()
+        st.pyplot(fig_mag)
+
+        fig_phase, ax_phase = plt.subplots(figsize=(10, 4.2))
+        ax_phase.plot(f_bode, phase, linewidth=2.4)
+        ax_phase.axvline(fn_sel, linestyle="--", linewidth=2, label=f"fn = {fn_sel:.2f} Hz")
+        ax_phase.set_title(f"Bode de fase — modo {modo_bode}")
+        ax_phase.set_xlabel("Frecuencia [Hz]")
+        ax_phase.set_ylabel("Fase [°]")
+        ax_phase.grid(True, linestyle=":", alpha=0.6)
+        ax_phase.legend()
+        st.pyplot(fig_phase)
+
+    with av4:
+        st.markdown("### 🌀 Órbitas laterales del eje")
+        st.markdown("""
+        Las órbitas representan el movimiento radial del eje en dos direcciones perpendiculares.
+        Una órbita circular o elíptica puede asociarse a desbalance, desalineación o cercanía a una velocidad crítica.
+        """)
+
+        sep_lat = min(abs(rpm_motor - margen_inf), abs(rpm_motor - margen_sup)) / max(rpm_motor, 1e-9) * 100
+        amp_base_um = 80.0 if lateral_ok else 220.0
+        amp_x = amp_base_um * (1 + max(0, 12-sep_lat)/12)
+        amp_y = amp_x * (0.55 if lateral_ok else 0.85)
+        fase_orbita = np.deg2rad(35 if lateral_ok else 75)
+        th = np.linspace(0, 2*np.pi, 600)
+        x_orb = amp_x * np.cos(th)
+        y_orb = amp_y * np.sin(th + fase_orbita)
+
+        o1, o2, o3 = st.columns(3)
+        o1.metric("Amplitud X estimada", f"{amp_x:.1f} µm")
+        o2.metric("Amplitud Y estimada", f"{amp_y:.1f} µm")
+        o3.metric("Condición lateral", "Aceptable" if lateral_ok else "Revisar")
+
+        fig_orb, ax_orb = plt.subplots(figsize=(6.4, 6.0))
+        ax_orb.plot(x_orb, y_orb, linewidth=2.4)
+        ax_orb.scatter([0], [0], s=80, marker="+")
+        ax_orb.set_aspect("equal", adjustable="box")
+        ax_orb.set_title("Órbita lateral estimada del eje")
+        ax_orb.set_xlabel("Desplazamiento X [µm]")
+        ax_orb.set_ylabel("Desplazamiento Y [µm]")
+        ax_orb.grid(True, linestyle=":", alpha=0.6)
+        st.pyplot(fig_orb)
+
+        st.info("La órbita es estimada y sirve para explicar visualmente el comportamiento del eje; para validación real se requieren sensores de proximidad o acelerómetros.")
+
+    with av5:
+        st.markdown("### ⏱️ Respuesta transitoria al arranque")
+        st.markdown("""
+        Este módulo simula de forma didáctica cómo crece y se amortigua la respuesta vibratoria
+        durante el arranque del sistema hasta llegar a la RPM de operación.
+        """)
+
+        t_final = st.slider("Tiempo de simulación [s]", 10, 120, 45)
+        zeta_tr = st.slider("Amortiguamiento transitorio ζ", 0.02, 0.25, 0.06, 0.01, key="zeta_transitorio")
+        t_sim = np.linspace(0, t_final, 1200)
+        rpm_sim = rpm_motor * (1 - np.exp(-t_sim / max(t_final/5, 1)))
+        w_n_ax = 2*np.pi*max(f_axial_natural_hz, 0.1)
+        envelope = np.exp(-zeta_tr*w_n_ax*t_sim)
+        respuesta = (1 - envelope*np.cos(w_n_ax*t_sim)) * desplazamiento_axial_est_m * 1000
+
+        fig_rpm, ax_rpm = plt.subplots(figsize=(10, 4.2))
+        ax_rpm.plot(t_sim, rpm_sim, linewidth=2.4)
+        ax_rpm.axhline(rpm_motor, linestyle="--", linewidth=2, label="RPM operación")
+        ax_rpm.set_title("Rampa de arranque del eje")
+        ax_rpm.set_xlabel("Tiempo [s]")
+        ax_rpm.set_ylabel("RPM")
+        ax_rpm.grid(True, linestyle=":", alpha=0.6)
+        ax_rpm.legend()
+        st.pyplot(fig_rpm)
+
+        fig_resp, ax_resp = plt.subplots(figsize=(10, 4.2))
+        ax_resp.plot(t_sim, respuesta, linewidth=2.4)
+        ax_resp.set_title("Respuesta transitoria axial estimada")
+        ax_resp.set_xlabel("Tiempo [s]")
+        ax_resp.set_ylabel("Desplazamiento axial [mm]")
+        ax_resp.grid(True, linestyle=":", alpha=0.6)
+        st.pyplot(fig_resp)
+
+        st.success("La respuesta transitoria permite explicar el comportamiento durante arranque/parada y no solo en régimen permanente.")
