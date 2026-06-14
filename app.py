@@ -931,7 +931,8 @@ def _cylinder_surface(radius=1.0, length=1.0, x0=0.0, axis="x", n_theta=48, n_le
     return X, Y, Z
 
 
-def _add_cuboid(fig, center, size, name="Bloque", opacity=0.75):
+def _add_cuboid(fig, center, size, name="Bloque", opacity=0.75, color="#475569", hovertext=None):
+    """Bloque 3D con tooltip. Se usa para motor, caja y equipos auxiliares."""
     cx, cy, cz = center
     sx, sy, sz = size
     x = np.array([cx-sx/2, cx+sx/2])
@@ -945,13 +946,45 @@ def _add_cuboid(fig, center, size, name="Bloque", opacity=0.75):
         [0,1,2], [0,2,3], [4,5,6], [4,6,7], [0,1,5], [0,5,4],
         [1,2,6], [1,6,5], [2,3,7], [2,7,6], [3,0,4], [3,4,7]
     ])
+    if hovertext is None:
+        hovertext = f"<b>{name}</b><br>Elemento conceptual del tren propulsor"
     fig.add_trace(go.Mesh3d(
         x=vertices[:,0], y=vertices[:,1], z=vertices[:,2],
         i=faces[:,0], j=faces[:,1], k=faces[:,2],
         name=name, opacity=opacity, flatshading=True,
-        color="#475569", showscale=False
+        color=color, showscale=False,
+        hovertemplate=hovertext + "<extra></extra>"
     ))
 
+
+def _add_hull_envelope(fig, D, Lpp, shaft_len):
+    """Crea una silueta de casco semitransparente para que el gemelo se lea como un buque."""
+    L_vis = max(shaft_len + 2.8*D, 18.0)
+    x = np.linspace(-1.45*D, shaft_len + 1.35*D, 46)
+    s = (x - x.min()) / max(x.max() - x.min(), 1e-9)
+    beam = 1.36*D * (np.sin(np.pi*s)**0.42) * (0.92 + 0.08*np.cos(2*np.pi*s))
+    depth = 0.62*D * (np.sin(np.pi*s)**0.30)
+    theta = np.linspace(0, 2*np.pi, 42)
+    X, T = np.meshgrid(x, theta)
+    B = np.interp(X[0], x, beam)[None, :]
+    H = np.interp(X[0], x, depth)[None, :]
+    # Se muestra una envolvente alrededor del tren, no un casco CAD final.
+    Y = B*np.cos(T)
+    Z = -0.22*D + 0.55*H*np.sin(T) - 0.12*D
+    fig.add_trace(go.Surface(
+        x=X, y=Y, z=Z,
+        colorscale=[[0,"#dbeafe"],[1,"#bfdbfe"]],
+        opacity=0.18, showscale=False, name="Envolvente del casco",
+        hovertemplate=("<b>Envolvente conceptual del casco</b><br>"
+                       "Representa la zona de popa y el volumen del buque alrededor del tren propulsor.<br>"
+                       "No sustituye al modelo de casco CAD/hidrostático.<extra></extra>")
+    ))
+    # Quilla / línea de crujía.
+    fig.add_trace(go.Scatter3d(
+        x=[x.min(), x.max()], y=[0,0], z=[-0.68*D, -0.68*D], mode="lines",
+        line=dict(width=5, color="#0f172a"), name="Línea de crujía / quilla",
+        hovertemplate="<b>Línea de crujía</b><br>Referencia longitudinal del buque.<extra></extra>"
+    ))
 
 
 def _rotar_xy(x, y, ang):
@@ -1129,53 +1162,155 @@ def crear_helice_3d_parametrica(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155
 
 
 def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Directa", relacion=1.0, PB=25000, rpm=75, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155):
+    """Gemelo digital 3D del tren propulsor.
+
+    Es conceptual, pero dinámico: escala el casco, eje, hélice, motor, transmisión,
+    flujo y tooltip técnico con los datos actuales de la app. La hélice gira con animación.
+    """
     if go is None:
         return None
     fig = go.Figure()
+    D = max(float(D), 0.2)
     escala = max(D, 1.0)
     shaft_radius = max(eje_d_mm/1000.0/2.0, 0.025*escala)
-    shaft_len = max(2.45*D, 9.0)
-    # Base / línea de centro
-    fig.add_trace(go.Scatter3d(x=[-0.95*D, shaft_len+0.75*D], y=[0,0], z=[-0.42*D,-0.42*D], mode="lines", line=dict(width=8, color="#e2e8f0"), name="Bancada / línea base"))
-    # Eje
-    X, Y, Zc = _cylinder_surface(radius=shaft_radius, length=shaft_len, x0=0, axis="x", n_theta=64, n_len=18)
-    fig.add_trace(go.Surface(x=X, y=Y, z=Zc, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.98, name="Eje propulsor"))
-    # Cojinetes
-    for xb, name in [(0.62*D, "Cojinete de empuje"), (1.35*D, "Cojinete intermedio"), (shaft_len-0.45*D, "Bocina / stern tube")]:
-        Xb, Yb, Zb = _cylinder_surface(radius=shaft_radius*1.55, length=0.16*D, x0=xb, axis="x", n_theta=48, n_len=5)
-        fig.add_trace(go.Surface(x=Xb, y=Yb, z=Zb, colorscale=[[0,"#0f766e"],[1,"#14b8a6"]], showscale=False, opacity=0.90, name=name))
-    # Motor / reductora con mejor apariencia
-    _add_cuboid(fig, center=(-0.62*D, 0, 0.26*D), size=(0.74*D, 0.48*D, 0.42*D), name="Motor principal", opacity=0.86)
-    # cilindros de motor simbólicos
+    shaft_len = max(2.65*D, 10.0)
+
+    # Casco/volumen del buque para que no se vea como elementos flotantes aislados.
+    _add_hull_envelope(fig, D=D, Lpp=Lpp, shaft_len=shaft_len)
+
+    # Bancada y línea de ejes.
+    fig.add_trace(go.Scatter3d(
+        x=[-1.10*D, shaft_len+0.95*D], y=[0,0], z=[-0.42*D,-0.42*D], mode="lines",
+        line=dict(width=9, color="#cbd5e1"), name="Bancada / línea base",
+        hovertemplate="<b>Bancada / línea base</b><br>Referencia estructural donde se apoya la línea de ejes.<extra></extra>"
+    ))
+
+    # Eje propulsor.
+    X, Y, Zc = _cylinder_surface(radius=shaft_radius, length=shaft_len, x0=0, axis="x", n_theta=72, n_len=22)
+    fig.add_trace(go.Surface(
+        x=X, y=Y, z=Zc, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.98, name="Eje propulsor",
+        hovertemplate=(f"<b>Eje propulsor</b><br>Diámetro estimado: {eje_d_mm:,.0f} mm<br>"
+                       f"Potencia transmitida: {PB:,.0f} kW<br>RPM de referencia: {rpm:.1f} rpm<extra></extra>")
+    ))
+
+    # Cojinetes y bocina.
+    for xb, name, desc in [
+        (0.58*D, "Cojinete de empuje", "Recibe la fuerza axial generada por la hélice."),
+        (1.35*D, "Cojinete intermedio", "Soporta el eje y ayuda a controlar vibración lateral."),
+        (shaft_len-0.42*D, "Bocina / stern tube", "Zona de salida del eje hacia la hélice."),
+    ]:
+        Xb, Yb, Zb = _cylinder_surface(radius=shaft_radius*1.70, length=0.18*D, x0=xb, axis="x", n_theta=56, n_len=6)
+        fig.add_trace(go.Surface(
+            x=Xb, y=Yb, z=Zb, colorscale=[[0,"#0f766e"],[1,"#14b8a6"]], showscale=False, opacity=0.93, name=name,
+            hovertemplate=f"<b>{name}</b><br>{desc}<extra></extra>"
+        ))
+
+    # Motor y transmisión con tooltip detallado.
+    _add_cuboid(
+        fig, center=(-0.72*D, 0, 0.28*D), size=(0.86*D, 0.54*D, 0.46*D), name="Motor principal",
+        opacity=0.88, color="#334155",
+        hovertext=(f"<b>Motor principal</b><br>Entrega la potencia al freno requerida.<br>"
+                   f"PB ≈ {PB:,.0f} kW<br>n hélice ≈ {rpm:.1f} rpm<br>El MCR debe cubrir PB con margen operativo.")
+    )
+    # Cilindros de motor simbólicos.
     for n in range(6):
-        Xc, Yc, Zcc = _cylinder_surface(radius=0.045*D, length=0.13*D, x0=-0.93*D+n*0.12*D, axis="z", n_theta=24, n_len=4)
-        fig.add_trace(go.Surface(x=Xc, y=Yc, z=Zcc+0.50*D, colorscale=[[0,"#1e293b"],[1,"#475569"]], showscale=False, opacity=0.92, name="Cilindros" if n==0 else ""))
+        Xc, Yc, Zcc = _cylinder_surface(radius=0.045*D, length=0.14*D, x0=-1.08*D+n*0.14*D, axis="z", n_theta=28, n_len=5)
+        fig.add_trace(go.Surface(
+            x=Xc, y=Yc, z=Zcc+0.49*D, colorscale=[[0,"#111827"],[1,"#64748b"]], showscale=False,
+            opacity=0.92, name="Cilindros del motor" if n==0 else "",
+            hovertemplate="<b>Cilindros del motor</b><br>Representación conceptual del motor principal.<extra></extra>"
+        ))
+
     if not str(tipo_trans).startswith("Directa"):
-        _add_cuboid(fig, center=(0.07*D, 0, 0.15*D), size=(0.30*D, 0.36*D, 0.27*D), name=f"Reductora i≈{relacion:.2f}", opacity=0.82)
+        _add_cuboid(
+            fig, center=(0.06*D, 0, 0.17*D), size=(0.34*D, 0.39*D, 0.30*D), name=f"Caja reductora i≈{relacion:.2f}",
+            opacity=0.85, color="#475569",
+            hovertext=(f"<b>Caja reductora / transmisión</b><br>Relación aproximada i={relacion:.2f}:1<br>"
+                       "Ajusta RPM del motor a la RPM requerida por la hélice.")
+        )
     else:
-        fig.add_trace(go.Scatter3d(x=[-0.18*D], y=[0], z=[0.36*D], mode="text", text=["Transmisión directa"], textfont=dict(color="#0f766e", size=13), name="Transmisión directa"))
-    # Hélice paramétrica al final del eje, en plano YZ
-    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0.0, x_offset=shaft_len+0.05*D, axis="x", detail=30)
-    fig.add_trace(go.Mesh3d(x=xp, y=yp, z=zp, i=ii, j=jj, k=kk, intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False, showscale=False, name="Hélice paramétrica"))
-    Xh, Yh, Zh = _cylinder_surface(radius=max(0.10*D, hub_ratio*D/2), length=0.24*D, x0=shaft_len-0.08*D, axis="x", n_theta=60, n_len=8)
-    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.96, name="Cubo"))
-    # Empuje y flujo de agua conceptual
-    fig.add_trace(go.Cone(x=[shaft_len+0.65*D], y=[0], z=[0], u=[0.95*D], v=[0], w=[0], sizemode="absolute", sizeref=0.60*D, anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0284c7"]], showscale=False, name="Empuje"))
-    for yy in np.linspace(-0.9*D, 0.9*D, 5):
-        fig.add_trace(go.Scatter3d(x=[shaft_len+1.25*D, shaft_len+0.25*D], y=[yy, yy*0.55], z=[-0.65*D, -0.20*D], mode="lines", line=dict(width=3, color="rgba(56,189,248,.32)"), name="Flujo de agua" if yy==0 else "", showlegend=bool(yy==0)))
+        fig.add_trace(go.Scatter3d(
+            x=[-0.15*D], y=[0], z=[0.40*D], mode="text", text=["Transmisión directa"],
+            textfont=dict(color="#0f766e", size=13), name="Transmisión directa",
+            hovertemplate="<b>Transmisión directa</b><br>Motor lento acoplado directamente al eje.<extra></extra>"
+        ))
+
+    # Hélice paramétrica en plano YZ al final del eje.
+    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0.0, x_offset=shaft_len+0.05*D, axis="x", detail=34)
+    prop_trace = len(fig.data)
+    fig.add_trace(go.Mesh3d(
+        x=xp, y=yp, z=zp, i=ii, j=jj, k=kk, intensity=inten, colorscale="Viridis", opacity=0.97,
+        flatshading=False, showscale=False, name="Hélice paramétrica",
+        hovertemplate=(f"<b>Hélice paramétrica</b><br>D={D:.2f} m<br>Z={Z}<br>P/D={PD:.3f}<br>Ae/A0={AeAo:.3f}<br>"
+                       "La geometría se actualiza con los datos del usuario.<extra></extra>")
+    ))
+    Xh, Yh, Zh = _cylinder_surface(radius=max(0.10*D, hub_ratio*D/2), length=0.26*D, x0=shaft_len-0.10*D, axis="x", n_theta=64, n_len=8)
+    fig.add_trace(go.Surface(
+        x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.97, name="Cubo de hélice",
+        hovertemplate=f"<b>Cubo de hélice</b><br>Hub ratio={hub_ratio:.3f}<br>Conecta pala y eje propulsor.<extra></extra>"
+    ))
+
+    # Empuje y flujo de agua conceptual con tooltip.
+    fig.add_trace(go.Cone(
+        x=[shaft_len+0.68*D], y=[0], z=[0], u=[0.95*D], v=[0], w=[0], sizemode="absolute", sizeref=0.62*D,
+        anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0284c7"]], showscale=False, name="Vector de empuje",
+        hovertemplate="<b>Vector de empuje</b><br>Dirección conceptual de la fuerza propulsiva generada por la hélice.<extra></extra>"
+    ))
+    for idx, yy in enumerate(np.linspace(-0.95*D, 0.95*D, 7)):
+        fig.add_trace(go.Scatter3d(
+            x=[shaft_len+1.35*D, shaft_len+0.16*D], y=[yy, yy*0.42], z=[-0.65*D, -0.12*D], mode="lines",
+            line=dict(width=4 if idx==3 else 3, color="rgba(56,189,248,.34)"),
+            name="Flujo de agua hacia hélice" if idx==3 else "", showlegend=bool(idx==3),
+            hovertemplate="<b>Flujo de agua</b><br>Representación conceptual de la estela hacia el propulsor.<extra></extra>"
+        ))
+
+    # Etiquetas informativas flotantes.
+    labels = [
+        (-0.72*D, 0.68*D, 0.55*D, "Motor"),
+        (0.65*D, 0.62*D, 0.22*D, "Cojinetes"),
+        (shaft_len*0.58, 0.55*D, 0.20*D, "Eje"),
+        (shaft_len+0.12*D, 0.85*D, 0.35*D, "Hélice"),
+        (shaft_len+1.05*D, 0.30*D, 0.30*D, "Empuje"),
+    ]
+    fig.add_trace(go.Scatter3d(
+        x=[p[0] for p in labels], y=[p[1] for p in labels], z=[p[2] for p in labels],
+        mode="text", text=[p[3] for p in labels], textfont=dict(size=12, color="#0f172a"),
+        name="Etiquetas", hoverinfo="skip"
+    ))
+
+    # Animación: rota la hélice alrededor del eje X. El usuario también puede mover todo con el mouse.
+    frames = []
+    y0 = np.asarray(yp, dtype=float)
+    z0 = np.asarray(zp, dtype=float)
+    zcenter = 0.0
+    for n, ang in enumerate(np.linspace(0, 2*np.pi, 30, endpoint=False)):
+        ca, sa = np.cos(ang), np.sin(ang)
+        yr = ca*y0 - sa*(z0-zcenter)
+        zr = sa*y0 + ca*(z0-zcenter) + zcenter
+        frames.append(go.Frame(
+            data=[go.Mesh3d(x=xp, y=yr, z=zr, i=ii, j=jj, k=kk, intensity=inten, colorscale="Viridis", opacity=0.97, flatshading=False, showscale=False)],
+            traces=[prop_trace], name=f"giro_{n}"
+        ))
+    fig.frames = frames
+    fig.update_layout(updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
+        dict(label="▶ Animar hélice", method="animate", args=[None, {"frame":{"duration":70, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+        dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
+    ])])
+
     fig.update_layout(
         title=dict(text=f"Gemelo digital del tren propulsor — PB={PB:,.0f} kW, n={rpm:.1f} rpm, D={D:.2f} m", x=0.02, xanchor="left"),
         scene=dict(
-            xaxis_title="Longitud del tren", yaxis_title="Transversal", zaxis_title="Vertical",
+            xaxis_title="Longitud del tren [m]", yaxis_title="Manga conceptual", zaxis_title="Vertical",
             aspectmode="data", bgcolor="white",
-            camera=dict(eye=dict(x=1.75, y=1.2, z=0.8)),
+            camera=dict(eye=dict(x=1.85, y=1.25, z=0.85)),
             xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
             yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
             zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
         ),
-        height=660,
+        height=720,
         margin=dict(l=0, r=0, t=70, b=0),
-        paper_bgcolor="white"
+        paper_bgcolor="white",
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a")
     )
     return fig
 
@@ -3701,8 +3836,8 @@ with tab_gemelo:
         with twin_sistema:
             st.markdown("""
             ### Tren propulsor 3D interactivo
-            El modelo muestra el arreglo conceptual **motor → transmisión → eje → cojinetes → hélice → empuje**. 
-            Puedes rotarlo, acercarlo y moverlo con el mouse. La escala cambia con el diámetro de hélice, diámetro de eje, RPM y tipo de transmisión.
+            El modelo representa el arreglo conceptual **motor → transmisión → línea de ejes → cojinetes → hélice → empuje** dentro de una envolvente de casco.
+            Puedes rotarlo, acercarlo y moverlo con el mouse; además, al pasar el cursor sobre cada componente aparece información técnica del elemento. La escala cambia automáticamente con el diámetro de hélice, diámetro de eje, potencia, RPM y tipo de transmisión.
             """)
             fig_sys = crear_sistema_propulsor_3d(
                 D=diam_prop_m,
@@ -3723,15 +3858,15 @@ with tab_gemelo:
                 {"Elemento": "Transmisión", "Dato asociado": f"{transmision_tipo} · i={relacion_reduccion:.2f}", "Qué representa": "Compatibilidad entre RPM de motor y hélice."},
                 {"Elemento": "Eje", "Dato asociado": f"d≈{diametro_eje_mm:.0f} mm", "Qué representa": "Transmisión de torque y soporte dinámico."},
                 {"Elemento": "Hélice", "Dato asociado": f"D={diam_prop_m:.2f} m · Z={z_val}", "Qué representa": "Conversión de potencia en empuje."},
-                {"Elemento": "Empuje", "Dato asociado": f"T≈{thrust_kN:,.1f} kN", "Qué representa": "Fuerza propulsiva generada."},
+                {"Elemento": "Empuje", "Dato asociado": f"T≈{thrust_req_N/1000:,.1f} kN", "Qué representa": "Fuerza propulsiva generada."},
             ])
             st.dataframe(sistema_df, use_container_width=True, height=250)
 
         with twin_helice:
             st.markdown("""
             ### Hélice 3D paramétrica animada
-            Esta hélice no es una pieza CAD final, pero sí representa de forma paramétrica las decisiones principales de diseño: 
-            número de palas, diámetro, paso relativo, área expandida y tamaño de cubo. Puedes rotarla manualmente con el mouse o usar el botón **Girar** dentro de la gráfica.
+            Esta hélice no es una pieza CAD final, pero sí es un modelo paramétrico: cambia con el **número de palas, diámetro, P/D, Ae/A0 y hub ratio**.
+            Puedes rotarla manualmente con el mouse o usar el botón **Girar** dentro de la gráfica. El objetivo es visualizar cómo los parámetros hidrodinámicos se traducen en forma geométrica del propulsor.
             """)
             fig_prop = crear_helice_3d_parametrica(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, rpm=rpm_helice_objetivo, animar=True)
             st.plotly_chart(fig_prop, use_container_width=True)
