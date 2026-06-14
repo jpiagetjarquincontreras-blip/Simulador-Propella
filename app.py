@@ -12,6 +12,7 @@ try:
     import plotly.graph_objects as go
 except Exception:
     go = None
+HAS_PLOTLY = go is not None
 
 # ==============================================================================
 # UNIVERSAL SHIP PROPULSION & SHAFTING ANALYSIS SUITE
@@ -1034,57 +1035,130 @@ def _rotar_xy(x, y, ang):
 
 
 def crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw, MCR_kw):
-    """Sankey interactivo profesional del flujo de potencia."""
+    """Diagrama interactivo profesional del flujo de potencia.
+
+    Se reemplaza el Sankey clásico por un diagrama técnico de flujo con etiquetas
+    nítidas, porque en Streamlit/Plotly las etiquetas dentro del Sankey pueden verse
+    borrosas cuando hay flujos muy anchos. Mantiene interacción mediante tooltips.
+    """
     if go is None:
         return None
+
     PE_kw = max(float(PE_kw), 0.0)
-    PD_kw = max(float(PD_kw), PE_kw)
+    PD_kw = max(float(PD_kw), max(PE_kw, 1.0))
     PS_kw = max(float(PS_kw), PD_kw)
     PB_kw = max(float(PB_kw), PS_kw)
     MCR_kw = max(float(MCR_kw), PB_kw)
+
     perdida_prop = max(PD_kw - PE_kw, 0.0)
     perdida_eje = max(PS_kw - PD_kw, 0.0)
     perdida_trans = max(PB_kw - PS_kw, 0.0)
     reserva_motor = max(MCR_kw - PB_kw, 0.0)
 
-    labels = [
-        f"MCR requerido\n{MCR_kw:,.0f} kW",
-        f"PB motor\n{PB_kw:,.0f} kW",
-        f"PS eje\n{PS_kw:,.0f} kW",
-        f"PD hélice\n{PD_kw:,.0f} kW",
-        f"PE útil\n{PE_kw:,.0f} kW",
-        f"Reserva MCR\n{reserva_motor:,.0f} kW",
-        f"Pérdida transmisión\n{perdida_trans:,.0f} kW",
-        f"Pérdida eje\n{perdida_eje:,.0f} kW",
-        f"Pérdidas propulsivas\n{perdida_prop:,.0f} kW"
+    fig = go.Figure()
+
+    # Coordenadas normalizadas para obtener un aspecto muy limpio y legible.
+    nodes = [
+        {"id":"MCR", "x":0.06, "y":0.64, "label":"MCR requerido", "value":MCR_kw, "color":"#312e81",
+         "desc":"Potencia máxima continua requerida para que el motor cubra la operación con margen."},
+        {"id":"PB", "x":0.27, "y":0.64, "label":"PB motor", "value":PB_kw, "color":"#4f46e5",
+         "desc":"Potencia al freno que debe entregar el motor hacia la transmisión."},
+        {"id":"PS", "x":0.48, "y":0.64, "label":"PS eje", "value":PS_kw, "color":"#2563eb",
+         "desc":"Potencia transmitida por el eje después de pérdidas de transmisión."},
+        {"id":"PD", "x":0.69, "y":0.64, "label":"PD hélice", "value":PD_kw, "color":"#0891b2",
+         "desc":"Potencia entregada al propulsor antes de convertirla en empuje útil."},
+        {"id":"PE", "x":0.90, "y":0.64, "label":"PE útil", "value":PE_kw, "color":"#059669",
+         "desc":"Potencia efectiva útil para vencer la resistencia total del casco."},
     ]
-    source = [0, 0, 1, 1, 2, 2, 3, 3]
-    target = [1, 5, 2, 6, 3, 7, 4, 8]
-    values = [PB_kw, reserva_motor, PS_kw, perdida_trans, PD_kw, perdida_eje, PE_kw, perdida_prop]
-    fig = go.Figure(data=[go.Sankey(
-        arrangement="snap",
-        node=dict(
-            pad=22, thickness=20,
-            line=dict(color="rgba(15,23,42,.28)", width=0.7),
-            label=labels,
-            color=["#312e81", "#4f46e5", "#2563eb", "#0891b2", "#059669", "#f59e0b", "#fb7185", "#f97316", "#ef4444"],
-            hovertemplate="%{label}<extra></extra>"
-        ),
-        link=dict(
-            source=source, target=target, value=values,
-            color=["rgba(79,70,229,.35)", "rgba(245,158,11,.30)", "rgba(37,99,235,.34)", "rgba(251,113,133,.25)", "rgba(8,145,178,.33)", "rgba(249,115,22,.25)", "rgba(5,150,105,.36)", "rgba(239,68,68,.24)"],
-            hovertemplate="Flujo: %{value:,.0f} kW<extra></extra>"
-        )
-    )])
+    losses = [
+        {"x":0.17, "y":0.24, "label":"Reserva MCR", "value":reserva_motor, "color":"#f59e0b",
+         "desc":"Diferencia entre MCR requerido y PB de operación; representa margen operativo."},
+        {"x":0.38, "y":0.24, "label":"Pérdida transmisión", "value":perdida_trans, "color":"#fb7185",
+         "desc":"Pérdidas asociadas a caja, acoplamientos o transmisión."},
+        {"x":0.59, "y":0.24, "label":"Pérdida eje", "value":perdida_eje, "color":"#f97316",
+         "desc":"Pérdidas mecánicas del eje y elementos asociados."},
+        {"x":0.80, "y":0.24, "label":"Pérdidas propulsivas", "value":perdida_prop, "color":"#ef4444",
+         "desc":"Pérdidas hidrodinámicas entre potencia entregada y potencia efectiva."},
+    ]
+
+    max_val = max(MCR_kw, PB_kw, PS_kw, PD_kw, PE_kw, 1.0)
+    def lw(v):
+        return max(10.0, min(34.0, 8.0 + 28.0*v/max_val))
+
+    # Flujo principal: líneas gruesas con hover y texto nítido separado del flujo.
+    main_pairs = [(nodes[i], nodes[i+1]) for i in range(len(nodes)-1)]
+    for a, b in main_pairs:
+        val = min(a["value"], b["value"])
+        fig.add_trace(go.Scatter(
+            x=[a["x"], b["x"]], y=[a["y"], b["y"]], mode="lines",
+            line=dict(width=lw(val), color="rgba(37,99,235,0.26)", shape="spline"),
+            hoverinfo="skip", showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=[a["x"], b["x"]], y=[a["y"], b["y"]], mode="lines",
+            line=dict(width=3, color="rgba(15,23,42,0.20)"), hoverinfo="skip", showlegend=False
+        ))
+
+    # Derivaciones de pérdidas/reserva hacia abajo.
+    for idx, loss in enumerate(losses):
+        a = nodes[idx]
+        fig.add_trace(go.Scatter(
+            x=[a["x"]+0.055, loss["x"]], y=[a["y"]-0.06, loss["y"]+0.08], mode="lines",
+            line=dict(width=max(4.0, min(16.0, 4.0 + 22.0*loss["value"]/max_val)), color=loss["color"].replace('#','rgba(') if False else "rgba(245,158,11,0.28)"),
+            hoverinfo="skip", showlegend=False
+        ))
+
+    # Nodos principales como tarjetas nítidas.
+    for n in nodes:
+        fig.add_shape(type="rect", x0=n["x"]-0.066, x1=n["x"]+0.066, y0=n["y"]-0.105, y1=n["y"]+0.105,
+                      line=dict(color=n["color"], width=1.4), fillcolor="rgba(255,255,255,0.98)", layer="above")
+        fig.add_annotation(x=n["x"], y=n["y"]+0.038, text=f"<b>{n['label']}</b>", showarrow=False,
+                           font=dict(size=13, color="#0f172a"), align="center")
+        fig.add_annotation(x=n["x"], y=n["y"]-0.030, text=f"{n['value']:,.0f} kW", showarrow=False,
+                           font=dict(size=12, color=n["color"]), align="center")
+        fig.add_trace(go.Scatter(
+            x=[n["x"]], y=[n["y"]], mode="markers", marker=dict(size=28, color="rgba(0,0,0,0)"),
+            hovertemplate=f"<b>{n['label']}</b><br>{n['value']:,.0f} kW<br>{n['desc']}<extra></extra>",
+            showlegend=False
+        ))
+
+    # Tarjetas de pérdidas debajo.
+    for loss in losses:
+        fig.add_shape(type="rect", x0=loss["x"]-0.082, x1=loss["x"]+0.082, y0=loss["y"]-0.070, y1=loss["y"]+0.070,
+                      line=dict(color=loss["color"], width=1.2), fillcolor="rgba(255,255,255,0.98)", layer="above")
+        fig.add_annotation(x=loss["x"], y=loss["y"]+0.022, text=f"<b>{loss['label']}</b>", showarrow=False,
+                           font=dict(size=11, color="#334155"), align="center")
+        fig.add_annotation(x=loss["x"], y=loss["y"]-0.027, text=f"{loss['value']:,.0f} kW", showarrow=False,
+                           font=dict(size=11, color=loss["color"]), align="center")
+        fig.add_trace(go.Scatter(
+            x=[loss["x"]], y=[loss["y"]], mode="markers", marker=dict(size=24, color="rgba(0,0,0,0)"),
+            hovertemplate=f"<b>{loss['label']}</b><br>{loss['value']:,.0f} kW<br>{loss['desc']}<extra></extra>",
+            showlegend=False
+        ))
+
+    eficiencia_global = safe_div(PE_kw, PB_kw, default=0.0) * 100.0
+    fig.add_annotation(
+        x=0.5, y=0.92, showarrow=False, align="center",
+        text=(f"<b>Flujo energético interactivo del sistema propulsivo</b><br>"
+              f"Eficiencia global PB→PE ≈ {eficiencia_global:.1f}% · pérdidas propulsivas ≈ {perdida_prop:,.0f} kW"),
+        font=dict(size=15, color="#0f172a")
+    )
+    fig.add_annotation(
+        x=0.5, y=0.06, showarrow=False, align="center",
+        text="Pasa el cursor sobre cada tarjeta para ver qué representa y cómo se relaciona con la cadena de potencias.",
+        font=dict(size=11, color="#64748b")
+    )
+
+    fig.update_xaxes(visible=False, range=[0,1])
+    fig.update_yaxes(visible=False, range=[0,1])
     fig.update_layout(
-        title=dict(text="Flujo energético interactivo del sistema propulsivo", x=0.02, xanchor="left"),
-        font=dict(size=12, color="#0f172a"),
-        height=460,
-        margin=dict(l=20, r=20, t=60, b=15),
-        paper_bgcolor="white"
+        height=440,
+        margin=dict(l=18, r=18, t=18, b=18),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a"),
     )
     return fig
-
 
 def _propeller_mesh_arrays(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, phase=0.0, x_offset=0.0, axis="z", detail=24):
     """Genera una hélice conceptual pero más refinada: pala con cuerda radial, twist, skew, rake y espesor.
@@ -2815,8 +2889,8 @@ with tab_potencias:
     </div>
     """, unsafe_allow_html=True)
 
-    pot_resumen, pot_pe, pot_pt, pot_pd, pot_pb, pot_eff = st.tabs([
-        "📌 Resumen", "🌊 PE", "🌀 PT", "⚙️ PD", "🔩 PS / PB", "📉 Eficiencias"
+    pot_resumen, pot_flow, pot_pe, pot_pt, pot_pd, pot_pb, pot_eff = st.tabs([
+        "📌 Resumen", "🔁 Flujo interactivo", "🌊 PE", "🌀 PT", "⚙️ PD", "🔩 PS / PB", "📉 Eficiencias"
     ])
 
     with pot_resumen:
@@ -2847,6 +2921,25 @@ with tab_potencias:
             use_container_width=True,
             height=360
         )
+
+    with pot_flow:
+        st.markdown("""
+        ### 🔁 Flujo energético interactivo del sistema propulsivo
+        Esta visualización convierte la cadena de potencias en un flujo tipo Sankey. Permite ver de forma directa cómo la energía pasa desde el motor hasta la potencia útil y dónde aparecen las pérdidas por eficiencia propulsiva, eje y transmisión.
+        """)
+        if HAS_PLOTLY:
+            fig_sankey = crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw)
+            st.plotly_chart(fig_sankey, use_container_width=True)
+        else:
+            estado_html("⚠️ Para activar el flujo interactivo instala Plotly agregando `plotly` a requirements.txt.", "warn")
+        sankey_df = pd.DataFrame([
+            {"Etapa": "PE útil con margen", "Valor [kW]": PE_kw, "Lectura técnica": "Potencia útil para vencer la resistencia del casco."},
+            {"Etapa": "Pérdidas propulsivas", "Valor [kW]": max(PD_kw-PE_kw, 0), "Lectura técnica": "Efecto de la interacción casco-hélice y eficiencia propulsiva."},
+            {"Etapa": "Pérdida de eje", "Valor [kW]": max(PS_kw-PD_kw, 0), "Lectura técnica": "Pérdidas mecánicas de la línea de ejes."},
+            {"Etapa": "Pérdida de transmisión", "Valor [kW]": max(PB_kw_calc-PS_kw, 0), "Lectura técnica": "Caja reductora/acoplamientos/transmisión."},
+            {"Etapa": "Reserva MCR", "Valor [kW]": max(MCR_requerido_kw-PB_kw_calc, 0), "Lectura técnica": "Margen para operar la PB alrededor del 85% del MCR."},
+        ])
+        st.dataframe(sankey_df.style.format({"Valor [kW]": "{:,.1f}"}), use_container_width=True, height=255)
 
     with pot_pe:
         st.markdown("### 🌊 Potencia efectiva PE")
@@ -3586,8 +3679,8 @@ with tab_cav:
     </div>
     """, unsafe_allow_html=True)
 
-    cav_resumen, cav_burrill, cav_keller, cav_flujo, cav_formulas = st.tabs([
-        "📋 Resumen", "🫧 Burrill", "📐 Keller", "🌊 Reynolds / σ", "🧮 Fórmulas"
+    cav_resumen, cav_visual, cav_burrill, cav_keller, cav_flujo, cav_formulas = st.tabs([
+        "📋 Resumen", "🌊 Visual 3D", "🫧 Burrill", "📐 Keller", "🌊 Reynolds / σ", "🧮 Fórmulas"
     ])
 
     with cav_resumen:
@@ -3614,6 +3707,28 @@ with tab_cav:
             estado_html("⚠️ Dictamen con observaciones: Burrill y Keller cumplen, pero conviene revisar Reynolds o σ.", "warn")
         else:
             estado_html("❌ Dictamen de cavitación con riesgo: revisar área expandida, diámetro, inmersión o carga de la hélice.", "bad")
+
+    with cav_visual:
+        st.markdown("""
+        ### 🌊 Cavitación visual interactiva
+        Esta vista convierte los resultados de **σ**, **Burrill** y **Keller** en una representación espacial alrededor de la hélice. No sustituye CFD ni prueba de túnel de cavitación, pero ayuda a explicar visualmente dónde podría concentrarse el riesgo de formación de vapor y cómo influyen Ae/A0, diámetro, inmersión y carga de pala.
+        """)
+        if HAS_PLOTLY:
+            fig_cav3d = crear_cavitacion_3d_visual(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, sigma=sigma_n, keller_ok=keller_ok, burrill_ok=burrill_ok)
+            st.plotly_chart(fig_cav3d, use_container_width=True)
+        else:
+            estado_html("⚠️ Para activar la cavitación visual instala Plotly agregando `plotly` a requirements.txt.", "warn")
+        cav_visual_df = pd.DataFrame([
+            {"Criterio": "Coeficiente σ", "Valor": f"{sigma_n:.3f}", "Lectura": "Mayor σ indica menor tendencia a formación de vapor."},
+            {"Criterio": "Burrill", "Valor": "Cumple" if burrill_ok else "Revisar", "Lectura": "Evalúa carga de pala contra límite admisible."},
+            {"Criterio": "Keller", "Valor": "Cumple" if keller_ok else "Revisar", "Lectura": "Evalúa si Ae/A0 es suficiente para limitar cavitación."},
+            {"Criterio": "Ae/A0 actual", "Valor": f"{ae_val:.3f}", "Lectura": "Más área expandida reduce carga de pala, aunque puede penalizar eficiencia."},
+        ])
+        st.dataframe(cav_visual_df, use_container_width=True, height=220)
+        if keller_ok and burrill_ok and sigma_n > 0.20:
+            estado_html("✅ Visualización favorable: los criterios preliminares de cavitación son aceptables.", "good")
+        else:
+            estado_html("⚠️ Visualización con observación: revisar inmersión, Ae/A0, diámetro, carga de pala o velocidad de avance.", "warn")
 
     with cav_burrill:
         st.markdown("### 🫧 Criterio de Burrill")
@@ -3895,8 +4010,8 @@ with tab_gemelo:
     if go is None:
         estado_html("⚠️ Para activar el Gemelo Digital instala Plotly agregando `plotly` a requirements.txt.", "warn")
     else:
-        twin_resumen, twin_sankey, twin_sistema, twin_helice, twin_cavitacion = st.tabs([
-            "📌 Panel digital", "⚡ Potencia interactiva", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada", "🌊 Cavitación visual"
+        twin_resumen, twin_sistema, twin_helice = st.tabs([
+            "📌 Panel digital", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada"
         ])
 
         with twin_resumen:
@@ -3909,10 +4024,9 @@ with tab_gemelo:
 
             st.markdown("""
             ### ¿Qué evalúa esta pestaña?
-            - **Flujo energético:** muestra cómo la potencia va desde el MCR del motor hasta la potencia útil efectiva.
             - **Tren propulsor:** representa motor, transmisión/reductora, eje, cojinetes, hélice y dirección de empuje.
             - **Hélice paramétrica:** cambia con Z, D, P/D, Ae/A0 y hub ratio.
-            - **Cavitación visual:** transforma Burrill, Keller y σ en una lectura espacial sobre la hélice.
+            - **Integración visual:** concentra la parte geométrica del sistema eje-hélice, mientras que el flujo energético vive en Potencias y la cavitación animada vive en Cavitación.
             - **Defensa del proyecto:** permite explicar el sistema como si fuera un software de diseño, no solo una hoja de cálculo.
             """)
 
@@ -3926,23 +4040,6 @@ with tab_gemelo:
                 {"Variable": "σ cavitación", "Valor": f"{sigma_n:.3f}", "Uso en gemelo": "Controla la nube simbólica de cavitación."},
             ])
             st.dataframe(resumen_twin_df, use_container_width=True, height=285)
-
-        with twin_sankey:
-            st.markdown("""
-            ### Flujo energético interactivo
-            El Sankey permite identificar visualmente dónde se pierde potencia y cuánta reserva queda hasta el MCR requerido. 
-            Esta lectura es útil para justificar eficiencias, transmisión, margen de servicio y selección de motor.
-            """)
-            fig_sankey = crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw)
-            st.plotly_chart(fig_sankey, use_container_width=True)
-            sankey_df = pd.DataFrame([
-                {"Concepto": "PE útil con margen", "Valor [kW]": PE_kw, "Porcentaje de MCR [%]": safe_div(PE_kw, MCR_requerido_kw)*100, "Interpretación": "Potencia útil para vencer resistencia."},
-                {"Concepto": "Pérdidas propulsivas PD-PE", "Valor [kW]": max(PD_kw-PE_kw, 0), "Porcentaje de MCR [%]": safe_div(max(PD_kw-PE_kw,0), MCR_requerido_kw)*100, "Interpretación": "Efecto casco-hélice y eficiencia propulsiva."},
-                {"Concepto": "Pérdida de eje PS-PD", "Valor [kW]": max(PS_kw-PD_kw, 0), "Porcentaje de MCR [%]": safe_div(max(PS_kw-PD_kw,0), MCR_requerido_kw)*100, "Interpretación": "Pérdidas mecánicas en línea de ejes."},
-                {"Concepto": "Pérdida transmisión PB-PS", "Valor [kW]": max(PB_kw_calc-PS_kw, 0), "Porcentaje de MCR [%]": safe_div(max(PB_kw_calc-PS_kw,0), MCR_requerido_kw)*100, "Interpretación": "Caja reductora/acoplamiento/transmisión."},
-                {"Concepto": "Reserva MCR", "Valor [kW]": max(MCR_requerido_kw-PB_kw_calc, 0), "Porcentaje de MCR [%]": safe_div(max(MCR_requerido_kw-PB_kw_calc,0), MCR_requerido_kw)*100, "Interpretación": "Margen para operar al 85% MCR."},
-            ])
-            st.dataframe(sankey_df.style.format({"Valor [kW]": "{:,.1f}", "Porcentaje de MCR [%]": "{:.2f}%"}), use_container_width=True, height=250)
 
         with twin_sistema:
             st.markdown("""
@@ -3991,25 +4088,6 @@ with tab_gemelo:
             ])
             st.dataframe(helice_visual_df, use_container_width=True, height=285)
 
-        with twin_cavitacion:
-            st.markdown("""
-            ### Cavitación visual conceptual animada
-            Esta vista transforma los resultados de **σ**, **Burrill** y **Keller** en una nube simbólica de cavitación. 
-            No es CFD, pero ayuda a explicar visualmente por qué aumentar Ae/A0, diámetro o inmersión puede reducir el riesgo de cavitación.
-            """)
-            fig_cav3d = crear_cavitacion_3d_visual(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, sigma=sigma_n, keller_ok=keller_ok, burrill_ok=burrill_ok)
-            st.plotly_chart(fig_cav3d, use_container_width=True)
-            cav_visual_df = pd.DataFrame([
-                {"Criterio": "Coeficiente σ", "Valor": f"{sigma_n:.3f}", "Lectura": "Mayor σ indica menor tendencia a formación de vapor."},
-                {"Criterio": "Burrill", "Valor": "Cumple" if burrill_ok else "Revisar", "Lectura": "Evalúa carga de pala contra límite admisible."},
-                {"Criterio": "Keller", "Valor": "Cumple" if keller_ok else "Revisar", "Lectura": "Evalúa si Ae/A0 es suficiente para limitar cavitación."},
-                {"Criterio": "Ae/A0 actual", "Valor": f"{ae_val:.3f}", "Lectura": "Más área expandida reduce carga de pala, con posible penalización de eficiencia."},
-            ])
-            st.dataframe(cav_visual_df, use_container_width=True, height=220)
-            if keller_ok and burrill_ok and sigma_n > 0.20:
-                estado_html("✅ Visualización favorable: los criterios preliminares de cavitación son aceptables y la nube simbólica se mantiene moderada.", "good")
-            else:
-                estado_html("⚠️ Visualización con observación: revisar inmersión, Ae/A0, diámetro, carga de pala o velocidad de avance.", "warn")
 
 
 with tab_avanzado:
