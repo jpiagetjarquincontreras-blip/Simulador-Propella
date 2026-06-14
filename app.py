@@ -4677,11 +4677,11 @@ with tab_lab:
             Simula el crecimiento de resistencia y potencia desde baja velocidad hasta la velocidad de servicio.
             Sirve para explicar por qué pequeños incrementos de velocidad exigen grandes aumentos de potencia.
             """)
-            fig_sea = crear_prueba_mar_animada_wow(velocidad, RT_kn, PE_kw, PB_kw_calc, sigma_n, eta_d)
+            fig_sea = crear_prueba_mar_animada_wow(velocidad, resistencia_total_kn, PE_kw, PB_kw_calc, sigma_n, eta_d)
             st.plotly_chart(fig_sea, use_container_width=True, config=_plotly_config())
             sea_df = pd.DataFrame([
                 {"Variable": "Velocidad de servicio", "Valor": f"{velocidad:.2f} kn", "Lectura": "Punto final de la simulación de aceleración."},
-                {"Variable": "RT de diseño", "Valor": f"{RT_kn:,.1f} kN", "Lectura": "Resistencia usada para calcular PE."},
+                {"Variable": "RT de diseño", "Valor": f"{resistencia_total_kn:,.1f} kN", "Lectura": "Resistencia usada para calcular PE."},
                 {"Variable": "PB requerida", "Valor": f"{PB_kw_calc:,.0f} kW", "Lectura": "Potencia final al freno requerida por el sistema."},
                 {"Variable": "σ de servicio", "Valor": f"{sigma_n:.3f}", "Lectura": "Indicador de margen frente a cavitación."},
             ])
