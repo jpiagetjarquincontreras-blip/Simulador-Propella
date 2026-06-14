@@ -1010,9 +1010,9 @@ def parsear_ficha_tecnica(texto_pdf):
     d["loa_m"] = _buscar_numero(txt, [r"Length overall\s*([0-9.,]+)\s*m", r"Eslora\s+Total\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
     d["lwl_m"] = _buscar_numero(txt, [r"Length waterline\s*([0-9.,]+)\s*m", r"Eslora\s+De\s+Flotaci[oó]n\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
     d["lpp_m"] = _buscar_numero(txt, [r"Length between perpendiculars\s*([0-9.,]+)\s*m", r"Eslora\s+Entre\s+Perpendiculares\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|M|m)"])
-    d["manga_m"] = _buscar_numero(txt, [r"Breadth moulded\s*([0-9.,]+)\s*m", r"Manga\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["manga"] = _buscar_numero(txt, [r"Breadth moulded\s*([0-9.,]+)\s*m", r"Manga\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
     d["puntal_m"] = _buscar_numero(txt, [r"Depth moulded\s*([0-9.,]+)\s*m", r"Puntal\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
-    d["calado_m"] = _buscar_numero(txt, [r"Draft at Summer freeboard\s*([0-9.,]+)\s*m", r"Calado\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["calado"] = _buscar_numero(txt, [r"Draft at Summer freeboard\s*([0-9.,]+)\s*m", r"Calado\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
     d["dwt_t"] = _buscar_numero(txt, [r"Deadweight\s*([0-9.,]+)\s*MT", r"Peso muerto\s*[:\-]?\s*([0-9.,]+)"])
     d["velocidad_kn"] = _buscar_numero(txt, [r"Sea speed.*?([0-9.]+)\s*knots", r"Velocidad\s+De\s+Servicio\s*[:\-]?\s*([0-9.,]+)\s*Nudos"])
     d["sea_margin_pct"] = _buscar_numero(txt, [r"with\s*([0-9.]+)\s*%\s*sea margin", r"Margen\s+De\s+Servicio\s+Requerido\s*[:\-]?\s*([0-9.,]+)\s*%"])
@@ -2328,7 +2328,7 @@ with st.sidebar:
 
     manga = st.number_input(
         "Manga B [m]",
-        value=float(nvl(datos_pdf.get("manga_m"), 58.0)),
+        value=float(nvl(datos_pdf.get("manga"), 58.0)),
         min_value=1.0,
         step=0.5,
         help="Ancho máximo del buque. Debe guardar proporción con Lpp según el tipo de embarcación."
@@ -2344,7 +2344,7 @@ with st.sidebar:
 
     calado = st.number_input(
         "Calado T [m]",
-        value=float(nvl(datos_pdf.get("calado_m"), 20.8)),
+        value=float(nvl(datos_pdf.get("calado"), 20.8)),
         min_value=0.1,
         step=0.1,
         help="Profundidad sumergida del casco. Debe ser menor que el puntal."
@@ -3433,7 +3433,7 @@ def generar_excel():
 
         # 01 Resumen ejecutivo del libro
         resumen_excel = pd.DataFrame([
-            {"Bloque": "Buque", "Resultado": f"L={eslora_total_m:.2f} m · B={manga_m:.2f} m · T={calado_m:.2f} m · V={velocidad:.2f} kn", "Lectura": "Datos principales del caso evaluado."},
+            {"Bloque": "Buque", "Resultado": f"L={eslora:.2f} m · B={manga:.2f} m · T={calado:.2f} m · V={velocidad:.2f} kn", "Lectura": "Datos principales del caso evaluado."},
             {"Bloque": "Potencia", "Resultado": f"PB={PB_kw_calc:,.0f} kW · MCR requerido={MCR_requerido_kw:,.0f} kW", "Lectura": "Demanda de potencia y margen de motor."},
             {"Bloque": "Hélice", "Resultado": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Lectura": "Configuración geométrica usada en el cálculo."},
             {"Bloque": "Cavitación", "Resultado": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Lectura": "Verificación preliminar de riesgo de cavitación."},
@@ -5021,7 +5021,7 @@ with tab_clase:
 
     # Matriz ejecutiva ampliada
     matriz_ejecutiva = pd.DataFrame([
-        {"Bloque técnico": "Datos principales del buque", "Resultado clave": f"L={eslora_total_m:.2f} m · B={manga_m:.2f} m · T={calado_m:.2f} m · V={velocidad:.2f} kn", "Criterio de lectura": "Datos de entrada o ficha técnica", "Estado": "Cumple"},
+        {"Bloque técnico": "Datos principales del buque", "Resultado clave": f"L={eslora:.2f} m · B={manga:.2f} m · T={calado:.2f} m · V={velocidad:.2f} kn", "Criterio de lectura": "Datos de entrada o ficha técnica", "Estado": "Cumple"},
         {"Bloque técnico": "Resistencia y potencia efectiva", "Resultado clave": f"RT={resistencia_total_kn:,.0f} kN · PE={PE_kw:,.0f} kW", "Criterio de lectura": "RT positiva y potencia trazable", "Estado": "Cumple" if resistencia_total_kn > 0 and PE_kw > 0 else "Revisar"},
         {"Bloque técnico": "Potencia al freno / motor", "Resultado clave": f"PB={PB_kw_calc:,.0f} kW · MCR req.={MCR_requerido_kw:,.0f} kW", "Criterio de lectura": "Reserva frente al MCR disponible", "Estado": motor_estado if 'motor_estado' in globals() else ("Cumple" if PB_kw_calc <= MCR_requerido_kw else "Revisar")},
         {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO máx={max_eff*100:.2f}% · J={j_opt:.3f}", "Criterio de lectura": "Eficiencia de aguas abiertas razonable", "Estado": "Cumple" if hidro_ok else "Revisar"},
