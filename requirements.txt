@@ -7,3 +7,4 @@ xlsxwriter
 reportlab
 pypdf
 PyPDF2
+plotly
