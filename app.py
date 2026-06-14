@@ -34,6 +34,9 @@ st.set_page_config(
     page_icon="⚓"
 )
 
+APP_AUTHOR = "Jade Fernanda Jarquín Contreras"
+APP_VERSION = "Naval Propulsion & Shaft Dynamics Pro · v1.0"
+
 # ==============================================================================
 # ESTILO VISUAL PROFESIONAL
 # ==============================================================================
@@ -176,9 +179,39 @@ st.markdown("""
     }
 
     .element-container:has(.js-plotly-plot) { margin-left: auto; margin-right: auto; }
+
+    .author-badge {
+        margin-top: 18px;
+        padding: 14px 15px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: rgba(255,255,255,0.82);
+        color: #334155;
+        font-size: 12px;
+        line-height: 1.45;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.04);
+    }
+    .author-badge b { color:#0f172a; }
+    .author-footer {
+        margin-top: 28px;
+        padding-top: 12px;
+        border-top: 1px solid #e2e8f0;
+        color: #64748b;
+        text-align: center;
+        font-size: 12px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
+st.sidebar.markdown("---")
+st.sidebar.markdown(f"""
+<div class="author-badge">
+<b>{APP_VERSION}</b><br>
+Desarrollado por<br>
+<b>{APP_AUTHOR}</b><br>
+<span style="color:#64748b;">Ingeniería Naval</span>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ==============================================================================
@@ -4531,12 +4564,15 @@ with tab_gemelo:
     st.subheader("🧩 Integración visual 3D del sistema propulsivo")
     st.markdown("""
     <div class="section-card">
-    <b>Objetivo técnico:</b> reunir en un solo módulo las visualizaciones 3D y simulaciones visuales relacionadas con el sistema
-    motor–transmisión–eje–hélice. Esta sección funciona como una <b>representación paramétrica de prediseño</b>: no sustituye CAD,
-    CFD, FEM ni planos de fabricación, pero ayuda a interpretar físicamente los resultados calculados por la app.
+    <b>Objetivo técnico:</b> integrar en un solo módulo las visualizaciones 3D del sistema
+    motor–transmisión–eje–hélice y las simulaciones visuales de desempeño propulsivo. Esta sección funciona como una
+    <b>representación paramétrica de prediseño</b>: no sustituye CAD, CFD, FEM ni planos de fabricación, pero permite
+    interpretar físicamente los resultados calculados por la aplicación y relacionarlos con la geometría del propulsor,
+    la potencia transmitida, la velocidad de servicio y la carga hidrodinámica de la hélice.
     <br><br>
     <span class="small-muted">
-    Para mantener la app ordenada se quitaron las vistas que eran más decorativas o repetitivas, como el casco con flujo 3D y la vibración 3D conceptual. La cavitación formal queda en la pestaña Cavitación, la dinámica formal queda en Integridad dinámica y aquí se conserva lo más útil visualmente: tren propulsor, hélice paramétrica, prueba de mar y mapa de carga de la hélice.
+    Las vistas incluidas son conceptuales y están vinculadas a los datos de entrada del usuario. Su propósito es apoyar
+    la revisión técnica, la defensa del cálculo y la identificación preliminar de tendencias de diseño.
     </span>
     </div>
     """, unsafe_allow_html=True)
@@ -4618,7 +4654,7 @@ with tab_gemelo:
             La hélice 3D muestra de forma conceptual cómo los parámetros hidrodinámicos se convierten en geometría. No es una pala CAD final,
             pero sí permite visualizar tendencias: más **P/D** aumenta el paso/twist, más **Ae/A0** aumenta el área de pala y más **Z** cambia la distribución angular.
             """)
-            helice_geom_ok = (3 <= z_val <= 7) and (0.50 <= pd_val <= 1.40) and (ae_val >= ae_min_keller)
+            helice_geom_ok = (3 <= z_val <= 7) and (0.50 <= pd_val <= 1.40) and (ae_val >= keller_ae_min)
             estado_html(
                 "✅ Geometría paramétrica coherente: los parámetros se encuentran dentro de rangos razonables de prediseño." if helice_geom_ok else
                 "⚠️ Geometría con observaciones: revisar P/D, Ae/A0, número de palas o criterio de Keller.",
@@ -5156,3 +5192,11 @@ with tab_avanzado:
         Limitación técnica: para diseño final real se requieren datos certificados de fabricante y reglas completas
         de clase. La app usa modelos equivalentes de prediseño para fines académicos, transparentes y editables.
         """)
+
+
+# Firma discreta de autoría
+st.markdown(f"""
+<div class="author-footer">
+{APP_VERSION} · Desarrollado por <b>{APP_AUTHOR}</b>
+</div>
+""", unsafe_allow_html=True)
