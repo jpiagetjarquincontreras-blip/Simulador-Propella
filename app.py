@@ -4660,12 +4660,12 @@ with tab_lab:
             fig_lab = crear_casco_flujo_empuje_3d_wow(
                 D=diam_prop_m, Lpp=eslora, B=manga, T=calado, rpm=rpm_helice_objetivo,
                 thrust_kN=thrust_req_N/1000.0, sigma=sigma_n, Z=z_val, PD=pd_val,
-                AeAo=ae_val, hub_ratio=hub_ratio, wake=w_fraction
+                AeAo=ae_val, hub_ratio=hub_ratio, wake=estela
             )
             st.plotly_chart(fig_lab, use_container_width=True, config=_plotly_config())
             lab_df = pd.DataFrame([
                 {"Elemento": "Casco transparente", "Dato usado": f"L≈{eslora:.1f} m, B≈{manga:.1f} m, T≈{calado:.1f} m", "Interpretación": "Ubica la línea de ejes dentro de la popa del buque."},
-                {"Elemento": "Estela / flujo", "Dato usado": f"w={w_fraction:.3f}, VA={VA_ms:.2f} m/s", "Interpretación": "Representa cómo el flujo llega al disco de la hélice."},
+                {"Elemento": "Estela / flujo", "Dato usado": f"w={estela:.3f}, VA={VA_ms:.2f} m/s", "Interpretación": "Representa cómo el flujo llega al disco de la hélice."},
                 {"Elemento": "Hélice", "Dato usado": f"D={diam_prop_m:.2f} m, Z={z_val}, P/D={pd_val:.3f}", "Interpretación": "Convierte potencia entregada en empuje."},
                 {"Elemento": "Vector de empuje", "Dato usado": f"T≈{thrust_req_N/1000:,.1f} kN", "Interpretación": "Muestra dirección e intensidad relativa del empuje."},
                 {"Elemento": "Cavitación simbólica", "Dato usado": f"σ={sigma_n:.3f}", "Interpretación": "La nube aumenta cuando el margen de cavitación disminuye."},
