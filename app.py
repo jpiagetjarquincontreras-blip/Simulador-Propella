@@ -3029,6 +3029,15 @@ def _safe_num(x, default=0.0):
 
 
 def construir_tablas_exportacion_completas():
+    # FIX robusto de exportación:
+    # Algunas variables globales pueden cambiar de nombre entre versiones de la app.
+    # Se crean alias locales seguros para que el Excel/PDF no bloquee toda la aplicación.
+    g = globals()
+    PB_kw_calc = float(g.get("PB_kw_calc", g.get("pb_req_kw", g.get("potencia_kw", 0.0))) or 0.0)
+    MCR_requerido_kw = float(g.get("MCR_requerido_kw", safe_div(PB_kw_calc, 0.85, default=0.0)) or 0.0)
+    mcr_real_disponible = float(g.get("mcr_real_disponible", g.get("motor_mcr_kw", MCR_requerido_kw)) or 0.0)
+    rpm_motor = float(g.get("rpm_motor", g.get("rpm_operacion", g.get("rpm_helice_objetivo", 0.0))) or 0.0)
+    potencia_kw = float(g.get("potencia_kw", PB_kw_calc) or 0.0)
     """Construye, en el momento de exportar, todas las tablas técnicas principales.
     Se evita depender de tablas creadas dentro de pestañas posteriores para que el
     botón de descarga funcione siempre desde Resumen.
