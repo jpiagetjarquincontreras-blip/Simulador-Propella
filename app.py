@@ -401,42 +401,74 @@ def _buscar_texto(texto, patrones):
 
 
 def parsear_ficha_tecnica(texto_pdf):
-    """Busca datos típicos en fichas técnicas navales. No sustituye revisión humana."""
+    """Busca datos típicos en fichas técnicas navales en inglés o español.
+    No sustituye revisión humana: todos los valores detectados quedan editables."""
+    txt = texto_pdf or ""
     d = {}
-    d["tipo_buque"] = "VLCC oil tanker" if re.search(r"VLCC|oil tanker|tanker", texto_pdf or "", re.I) else ""
-    d["loa_m"] = _buscar_numero(texto_pdf, [r"Length overall\s*([0-9.,]+)\s*m"])
-    d["lpp_m"] = _buscar_numero(texto_pdf, [r"Length between perpendiculars\s*([0-9.,]+)\s*m"])
-    d["manga_m"] = _buscar_numero(texto_pdf, [r"Breadth moulded\s*([0-9.,]+)\s*m"])
-    d["puntal_m"] = _buscar_numero(texto_pdf, [r"Depth moulded\s*([0-9.,]+)\s*m"])
-    d["calado_m"] = _buscar_numero(texto_pdf, [r"Draft at Summer freeboard\s*([0-9.,]+)\s*m"])
-    d["dwt_t"] = _buscar_numero(texto_pdf, [r"Deadweight\s*([0-9.,]+)\s*MT"])
-    d["velocidad_kn"] = _buscar_numero(texto_pdf, [r"Sea speed.*?([0-9.]+)\s*knots"])
-    d["sea_margin_pct"] = _buscar_numero(texto_pdf, [r"with\s*([0-9.]+)\s*%\s*sea margin"])
-    d["motor_modelo"] = _buscar_texto(texto_pdf, [r"Main Engine\s*([^\n]+)"])
-    m = re.search(r"MCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", texto_pdf or "", flags=re.I)
+    d["tipo_buque"] = "VLCC / Buque tanque" if re.search(r"VLCC|oil tanker|tanker|buque tanque|crude carrier", txt, re.I) else ""
+
+    # Dimensiones principales: inglés y español.
+    d["loa_m"] = _buscar_numero(txt, [r"Length overall\s*([0-9.,]+)\s*m", r"Eslora\s+Total\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["lwl_m"] = _buscar_numero(txt, [r"Length waterline\s*([0-9.,]+)\s*m", r"Eslora\s+De\s+Flotaci[oó]n\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["lpp_m"] = _buscar_numero(txt, [r"Length between perpendiculars\s*([0-9.,]+)\s*m", r"Eslora\s+Entre\s+Perpendiculares\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|M|m)"])
+    d["manga_m"] = _buscar_numero(txt, [r"Breadth moulded\s*([0-9.,]+)\s*m", r"Manga\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["puntal_m"] = _buscar_numero(txt, [r"Depth moulded\s*([0-9.,]+)\s*m", r"Puntal\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["calado_m"] = _buscar_numero(txt, [r"Draft at Summer freeboard\s*([0-9.,]+)\s*m", r"Calado\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["dwt_t"] = _buscar_numero(txt, [r"Deadweight\s*([0-9.,]+)\s*MT", r"Peso muerto\s*[:\-]?\s*([0-9.,]+)"])
+    d["velocidad_kn"] = _buscar_numero(txt, [r"Sea speed.*?([0-9.]+)\s*knots", r"Velocidad\s+De\s+Servicio\s*[:\-]?\s*([0-9.,]+)\s*Nudos"])
+    d["sea_margin_pct"] = _buscar_numero(txt, [r"with\s*([0-9.]+)\s*%\s*sea margin", r"Margen\s+De\s+Servicio\s+Requerido\s*[:\-]?\s*([0-9.,]+)\s*%"])
+
+    # Resistencia y parámetros de interacción casco-propulsor.
+    d["rt_kn"] = _buscar_numero(txt, [r"Calm\s+Water\s+Resistance\s*[:\-]?\s*([0-9.,]+)", r"Resistencia\s+(?:en\s+)?calma\s*[:\-]?\s*([0-9.,]+)"])
+    d["wake_adjustment_pct"] = _buscar_numero(txt, [r"Nonuniform\s+Wake\s+Adjustment\s*[:\-]?\s*([0-9.,]+)\s*%"])
+    d["eta_r"] = _buscar_numero(txt, [r"Eficiencia\s+Rotativa\s+Relativa\s*[:\-]?\s*([0-9.,]+)", r"Relative\s+rotative\s+efficiency\s*[:\-]?\s*([0-9.,]+)"])
+    d["t"] = _buscar_numero(txt, [r"Fracci[oó]n\s+de\s+deducci[oó]n\s+de\s+empuje\s*[:\-]?\s*([0-9.,]+)", r"Thrust\s+deduction\s*[:\-]?\s*([0-9.,]+)"])
+    d["w"] = _buscar_numero(txt, [r"Fracci[oó]n\s+De\s+Estela\s*[:\-]?\s*([0-9.,]+)", r"Wake\s+fraction\s*[:\-]?\s*([0-9.,]+)"])
+    d["inmersion_eje_m"] = _buscar_numero(txt, [r"Inmersi[oó]n\s+Del\s+Eje\s*[:\-]?\s*([0-9.,]+)\s*M", r"Shaft\s+immersion\s*[:\-]?\s*([0-9.,]+)"])
+
+    # Condiciones de agua. Se corrige presión atmosférica si viene en kPa o con punto mal colocado.
+    p_atm = _buscar_numero(txt, [r"Presi[oó]n\s+Del\s+Aire\s*[:\-]?\s*([0-9.,]+)", r"Atmospheric\s+pressure\s*[:\-]?\s*([0-9.,]+)"])
+    if p_atm:
+        if p_atm < 2000:
+            p_atm = p_atm * 100.0 if p_atm > 500 else p_atm * 1000.0
+        d["p_atm_pa"] = p_atm
+    d["p_vap_pa"] = _buscar_numero(txt, [r"Presi[oó]n\s+De\s+Vapor.*?[:\-]?\s*([0-9.,]+)", r"Vapor\s+pressure\s*[:\-]?\s*([0-9.,]+)"])
+    d["rho_kg_m3"] = _buscar_numero(txt, [r"Densidad.*?([0-9]{3,4}[.,][0-9]+)\s*Kg/M3", r"Density.*?([0-9]{3,4}[.,][0-9]+)"])
+    d["g_ms2"] = _buscar_numero(txt, [r"gravitacional\s*[:\-]?\s*([0-9.,]+)", r"Gravity\s*[:\-]?\s*([0-9.,]+)"])
+
+    # Motor real.
+    d["motor_modelo"] = _buscar_texto(txt, [r"Main Engine\s*([^\n]+)"])
+    m = re.search(r"MCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", txt, flags=re.I)
     if m:
         d["mcr_kw"] = float(m.group(1).replace(',', ''))
         d["mcr_rpm"] = float(m.group(2).replace(',', ''))
     else:
         d["mcr_kw"] = None; d["mcr_rpm"] = None
-    m = re.search(r"NCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", texto_pdf or "", flags=re.I)
+    m = re.search(r"NCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", txt, flags=re.I)
     if m:
         d["ncr_kw"] = float(m.group(1).replace(',', ''))
         d["ncr_rpm"] = float(m.group(2).replace(',', ''))
     else:
         d["ncr_kw"] = None; d["ncr_rpm"] = None
-    z = _buscar_numero(texto_pdf, [r"Propeller.*?([0-9]+)\s*blades", r"([0-9]+)\s*blades\s*solid"])
+
+    # Hélice real o de referencia.
+    z = _buscar_numero(txt, [r"Propeller.*?([0-9]+)\s*blades", r"([0-9]+)\s*blades\s*solid", r"Numero\s+De\s+Palas\s*[:\-]?\s*([0-9]+)"])
     d["prop_z"] = int(z) if z else None
     d["prop_diam_m"] = None
-    diam_mm = _buscar_numero(texto_pdf, [r"Diam\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
+    diam_mm = _buscar_numero(txt, [r"Diam\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
+    diam_m = _buscar_numero(txt, [r"Di[aá]metro\s*\(D\)\s*[:\-]?\s*([0-9.,]+)\s*M", r"Di[aá]metro\s*[:\-]?\s*([0-9.,]+)\s*M"])
     if diam_mm:
         d["prop_diam_m"] = diam_mm / 1000.0
-    pitch_mm = _buscar_numero(texto_pdf, [r"Pitch\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
+    elif diam_m:
+        d["prop_diam_m"] = diam_m
+    pitch_mm = _buscar_numero(txt, [r"Pitch\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
     d["prop_pitch_m"] = pitch_mm / 1000.0 if pitch_mm else None
-    d["prop_pd"] = safe_div(d.get("prop_pitch_m"), d.get("prop_diam_m"), default=None) if d.get("prop_pitch_m") and d.get("prop_diam_m") else None
-    d["prop_material"] = _buscar_texto(texto_pdf, [r"Material\s*([^\n]+)"])
+    pd_val_detect = _buscar_numero(txt, [r"P/D.*?\)\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+Paso/Di[aá]metro.*?[:\-]?\s*([0-9.,]+)"])
+    d["prop_pd"] = pd_val_detect if pd_val_detect else (safe_div(d.get("prop_pitch_m"), d.get("prop_diam_m"), default=None) if d.get("prop_pitch_m") and d.get("prop_diam_m") else None)
+    d["prop_aeao"] = _buscar_numero(txt, [r"Ae\s*/\s*A0\s*\)?\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+De\s+[AÁ]rea\s+Expandida.*?[:\-]?\s*([0-9.,]+)"])
+    d["hub_ratio"] = _buscar_numero(txt, [r"Hub\s+Ratio\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+Del\s+Cubo.*?[:\-]?\s*([0-9.,]+)"])
+    d["prop_material"] = _buscar_texto(txt, [r"Material\s*([^\n]+)"])
     return d
-
 
 def nvl(dato, default):
     return default if dato is None or dato == "" else dato
@@ -937,10 +969,10 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🌎 Constantes físicas")
 
-    p_atm_auto = st.number_input("Presión atmosférica [Pa]", value=101325.0, format="%.2f")
-    p_vap_auto = st.number_input("Presión de vapor del agua [Pa]", value=1704.0, format="%.2f")
-    rho_auto = st.number_input("Densidad del agua [kg/m³]", value=1026.021, format="%.3f")
-    g_auto = st.number_input("Gravedad [m/s²]", value=9.80665, format="%.5f")
+    p_atm_auto = st.number_input("Presión atmosférica [Pa]", value=float(nvl(datos_pdf.get("p_atm_pa"), 101325.0)), format="%.2f")
+    p_vap_auto = st.number_input("Presión de vapor del agua [Pa]", value=float(nvl(datos_pdf.get("p_vap_pa"), 1704.0)), format="%.2f")
+    rho_auto = st.number_input("Densidad del agua [kg/m³]", value=float(nvl(datos_pdf.get("rho_kg_m3"), 1026.021)), format="%.3f")
+    g_auto = st.number_input("Gravedad [m/s²]", value=float(nvl(datos_pdf.get("g_ms2"), 9.80665)), format="%.5f")
 
     st.markdown("---")
     st.subheader("🚢 Dimensiones principales")
@@ -955,7 +987,7 @@ with st.sidebar:
 
     lwl = st.number_input(
         "Eslora en flotación LWL [m]",
-        value=float(nvl(datos_pdf.get("loa_m"), 325.5)),
+        value=float(nvl(datos_pdf.get("lwl_m"), 325.5)),
         min_value=1.0,
         step=1.0,
         help="Longitud del buque sobre la línea de agua. Normalmente es igual o ligeramente mayor que Lpp."
@@ -1042,7 +1074,7 @@ with st.sidebar:
     z_val = st.slider("Número de palas Z", 3, 7, int(nvl(datos_pdf.get("prop_z"), 4)))
     diam_prop_m = st.number_input("Diámetro de hélice D [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 9.86)), min_value=0.1, step=0.01)
     pd_val = st.slider("Relación paso/diámetro P/D [-]", 0.5, 1.4, float(nvl(datos_pdf.get("prop_pd"), 0.721)), 0.001)
-    ae_val = st.slider("Relación de área expandida Ae/A0 [-]", 0.3, 1.0, 0.431, 0.001)
+    ae_val = st.slider("Relación de área expandida Ae/A0 [-]", 0.3, 1.0, float(nvl(datos_pdf.get("prop_aeao"), 0.431)), 0.001)
     margen_servicio = st.slider("Margen de servicio requerido [%]", 0.0, 30.0, float(nvl(datos_pdf.get("sea_margin_pct"), 15.0)), 0.5)
 
     st.markdown("---")
@@ -1325,6 +1357,10 @@ exceso_sobre_85_pct = safe_div(exceso_sobre_85_kw, max(potencia_85_mcr_kw, 1e-9)
 margen_hasta_mcr_kw = motor_mcr_kw - PB_kw_calc if motor_mcr_kw > 0 else 0.0
 margen_hasta_mcr_pct = safe_div(margen_hasta_mcr_kw, max(motor_mcr_kw, 1e-9)) * 100.0
 rpm_helice_requerida = safe_div(VA_ms, max(j_opt * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_opt > 0 else 0.0
+# Para validación contra ficha técnica NO se fuerza que la RPM teórica por J óptimo sea igual a la RPM real.
+# La RPM teórica representa el punto de máxima eficiencia en aguas abiertas; la RPM real puede responder a motor,
+# transmisión, diámetro permitido, cavitación, vibración, contrato de velocidad o decisiones de fabricante.
+rpm_helice_validacion = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
 # Para validación de transmisión se usa primero la RPM real/manual si existe, porque J óptimo no siempre representa la RPM real de servicio.
 rpm_helice_objetivo = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
 if transmision_tipo == "Con caja reductora":
@@ -1353,7 +1389,7 @@ burrill_ok = tau_c_burrill <= tau_c_admisible
 
 comparacion_df = pd.DataFrame([
     {"Parámetro": "Potencia al freno PB [kW]", "Calculado": PB_kw_calc, "Real PDF/manual": pb_real_kw, "Error [%]": error_pct(PB_kw_calc, pb_real_kw)},
-    {"Parámetro": "RPM de hélice [rpm]", "Calculado": rpm_helice_requerida, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_helice_requerida, rpm_real)},
+    {"Parámetro": "RPM de hélice de validación [rpm]", "Calculado": rpm_helice_validacion, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_helice_validacion, rpm_real)},
     {"Parámetro": "Diámetro de hélice [m]", "Calculado": diam_prop_m, "Real PDF/manual": diam_real_m, "Error [%]": error_pct(diam_prop_m, diam_real_m)},
     {"Parámetro": "Número de palas Z", "Calculado": z_val, "Real PDF/manual": z_real, "Error [%]": error_pct(z_val, z_real)},
     {"Parámetro": "P/D", "Calculado": pd_val, "Real PDF/manual": pd_real, "Error [%]": error_pct(pd_val, pd_real)},
@@ -1902,6 +1938,12 @@ with tab_pdf_comp:
 
     st.markdown("### Tabla profesional de validación")
     st.caption("Criterio sugerido: ≤5% cumple, 5–15% requiere revisión, >15% no cumple respecto al dato real disponible.")
+    if rpm_real and rpm_real > 0 and rpm_helice_requerida > 0:
+        err_teorico_rpm = error_pct(rpm_helice_requerida, rpm_real)
+        estado_html(
+            f"ℹ️ Nota importante sobre RPM: la app calcula una RPM teórica por máxima eficiencia en aguas abiertas de {rpm_helice_requerida:.2f} rpm, mientras que la ficha real trabaja a {rpm_real:.2f} rpm. Esto no necesariamente es malo: la RPM real depende del motor seleccionado, transmisión, limitación de diámetro, cavitación, vibración, margen de servicio y decisiones de diseño del fabricante. Por eso la tabla de validación compara la RPM de servicio real/manual cuando está disponible y deja la RPM teórica como referencia de optimización.",
+            "warn" if err_teorico_rpm and err_teorico_rpm > 15 else "good"
+        )
     st.dataframe(
         comparacion_prof_df.style
         .format({"Calculado": formatear_numero_tabla, "Real PDF/manual": formatear_numero_tabla, "Error [%]": lambda x: "—" if pd.isna(x) else f"{x:.2f}%"})
@@ -1924,7 +1966,7 @@ with tab_pdf_comp:
     if not rpm_err_row.empty:
         err_val = pd.to_numeric(rpm_err_row.iloc[0].get("Error [%]"), errors="coerce")
         if pd.notna(err_val) and err_val > 10:
-            estado_html(f"⚠️ La RPM calculada se aleja {err_val:.2f}% de la RPM real. Revisa diámetro, P/D y usa la optimización con restricción de RPM para acercar el diseño al buque real.", "warn")
+            estado_html(f"⚠️ La RPM de validación se aleja {err_val:.2f}% de la RPM real. Revisa si estás comparando la RPM de servicio correcta o si deseas usar la optimización con restricción de RPM.", "warn")
 
 # ==============================================================================
 # CADENA DE POTENCIAS
