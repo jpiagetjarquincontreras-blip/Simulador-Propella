@@ -971,6 +971,229 @@ def optimizar_helice_wageningen(modo="Rápida", rpm_referencia=0.0, va_ms_ref=0.
 
 
 
+
+
+# ==============================================================================
+# GRÁFICAS INTERACTIVAS / ANIMADAS PARA EL MÓDULO WOW
+# ==============================================================================
+
+def _fig_layout_clean(fig, height=480, title=None):
+    if fig is None:
+        return None
+    fig.update_layout(
+        height=height,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=30, r=30, t=65 if title else 35, b=35),
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a"),
+        font=dict(color="#0f172a")
+    )
+    if title:
+        fig.update_layout(title=dict(text=title, x=0.02, xanchor="left"))
+    return fig
+
+
+def crear_figura_comparacion_interactiva(comparacion):
+    if go is None:
+        return None
+    df = comparacion.copy()
+    df["Calculado"] = pd.to_numeric(df["Calculado"], errors="coerce")
+    df["Real PDF/manual"] = pd.to_numeric(df["Real PDF/manual"], errors="coerce")
+    df["Error [%]"] = pd.to_numeric(df["Error [%]"], errors="coerce")
+    df = df.dropna(subset=["Error [%]"]).copy()
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sin datos reales suficientes para comparar", x=0.5, y=0.5, showarrow=False)
+        return _fig_layout_clean(fig, 360, "Validación contra ficha técnica")
+    df = df.sort_values("Error [%]", ascending=True)
+    colors = ["#16a34a" if v <= 5 else ("#f59e0b" if v <= 15 else "#ef4444") for v in df["Error [%]"]]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=df["Error [%]"], y=df["Parámetro"], orientation="h", marker=dict(color=colors),
+        text=[f"{v:.1f}%" for v in df["Error [%]"]], textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Error=%{x:.2f}%<br>Calculado=%{customdata[0]:,.3f}<br>Real=%{customdata[1]:,.3f}<extra></extra>",
+        customdata=np.stack([df["Calculado"], df["Real PDF/manual"]], axis=-1)
+    ))
+    fig.add_vline(x=5, line_dash="dash", line_color="#16a34a", annotation_text="Cumple ≤5%")
+    fig.add_vline(x=15, line_dash="dot", line_color="#f59e0b", annotation_text="Revisión ≤15%")
+    xmax = max(float(df["Error [%]"].max())*1.25, 16)
+    fig.update_xaxes(title="Error porcentual [%]", range=[0, xmax], gridcolor="#e2e8f0")
+    fig.update_yaxes(title="", gridcolor="#ffffff")
+    return _fig_layout_clean(fig, 430, "Validación interactiva — error porcentual por parámetro")
+
+
+def crear_figura_wageningen_interactiva(res_df, j_opt_val):
+    if go is None:
+        return None
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=res_df["J"], y=res_df["KT"], mode="lines", name="KT", line=dict(width=3)))
+    fig.add_trace(go.Scatter(x=res_df["J"], y=res_df["10KQ"], mode="lines", name="10KQ", line=dict(width=3)))
+    fig.add_trace(go.Scatter(x=res_df["J"], y=res_df["nO"], mode="lines", name="ηO", line=dict(width=3, dash="dash")))
+    fig.add_vline(x=j_opt_val, line_dash="dot", line_color="#7c3aed", annotation_text=f"J óptimo={j_opt_val:.3f}")
+    fig.update_xaxes(title="Coeficiente de avance J", gridcolor="#e2e8f0")
+    fig.update_yaxes(title="Coeficientes", gridcolor="#e2e8f0")
+    fig.update_layout(legend=dict(orientation="h", y=1.08, x=0.02))
+    return _fig_layout_clean(fig, 480, "Curvas Wageningen B-Series interactivas")
+
+
+def crear_figura_cadena_potencias_interactiva(power_df):
+    if go is None:
+        return None
+    etapas = ["PE", "PE + Sea Margin", "PT", "PD", "PS", "PB", "MCR requerido"]
+    df = power_df[power_df["Etapa"].isin(etapas)].copy()
+    df["Orden"] = df["Etapa"].apply(lambda x: etapas.index(x))
+    df = df.sort_values("Orden")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["Etapa"], y=df["Valor"], mode="lines+markers+text", name="Potencia",
+        text=[f"{v:,.0f} kW" for v in df["Valor"]], textposition="top center",
+        line=dict(width=4, color="#2563eb"), marker=dict(size=10, color="#7c3aed"),
+        hovertemplate="<b>%{x}</b><br>%{y:,.1f} kW<extra></extra>"
+    ))
+    frames=[]
+    for n in range(1, len(df)+1):
+        frames.append(go.Frame(data=[go.Scatter(x=df["Etapa"].iloc[:n], y=df["Valor"].iloc[:n], mode="lines+markers+text", text=[f"{v:,.0f} kW" for v in df["Valor"].iloc[:n]], textposition="top center", line=dict(width=4, color="#2563eb"), marker=dict(size=10, color="#7c3aed"))], name=str(n)))
+    fig.frames=frames
+    fig.update_layout(updatemenus=[dict(type="buttons", x=0.01, y=1.17, buttons=[
+        dict(label="▶ Animar cadena", method="animate", args=[None, {"frame":{"duration":450,"redraw":True}, "transition":{"duration":250}, "fromcurrent":True}]),
+        dict(label="⏸ Pausa", method="animate", args=[[None], {"mode":"immediate", "frame":{"duration":0}, "transition":{"duration":0}}])
+    ])])
+    fig.update_xaxes(title="Etapa de cálculo", gridcolor="#ffffff")
+    fig.update_yaxes(title="Potencia [kW]", gridcolor="#e2e8f0")
+    return _fig_layout_clean(fig, 500, "Cadena de potencias animada e interactiva")
+
+
+def crear_figura_eficiencias_interactiva(eff_df):
+    if go is None:
+        return None
+    df = eff_df.copy()
+    df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce")
+    df = df.dropna(subset=["Valor"])
+    fig = go.Figure(go.Bar(
+        x=df["Valor"], y=df["Eficiencia"], orientation="h",
+        text=[f"{v:.3f}" for v in df["Valor"]], textposition="outside",
+        marker=dict(color="#2563eb"),
+        hovertemplate="<b>%{y}</b><br>Valor=%{x:.4f}<extra></extra>"
+    ))
+    fig.add_vline(x=1.0, line_dash="dash", line_color="#64748b", annotation_text="Referencia 1.0")
+    fig.update_xaxes(title="Valor [-]", gridcolor="#e2e8f0", range=[0, max(1.2, df["Valor"].max()*1.18)])
+    fig.update_yaxes(title="")
+    return _fig_layout_clean(fig, 460, "Mapa interactivo de eficiencias adoptadas")
+
+
+def crear_figura_burrill_interactiva(sigma_actual, tau_actual, tau_adm_actual):
+    if go is None:
+        return None
+    max_sigma = max(1.2, sigma_actual*1.15)
+    sig = np.linspace(0.05, max_sigma, 180)
+    tau_adm = 0.22 + 0.18*sig
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=sig, y=tau_adm, mode="lines", name="Límite admisible", line=dict(width=3, color="#2563eb")))
+    fig.add_trace(go.Scatter(x=np.r_[sig, sig[::-1]], y=np.r_[np.zeros_like(tau_adm), tau_adm[::-1]], fill="toself", fillcolor="rgba(16,185,129,0.12)", line=dict(color="rgba(0,0,0,0)"), name="Zona aceptable", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[sigma_actual], y=[tau_actual], mode="markers+text", text=["Diseño"], textposition="top center", name="Diseño actual", marker=dict(size=14, color="#7c3aed"), hovertemplate=f"σ={sigma_actual:.3f}<br>τc={tau_actual:.3f}<br>τ adm={tau_adm_actual:.3f}<extra></extra>"))
+    fig.update_xaxes(title="σ cavitación", gridcolor="#e2e8f0")
+    fig.update_yaxes(title="τc carga", gridcolor="#e2e8f0")
+    return _fig_layout_clean(fig, 480, "Burrill interactivo — σ vs τc")
+
+
+def crear_figura_keller_interactiva(ae_min, ae_actual):
+    if go is None:
+        return None
+    margen = ae_actual - ae_min
+    color = "#16a34a" if margen >= 0 else "#ef4444"
+    fig = go.Figure()
+    fig.add_trace(go.Indicator(
+        mode="gauge+number+delta", value=ae_actual,
+        number={"suffix":" Ae/A0", "font":{"size":26}},
+        delta={"reference":ae_min, "increasing":{"color":"#16a34a"}, "decreasing":{"color":"#ef4444"}},
+        gauge={"axis":{"range":[0, max(1.0, ae_actual*1.25, ae_min*1.35)]},
+               "bar":{"color":color},
+               "threshold":{"line":{"color":"#f59e0b", "width":4}, "value":ae_min},
+               "steps":[{"range":[0, ae_min], "color":"#fee2e2"}, {"range":[ae_min, max(1.0, ae_actual*1.25, ae_min*1.35)], "color":"#dcfce7"}]}
+    ))
+    fig.add_annotation(x=0.5, y=0.02, xref="paper", yref="paper", showarrow=False, text=f"Mínimo Keller={ae_min:.3f} · Margen={margen:+.3f}", font=dict(size=13, color="#0f172a"))
+    return _fig_layout_clean(fig, 390, "Keller interactivo — área expandida mínima")
+
+
+def crear_figura_campbell_interactiva(rpm_operacion, f_lat, f_tors, f_axial, z):
+    if go is None:
+        return None
+    max_rpm = max(rpm_operacion*2.0, 120)
+    rpm_x = np.linspace(0, max_rpm, 220)
+    fig = go.Figure()
+    for nombre, f, col in [("Lateral",f_lat,"#2563eb"),("Torsional",f_tors,"#7c3aed"),("Axial",f_axial,"#0891b2")]:
+        fig.add_trace(go.Scatter(x=rpm_x, y=np.full_like(rpm_x, f), mode="lines", name=f"fn {nombre}={f:.2f} Hz", line=dict(width=2, dash="dash", color=col)))
+    for nombre, mult in [("1P",1),("2P",2),("3P",3),("ZP",z),("2ZP",2*z),("3ZP",3*z)]:
+        fig.add_trace(go.Scatter(x=rpm_x, y=mult*rpm_x/60.0, mode="lines", name=nombre, line=dict(width=2)))
+    fig.add_vline(x=rpm_operacion, line_color="#ef4444", line_width=3, annotation_text=f"Operación {rpm_operacion:.0f} rpm")
+    fig.update_xaxes(title="RPM", gridcolor="#e2e8f0")
+    fig.update_yaxes(title="Frecuencia [Hz]", gridcolor="#e2e8f0")
+    return _fig_layout_clean(fig, 520, "Diagrama Campbell interactivo")
+
+
+def crear_figura_waterfall_interactivo(pe_sin, pe_con, margen_pct):
+    if go is None:
+        return None
+    inc = max(pe_con-pe_sin,0)
+    fig=go.Figure(go.Waterfall(
+        x=["PE base", f"Sea Margin {margen_pct:.1f}%", "PE diseño"],
+        measure=["absolute","relative","total"],
+        y=[pe_sin, inc, pe_con],
+        text=[f"{pe_sin:,.0f}", f"+{inc:,.0f}", f"{pe_con:,.0f} kW"],
+        textposition="outside",
+        connector={"line":{"color":"#94a3b8"}},
+        hovertemplate="<b>%{x}</b><br>%{y:,.1f} kW<extra></extra>"
+    ))
+    fig.update_yaxes(title="Potencia [kW]", gridcolor="#e2e8f0")
+    return _fig_layout_clean(fig, 430, "PE y Sea Margin — waterfall interactivo")
+
+
+def crear_modo_explosion_3d(D=9.86, eje_d_mm=650, tipo_trans="Directa", relacion=1.0, PB=25000, rpm=75, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155):
+    """Vista explotada conceptual del sistema propulsivo. Permite explicar cada parte con hover."""
+    if go is None:
+        return None
+    R=max(D/2,0.1); shaft_len=max(2.9*D,18.0); eje_r=max(eje_d_mm/1000/2,0.10)
+    fig=go.Figure()
+    # motor, caja, acople, eje, cojinetes, hélice separados en línea
+    _add_cuboid(fig, (-5,0,1.2*R), (4.5,2.3*R,1.7*R), name="Motor", color="#1e293b", hovertext=f"<b>Motor principal</b><br>PB={PB:,.0f} kW<br>MCR requerido≈{PB/0.85:,.0f} kW<br>Convierte energía térmica en potencia mecánica.")
+    if not str(tipo_trans).startswith("Directa"):
+        _add_cuboid(fig, (1.7,0,0.85*R), (2.6,1.5*R,1.2*R), name="Reductora", color="#475569", hovertext=f"<b>Reductora</b><br>Relación i≈{relacion:.2f}:1<br>Ajusta RPM de motor a RPM de hélice.")
+    X,Y,Zc=_cylinder_surface(radius=eje_r, length=shaft_len, x0=5.0, axis="x", n_theta=32, n_len=12)
+    fig.add_trace(go.Surface(x=X,y=Y,z=Zc, showscale=False, opacity=0.9, colorscale=[[0,"#64748b"],[1,"#111827"]], name="Eje", hovertemplate=f"<b>Eje propulsor</b><br>d≈{eje_d_mm:.0f} mm<br>Transmite torque hacia la hélice.<extra></extra>"))
+    for idx, xc in enumerate([9.0, 16.0, 23.0]):
+        Xb,Yb,Zb=_cylinder_surface(radius=0.22*R, length=0.22*D, x0=xc, axis="x", n_theta=32, n_len=4)
+        fig.add_trace(go.Surface(x=Xb,y=Yb,z=Zb, showscale=False, opacity=0.95, colorscale=[[0,"#14b8a6"],[1,"#0f766e"]], name="Cojinete", hovertemplate=f"<b>Cojinete {idx+1}</b><br>Soporte radial de la línea de eje.<extra></extra>"))
+    xp,yp,zp,ii,jj,kk,inten=_propeller_mesh_arrays(D,Z,PD,AeAo,hub_ratio,phase=0,x_offset=shaft_len+7.0,axis="x",detail=28)
+    fig.add_trace(go.Mesh3d(x=xp,y=yp,z=zp,i=ii,j=jj,k=kk,intensity=inten,colorscale="Viridis",opacity=0.96,flatshading=False,showscale=False,name="Hélice",hovertemplate=f"<b>Hélice</b><br>D={D:.2f} m<br>Z={Z}<br>P/D={PD:.3f}<br>Ae/A0={AeAo:.3f}<extra></extra>"))
+    fig.add_trace(go.Cone(x=[shaft_len+9+0.7*D],y=[0],z=[0],u=[0.9*D],v=[0],w=[0],sizemode="absolute",sizeref=0.55*D,showscale=False,name="Empuje",colorscale=[[0,"#38bdf8"],[1,"#0284c7"]],hovertemplate="<b>Empuje</b><br>Fuerza propulsiva resultante del propulsor.<extra></extra>"))
+    fig.update_layout(title=dict(text="Modo explosión interactivo — componentes del sistema propulsivo",x=0.02),scene=dict(aspectmode="data",camera=dict(eye=dict(x=1.8,y=1.5,z=0.9)),xaxis_title="Longitud",yaxis_title="Transversal",zaxis_title="Vertical",bgcolor="white"),height=650,margin=dict(l=0,r=0,t=65,b=0),paper_bgcolor="white",hoverlabel=dict(bgcolor="white",font_size=12,font_color="#0f172a"))
+    return fig
+
+
+def crear_vibracion_eje_3d(D=9.86, eje_d_mm=650, rpm=75, modo="Lateral"):
+    """Animación conceptual de vibración del eje."""
+    if go is None:
+        return None
+    L=max(3.2*D,22.0); x=np.linspace(0,L,120); amp=0.10*D
+    y=np.zeros_like(x); z=np.zeros_like(x)
+    fig=go.Figure()
+    trace_idx=0
+    fig.add_trace(go.Scatter3d(x=x,y=y,z=z,mode="lines",line=dict(width=8,color="#334155"),name="Eje deformado",hovertemplate=f"<b>Eje</b><br>RPM={rpm:.1f}<br>Modo={modo}<extra></extra>"))
+    frames=[]
+    for n,phase in enumerate(np.linspace(0,2*np.pi,28,endpoint=False)):
+        if modo=="Torsional":
+            yy=0.04*D*np.sin(2*np.pi*x/L+phase); zz=0.04*D*np.cos(2*np.pi*x/L+phase)
+        elif modo=="Axial":
+            xx=x+0.18*D*np.sin(phase)*np.sin(np.pi*x/L); yy=np.zeros_like(x); zz=np.zeros_like(x)
+            frames.append(go.Frame(data=[go.Scatter3d(x=xx,y=yy,z=zz,mode="lines",line=dict(width=8,color="#334155"))],traces=[trace_idx],name=str(n)))
+            continue
+        else:
+            yy=amp*np.sin(np.pi*x/L)*np.sin(phase); zz=0.25*amp*np.sin(np.pi*x/L)*np.cos(phase)
+        frames.append(go.Frame(data=[go.Scatter3d(x=x,y=yy,z=zz,mode="lines",line=dict(width=8,color="#334155"))],traces=[trace_idx],name=str(n)))
+    fig.frames=frames
+    fig.update_layout(updatemenus=[dict(type="buttons",x=0.02,y=1.05,buttons=[dict(label="▶ Animar",method="animate",args=[None,{"frame":{"duration":55,"redraw":True},"transition":{"duration":0},"fromcurrent":True}]),dict(label="⏸ Pausa",method="animate",args=[[None],{"mode":"immediate","frame":{"duration":0},"transition":{"duration":0}}])])],title=dict(text=f"Vibración 3D conceptual del eje — modo {modo}",x=0.02),scene=dict(aspectmode="data",camera=dict(eye=dict(x=1.8,y=1.4,z=0.8)),xaxis_title="Longitud",yaxis_title="Desplazamiento transversal",zaxis_title="Vertical",bgcolor="white"),height=520,margin=dict(l=0,r=0,t=65,b=0),paper_bgcolor="white")
+    return fig
+
 # ==============================================================================
 # GEMELO DIGITAL 3D E INTERACTIVO
 # ==============================================================================
@@ -2783,7 +3006,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🔍 Cavitación",
     "📚 Normativa",
     "📋 Clase",
-    "🧩 Sistema propulsivo 3D",
+    "🧩 Sistema eje–hélice 3D",
     "⚙️ Integridad dinámica"
 ])
 
@@ -2947,8 +3170,12 @@ with tab_pdf_comp:
     )
 
     st.markdown("### 📊 Error porcentual por parámetro")
-    fig_cmp = crear_figura_comparacion(comparacion_df)
-    st.pyplot(fig_cmp)
+    fig_cmp_inter = crear_figura_comparacion_interactiva(comparacion_df)
+    if fig_cmp_inter is not None:
+        st.plotly_chart(fig_cmp_inter, use_container_width=True)
+    else:
+        fig_cmp = crear_figura_comparacion(comparacion_df)
+        st.pyplot(fig_cmp)
 
     colv1, colv2, colv3 = st.columns(3)
     errores_validos = pd.to_numeric(comparacion_prof_df["Error [%]"], errors="coerce").dropna()
@@ -2995,8 +3222,12 @@ with tab_potencias:
             estado_html("❌ No cumple potencia: PB requerida supera el MCR del motor seleccionado.", "bad")
 
         st.markdown("### Diagrama profesional de crecimiento de potencia")
-        fig_pot = crear_figura_cadena_potencias_profesional(power_chain_df)
-        st.pyplot(fig_pot)
+        fig_pot_inter = crear_figura_cadena_potencias_interactiva(power_chain_df)
+        if fig_pot_inter is not None:
+            st.plotly_chart(fig_pot_inter, use_container_width=True)
+        else:
+            fig_pot = crear_figura_cadena_potencias_profesional(power_chain_df)
+            st.pyplot(fig_pot)
 
         st.markdown("### Tabla de cadena con dictamen")
         st.dataframe(
@@ -3049,8 +3280,12 @@ with tab_potencias:
             {"Parámetro":"PE con margen", "Valor":PE_kw, "Unidad":"kW", "Fuente/criterio":"PE(1+SM)", "Dictamen":"Cumple"},
         ])
         st.dataframe(df_pe.style.format({"Valor":"{:,.3f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
-        fig = crear_figura_waterfall_pe(PE_kw_sin_margen, PE_kw, margen_servicio)
-        st.pyplot(fig)
+        fig_inter = crear_figura_waterfall_interactivo(PE_kw_sin_margen, PE_kw, margen_servicio)
+        if fig_inter is not None:
+            st.plotly_chart(fig_inter, use_container_width=True)
+        else:
+            fig = crear_figura_waterfall_pe(PE_kw_sin_margen, PE_kw, margen_servicio)
+            st.pyplot(fig)
 
     with pot_pt:
         st.markdown("### 🌀 Potencia de empuje PT")
@@ -3108,8 +3343,12 @@ with tab_potencias:
         st.markdown("### 📉 Eficiencias adoptadas")
         st.markdown("Esta tabla resume las eficiencias usadas, sus rangos de referencia y un dictamen para defender las hipótesis de cálculo.")
         st.dataframe(efficiency_prof_df.style.format({"Valor":"{:.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True, height=330)
-        fig = crear_figura_mapa_eficiencias(efficiency_prof_df)
-        st.pyplot(fig)
+        fig_eff_inter = crear_figura_eficiencias_interactiva(efficiency_prof_df)
+        if fig_eff_inter is not None:
+            st.plotly_chart(fig_eff_inter, use_container_width=True)
+        else:
+            fig = crear_figura_mapa_eficiencias(efficiency_prof_df)
+            st.pyplot(fig)
 
 # ==============================================================================
 # MOTOR Y REDUCTORA
@@ -3686,7 +3925,11 @@ with tab_balanceo:
     ax_b.set_title("Crecimiento de la fuerza de desbalance con la velocidad")
     ax_b.grid(True, linestyle=":", alpha=0.6)
     ax_b.legend()
-    st.pyplot(fig_b)
+    fig_camp_inter = crear_figura_campbell_interactiva(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val)
+    if fig_camp_inter is not None:
+        st.plotly_chart(fig_camp_inter, use_container_width=True)
+    else:
+        st.pyplot(fig_b)
 
     st.markdown("### 🧰 Recomendaciones de control")
     st.markdown("""
@@ -3847,7 +4090,11 @@ with tab_cav:
         b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
         b3.metric("Margen", f"{(tau_c_admisible - tau_c_burrill):.3f}")
         estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala es elevada.", "good" if burrill_ok else "warn")
-        st.pyplot(crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
+        fig_bur_inter = crear_figura_burrill_interactiva(sigma_n, tau_c_burrill, tau_c_admisible)
+        if fig_bur_inter is not None:
+            st.plotly_chart(fig_bur_inter, use_container_width=True)
+        else:
+            st.pyplot(crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
 
     with cav_keller:
         st.markdown("### 📐 Criterio de Keller")
@@ -3858,7 +4105,11 @@ with tab_cav:
         k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
         k3.metric("Margen", f"{(ae_val - keller_ae_min):.3f}")
         estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido." if keller_ok else "❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga.", "good" if keller_ok else "bad")
-        st.pyplot(crear_figura_keller(keller_ae_min, ae_val))
+        fig_kel_inter = crear_figura_keller_interactiva(keller_ae_min, ae_val)
+        if fig_kel_inter is not None:
+            st.plotly_chart(fig_kel_inter, use_container_width=True)
+        else:
+            st.pyplot(crear_figura_keller(keller_ae_min, ae_val))
 
     with cav_flujo:
         st.markdown("### 🌊 Reynolds y coeficiente de cavitación σ")
@@ -4103,7 +4354,7 @@ with tab_clase:
 
 
 with tab_gemelo:
-    st.subheader("🧩 Sistema propulsivo 3D e integración visual")
+    st.subheader("🧩 Sistema eje–hélice 3D e integración visual avanzada")
     st.markdown("""
     <div class="section-card">
     <b>Objetivo del módulo:</b> convertir los resultados numéricos de la app en una visualización técnica interactiva del sistema eje–hélice.
@@ -4118,8 +4369,8 @@ with tab_gemelo:
     if go is None:
         estado_html("⚠️ Para activar el módulo 3D instala Plotly agregando `plotly` a requirements.txt.", "warn")
     else:
-        twin_resumen, twin_sistema, twin_helice = st.tabs([
-            "📌 Panel técnico", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada"
+        twin_resumen, twin_sistema, twin_helice, twin_explosion, twin_vib3d = st.tabs([
+            "📌 Panel técnico", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada", "🧩 Modo explosión", "〰️ Vibración 3D"
         ])
 
         with twin_resumen:
@@ -4205,6 +4456,38 @@ with tab_gemelo:
                 {"Parámetro": "RPM de referencia", "Valor": f"{rpm_helice_objetivo:.2f} rpm", "Efecto visual/técnico": "Se usa para la interpretación de velocidad de operación del propulsor."},
             ])
             st.dataframe(helice_visual_df, use_container_width=True, height=285)
+
+        with twin_explosion:
+            st.markdown("""
+            ### Modo explosión del sistema propulsivo
+            Esta vista separa visualmente motor, transmisión, eje, cojinetes, hélice y empuje para explicar cada componente como si fuera una vista técnica tipo CAD. Pasa el cursor sobre cada pieza para ver su función y los datos asociados.
+            """)
+            estado_html("✅ Vista didáctica activa: permite defender el arreglo del tren propulsor y explicar la función de cada componente sin depender de una imagen estática.", "good")
+            fig_exp = crear_modo_explosion_3d(D=diam_prop_m, eje_d_mm=diametro_eje_mm, tipo_trans=transmision_tipo, relacion=relacion_reduccion, PB=PB_kw_calc, rpm=rpm_helice_objetivo, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio)
+            st.plotly_chart(fig_exp, use_container_width=True)
+            st.dataframe(pd.DataFrame([
+                {"Componente":"Motor", "Dato vinculado":f"PB={PB_kw_calc:,.0f} kW", "Función":"Genera la potencia mecánica de propulsión."},
+                {"Componente":"Transmisión", "Dato vinculado":f"i={relacion_reduccion:.2f}", "Función":"Adapta RPM de motor y hélice cuando aplica."},
+                {"Componente":"Eje", "Dato vinculado":f"d≈{diametro_eje_mm:.0f} mm", "Función":"Transmite torque y soporta cargas dinámicas."},
+                {"Componente":"Cojinetes", "Dato vinculado":"Soportes radiales", "Función":"Limitan desplazamientos y alinean la línea de eje."},
+                {"Componente":"Hélice", "Dato vinculado":f"D={diam_prop_m:.2f} m, Z={z_val}", "Función":"Convierte potencia de eje en empuje."},
+            ]), use_container_width=True, height=250)
+
+        with twin_vib3d:
+            st.markdown("""
+            ### Vibración conceptual 3D del eje
+            Esta animación muestra de forma didáctica cómo puede deformarse la línea de eje en modo lateral, axial o torsional. No sustituye un análisis modal FEM, pero ayuda a visualizar por qué se revisan Campbell, Bode, órbitas y frecuencias naturales.
+            """)
+            modo_vib3d = st.selectbox("Modo de vibración visual", ["Lateral", "Axial", "Torsional"], index=0)
+            fig_vib3d = crear_vibracion_eje_3d(D=diam_prop_m, eje_d_mm=diametro_eje_mm, rpm=rpm_helice_objetivo, modo=modo_vib3d)
+            st.plotly_chart(fig_vib3d, use_container_width=True)
+            if modo_vib3d == "Lateral":
+                estado_html("ℹ️ Modo lateral: representa flexión transversal del eje; se relaciona con whirling y velocidad crítica.", "warn" if not lateral_ok else "good")
+            elif modo_vib3d == "Axial":
+                estado_html("ℹ️ Modo axial: representa oscilación longitudinal del eje por fluctuaciones de empuje.", "warn" if not axial_ok else "good")
+            else:
+                estado_html("ℹ️ Modo torsional: representa oscilación angular del eje por variaciones de torque.", "warn" if not torsion_ok else "good")
+
 
 
 
