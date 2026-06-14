@@ -204,9 +204,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Firma discreta de software: visible, pero sin ocupar protagonismo en la interfaz.
-st.sidebar.markdown("---")
-st.sidebar.caption(f"{APP_VERSION} · © 2026 · {APP_AUTHOR_SHORT}")
+# Firma de autoría: se conserva únicamente en el pie final de la aplicación y en el reporte PDF.
+# No se muestra nombre en la barra lateral para mantener una interfaz más limpia y profesional.
 
 
 # ==============================================================================
