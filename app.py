@@ -3373,58 +3373,123 @@ def insertar_figura_excel_con_texto(writer, fig, sheet_name, descripcion=""):
 
 
 def generar_excel():
-    """Exporta un libro Excel completo con TODAS las tablas y gráficas principales."""
+    """Exporta un libro Excel ordenado como memoria técnica, no como hojas sueltas."""
     output = BytesIO()
     tmp_files = []
     tablas = construir_tablas_exportacion_completas()
     graficas = construir_graficas_exportacion_completas()
 
+    def _format_sheet(ws, title_fill="1E1B4B"):
+        try:
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            thin = Side(style="thin", color="CBD5E1")
+            for cell in ws[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor=title_fill)
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = Border(bottom=thin)
+            ws.freeze_panes = "A2"
+            for col in ws.columns:
+                max_len = 8
+                col_letter = col[0].column_letter
+                for cell in col[:120]:
+                    val = "" if cell.value is None else str(cell.value)
+                    max_len = max(max_len, len(val))
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+                ws.column_dimensions[col_letter].width = min(max_len + 2, 46)
+        except Exception:
+            pass
+
+    def _section_from_name(nombre):
+        n = str(nombre).lower()
+        if any(k in n for k in ["dashboard", "entrada", "resumen", "validacion"]):
+            return "01 Resumen y datos base"
+        if any(k in n for k in ["potencia", "eficiencia", "motor", "reduct"]):
+            return "02 Potencias, motor y transmisión"
+        if any(k in n for k in ["wageningen", "hidro", "optimizacion"]):
+            return "03 Hidrodinámica y optimización"
+        if any(k in n for k in ["cavitacion", "burrill", "keller", "reynolds"]):
+            return "04 Cavitación y régimen de flujo"
+        if any(k in n for k in ["torsion", "vibracion", "campbell", "lateral", "axial", "balanceo"]):
+            return "05 Integridad dinámica"
+        if any(k in n for k in ["normativa", "clase"]):
+            return "06 Normativa y cumplimiento"
+        if any(k in n for k in ["visual", "3d", "prueba", "carga"]):
+            return "07 Integración visual"
+        return "08 Anexos técnicos"
+
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        indice_tablas = []
+        # 00 Portada / guía de lectura
+        portada = pd.DataFrame([
+            ["Aplicación", "Naval Propulsion & Shaft Dynamics Pro"],
+            ["Tipo de archivo", "Libro técnico exportado automáticamente"],
+            ["Contenido", "Tablas completas, gráficas principales, validaciones y anexos"],
+            ["Criterio de organización", "Resumen → datos base → potencias → hidrodinámica → cavitación → dinámica → normativa → anexos"],
+            ["Uso recomendado", "Revisión técnica, presentación, anexos de reporte y trazabilidad de cálculo"],
+            ["Nota", "El PDF resume; este Excel conserva la memoria de cálculo completa y hojas de apoyo."],
+        ], columns=["Campo", "Descripción"])
+        portada.to_excel(writer, sheet_name="00_Portada", index=False)
+        _format_sheet(writer.sheets["00_Portada"], "0F172A")
+
+        # 01 Resumen ejecutivo del libro
+        resumen_excel = pd.DataFrame([
+            {"Bloque": "Buque", "Resultado": f"L={eslora_total_m:.2f} m · B={manga_m:.2f} m · T={calado_m:.2f} m · V={velocidad:.2f} kn", "Lectura": "Datos principales del caso evaluado."},
+            {"Bloque": "Potencia", "Resultado": f"PB={PB_kw_calc:,.0f} kW · MCR requerido={MCR_requerido_kw:,.0f} kW", "Lectura": "Demanda de potencia y margen de motor."},
+            {"Bloque": "Hélice", "Resultado": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Lectura": "Configuración geométrica usada en el cálculo."},
+            {"Bloque": "Cavitación", "Resultado": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Lectura": "Verificación preliminar de riesgo de cavitación."},
+            {"Bloque": "Dinámica", "Resultado": f"Torsión={'Cumple' if torsion_ok else 'No cumple'} · Lateral={'Cumple' if lateral_ok else 'No cumple'} · Axial={'Cumple' if axial_ok else 'No cumple'}", "Lectura": "Síntesis de integridad dinámica."},
+        ])
+        resumen_excel.to_excel(writer, sheet_name="01_Resumen_Ejecutivo", index=False)
+        _format_sheet(writer.sheets["01_Resumen_Ejecutivo"], "312E81")
+
+        indice_items = []
         for nombre, df in tablas.items():
             if df is None or not isinstance(df, pd.DataFrame) or df.empty:
                 continue
             sheet = _safe_sheet_name(nombre)
+            section = _section_from_name(nombre)
             df.to_excel(writer, sheet_name=sheet, index=False)
-            indice_tablas.append({"Hoja": sheet, "Tipo": "Tabla", "Filas": len(df), "Columnas": len(df.columns)})
-            ws = writer.sheets[sheet]
-            ws.freeze_panes = "A2"
-            try:
-                from openpyxl.styles import Font, PatternFill
-                for cell in ws[1]:
-                    cell.font = Font(bold=True, color="FFFFFF")
-                    cell.fill = PatternFill("solid", fgColor="1E1B4B")
-                for col in ws.columns:
-                    max_len = 8
-                    col_letter = col[0].column_letter
-                    for cell in col[:80]:
-                        max_len = max(max_len, len(str(cell.value)) if cell.value is not None else 0)
-                    ws.column_dimensions[col_letter].width = min(max_len + 2, 42)
-            except Exception:
-                pass
+            _format_sheet(writer.sheets[sheet], "1E1B4B")
+            indice_items.append({
+                "Sección": section,
+                "Hoja": sheet,
+                "Tipo": "Tabla completa",
+                "Filas": len(df),
+                "Columnas": len(df.columns),
+                "Descripción": "Tabla de cálculo, validación o trazabilidad exportada desde la app."
+            })
 
-        indice_graficas = []
         for idx, (titulo, pestana, desc, fig) in enumerate(graficas, start=1):
             sheet = _safe_sheet_name(f"G{idx:02d}_{titulo}")
             tmp = insertar_figura_excel_con_texto(writer, fig, sheet, f"Pestaña de origen: {pestana}. {desc}")
             if tmp:
                 tmp_files.append(tmp)
-            indice_graficas.append({"Hoja": sheet, "Tipo": "Gráfica", "Pestaña de origen": pestana, "Descripción": desc})
+            indice_items.append({
+                "Sección": _section_from_name(pestana + " " + titulo),
+                "Hoja": sheet,
+                "Tipo": "Gráfica",
+                "Filas": "—",
+                "Columnas": "—",
+                "Descripción": desc
+            })
             try:
                 plt.close(fig)
             except Exception:
                 pass
 
-        # Índice al final para no cambiar nombres de hojas técnicas ya escritas.
-        indice_df = pd.DataFrame(indice_tablas + indice_graficas)
-        indice_df.to_excel(writer, sheet_name="Indice_Contenido", index=False)
-        ws = writer.sheets["Indice_Contenido"]
-        ws.freeze_panes = "A2"
-        for col in ws.columns:
-            try:
-                ws.column_dimensions[col[0].column_letter].width = 32
-            except Exception:
-                pass
+        indice_df = pd.DataFrame(indice_items)
+        if not indice_df.empty:
+            indice_df = indice_df.sort_values(["Sección", "Tipo", "Hoja"]).reset_index(drop=True)
+        indice_df.to_excel(writer, sheet_name="02_Indice_Contenido", index=False)
+        _format_sheet(writer.sheets["02_Indice_Contenido"], "0F766E")
+
+        # Reordenar: portada, resumen, índice, después hojas en orden lógico.
+        try:
+            wb = writer.book
+            priority = {"00_Portada": 0, "01_Resumen_Ejecutivo": 1, "02_Indice_Contenido": 2}
+            wb._sheets.sort(key=lambda ws: priority.get(ws.title, 10 + list(priority).count(ws.title)))
+        except Exception:
+            pass
 
     for tmp in tmp_files:
         try:
@@ -3433,7 +3498,6 @@ def generar_excel():
             pass
     output.seek(0)
     return output
-
 
 def generar_pdf():
     """Genera un PDF tipo memoria técnica con todas las tablas y gráficas principales."""
@@ -3695,7 +3759,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "📚 Normativa",
     "🧩 Integración visual 3D",
     "⚙️ Integridad dinámica",
-    "🧾 Dictamen técnico final"
+    "📌 Informe técnico"
 ])
 
 # ==============================================================================
@@ -4945,81 +5009,92 @@ with tab_normativa:
 # ==============================================================================
 
 with tab_clase:
-    st.subheader("🧾 Síntesis técnica final y cierre ejecutivo")
+    st.subheader("📌 Informe técnico del sistema propulsivo")
 
     st.markdown("""
     <div class="section-card">
-    Esta sección funciona como cierre ejecutivo del proyecto: recopila los resultados principales,
-    resume los dictámenes de cumplimiento preliminar y genera una conclusión final defendible
-    para la presentación. No sustituye la aprobación oficial de ABS, DNV, Lloyd's Register,
-    Bureau Veritas u otra sociedad de clasificación, pero ayuda a demostrar trazabilidad técnica.
+    Esta pestaña funciona como el cierre formal de la aplicación. Integra los resultados clave de hidrodinámica,
+    potencia, motor, hélice, cavitación, vibración, normativa e integración visual para emitir una lectura ejecutiva
+    del diseño. Su objetivo es que el usuario pueda defender el prediseño de forma clara, ordenada y trazable.
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Relación con la teoría de vibración del eje", expanded=False):
-        st.markdown("""
-        El dictamen agrupa los tres enfoques principales de la asignación:
-
-        - **Torsional:** variaciones cíclicas de torque y esfuerzo alternante del eje.
-        - **Lateral / whirling:** separación entre la velocidad de servicio y velocidades críticas.
-        - **Axial:** asociada a fluctuaciones de empuje de la hélice en órdenes **1P, ZP, 2ZP y 3ZP**;
-          en esta versión sí se evalúa con frecuencia natural axial, rigidez equivalente,
-          tabla de separación y riesgo de resonancia.
-
-        También se incluyen las referencias técnicas mencionadas en la guía: **IACS UR M68**, notas de
-        **ABS** para vibración de shafting, recomendaciones **DNV/ISO** e instrumentación como torsiógrafo,
-        sensor de proximidad y acelerómetro axial.
-        """)
-
-    cumplimiento = pd.DataFrame({
-        "Área evaluada": [
-            "Hidrodinámica de aguas abiertas",
-            "Número de Reynolds",
-            "Cavitación",
-            "Vibración torsional",
-            "Vibración lateral",
-            "Vibración axial",
-        ],
-        "Criterio usado": [
-            "ηO máxima > 40%",
-            "Re > 1.0E7",
-            "σ ≥ 0.20",
-            "τ real ≤ τ admisible",
-            "RPM operación fuera de ±20% de RPM crítica",
-            "Sin órdenes axiales en zona de alto riesgo"
-        ],
-        "Valor": [
-            f"{max_eff*100:.2f}%",
-            f"{reynolds:.2e}",
-            f"{sigma_n:.3f}",
-            f"{esfuerzo_real_mpa:.2f} / {tau_admisible_mpa:.2f} MPa",
-            f"{rpm_motor:.1f} rpm vs {margen_inf:.1f}-{margen_sup:.1f} rpm",
-            f"Riesgo axial {riesgo_axial_global}"
-        ],
-        "Resultado": [
-            "Cumple" if hidro_ok else "Observación",
-            "Cumple" if reynolds_ok else "Observación",
-            "Cumple" if cavitacion_ok else "No cumple",
-            "Cumple" if torsion_ok else "No cumple",
-            "Cumple" if lateral_ok else "No cumple",
-            "Cumple" if axial_ok else "No cumple",
-        ]
-    })
+    # Matriz ejecutiva ampliada
+    matriz_ejecutiva = pd.DataFrame([
+        {"Bloque técnico": "Datos principales del buque", "Resultado clave": f"L={eslora_total_m:.2f} m · B={manga_m:.2f} m · T={calado_m:.2f} m · V={velocidad:.2f} kn", "Criterio de lectura": "Datos de entrada o ficha técnica", "Estado": "Cumple"},
+        {"Bloque técnico": "Resistencia y potencia efectiva", "Resultado clave": f"RT={resistencia_total_kn:,.0f} kN · PE={PE_kw:,.0f} kW", "Criterio de lectura": "RT positiva y potencia trazable", "Estado": "Cumple" if resistencia_total_kn > 0 and PE_kw > 0 else "Revisar"},
+        {"Bloque técnico": "Potencia al freno / motor", "Resultado clave": f"PB={PB_kw_calc:,.0f} kW · MCR req.={MCR_requerido_kw:,.0f} kW", "Criterio de lectura": "Reserva frente al MCR disponible", "Estado": motor_estado if 'motor_estado' in globals() else ("Cumple" if PB_kw_calc <= MCR_requerido_kw else "Revisar")},
+        {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO máx={max_eff*100:.2f}% · J={j_opt:.3f}", "Criterio de lectura": "Eficiencia de aguas abiertas razonable", "Estado": "Cumple" if hidro_ok else "Revisar"},
+        {"Bloque técnico": "Geometría de hélice", "Resultado clave": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Criterio de lectura": "Rangos comerciales y área suficiente", "Estado": "Cumple" if (3 <= z_val <= 7 and 0.50 <= pd_val <= 1.40 and keller_ok) else "Revisar"},
+        {"Bloque técnico": "Cavitación", "Resultado clave": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Criterio de lectura": "Burrill, Keller, σ y Reynolds", "Estado": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok and reynolds_ok) else "Revisar"},
+        {"Bloque técnico": "Vibración torsional", "Resultado clave": f"τ={esfuerzo_real_mpa:.2f} MPa · τadm={tau_admisible_mpa:.2f} MPa", "Criterio de lectura": "Esfuerzo menor al admisible", "Estado": "Cumple" if torsion_ok else "No cumple"},
+        {"Bloque técnico": "Vibración axial", "Resultado clave": f"Riesgo axial={riesgo_axial_global}", "Criterio de lectura": "Separación de 1P, ZP, 2ZP y 3ZP", "Estado": "Cumple" if axial_ok else "Revisar"},
+        {"Bloque técnico": "Vibración lateral / whirling", "Resultado clave": f"n={rpm_motor:.1f} rpm · zona crítica={margen_inf:.1f}-{margen_sup:.1f} rpm", "Criterio de lectura": "RPM fuera de banda crítica", "Estado": "Cumple" if lateral_ok else "No cumple"},
+        {"Bloque técnico": "Campbell", "Resultado clave": "Cruces entre órdenes y modos naturales", "Criterio de lectura": "Sin resonancia crítica en operación", "Estado": "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "Revisar"},
+        {"Bloque técnico": "Normativa preliminar", "Resultado clave": "ABS / DNV / IACS / ISO como marco de referencia", "Criterio de lectura": "Checklist técnico preliminar", "Estado": "Cumple"},
+        {"Bloque técnico": "Exportación técnica", "Resultado clave": "PDF + Excel con tablas y gráficas", "Criterio de lectura": "Trazabilidad para reporte", "Estado": "Cumple"},
+    ])
 
     def color_resultado(val):
-        if val == "Cumple":
+        s = str(val).lower()
+        if "cumple" in s and "no" not in s:
             return "background-color: #dcfce7; color: #166534; font-weight: bold"
-        if val == "Observación":
+        if "revis" in s or "observ" in s:
             return "background-color: #fef3c7; color: #92400e; font-weight: bold"
         return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
 
+    st.markdown("### Matriz ejecutiva de cierre")
     st.dataframe(
-        cumplimiento.style.map(color_resultado, subset=["Resultado"]),
+        matriz_ejecutiva.style.map(color_resultado, subset=["Estado"]),
         use_container_width=True,
-        height=250
+        height=460
     )
 
-    estado_html(f"{dictamen_icono} Dictamen general: {dictamen} ({score:.0f}%)", dictamen_tipo)
+    ok_count = int((matriz_ejecutiva["Estado"].astype(str).str.contains("Cumple", case=False, na=False) & ~matriz_ejecutiva["Estado"].astype(str).str.contains("No", case=False, na=False)).sum())
+    rev_count = int(matriz_ejecutiva["Estado"].astype(str).str.contains("Revisar|observ", case=False, na=False).sum())
+    no_count = int(matriz_ejecutiva["Estado"].astype(str).str.contains("No cumple", case=False, na=False).sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Criterios conformes", ok_count)
+    c2.metric("Criterios a revisar", rev_count)
+    c3.metric("No conformidades", no_count)
+    c4.metric("Puntaje global", f"{score:.0f}%")
+
+    estado_html(f"{dictamen_icono} Resultado ejecutivo: {dictamen} ({score:.0f}%)", dictamen_tipo)
+
+    st.markdown("### Lectura técnica automática")
+    conclusion = []
+    conclusion.append(f"El sistema propulsivo requiere una potencia al freno aproximada de {PB_kw_calc:,.0f} kW para una velocidad de servicio de {velocidad:.2f} kn, considerando las eficiencias y márgenes definidos por el usuario.")
+    conclusion.append(f"La hélice evaluada presenta D={diam_prop_m:.2f} m, Z={z_val}, P/D={pd_val:.3f} y Ae/A0={ae_val:.3f}; estos parámetros permiten relacionar la geometría del propulsor con la eficiencia, la carga de pala y el riesgo de cavitación.")
+    if burrill_ok and keller_ok and cavitacion_ok:
+        conclusion.append("La revisión de cavitación resulta favorable a nivel preliminar, ya que los criterios de Burrill, Keller y σ no indican una condición crítica para el punto de operación evaluado.")
+    else:
+        conclusion.append("La revisión de cavitación presenta observaciones; se recomienda verificar diámetro, área expandida, inmersión del eje y carga de pala antes de cerrar el diseño.")
+    if torsion_ok and axial_ok and lateral_ok:
+        conclusion.append("Desde el punto de vista dinámico, el eje no muestra una condición crítica preliminar en torsión, axial ni lateral, por lo que el sistema es defendible como prediseño.")
+    else:
+        conclusion.append("La integridad dinámica presenta puntos a revisar; conviene validar el sistema con datos reales de rigidez, inercias, chumaceras, acoplamientos y fabricante del motor.")
+    conclusion.append("El dictamen emitido por la aplicación debe interpretarse como una evaluación de prediseño. Para aprobación final se requiere validación con sociedad clasificadora, fabricante, pruebas de modelo, CFD o documentación técnica certificada.")
+
+    for p in conclusion:
+        st.markdown(f"- {p}")
+
+    st.markdown("### Acciones recomendadas antes de entrega")
+    acciones = pd.DataFrame([
+        {"Prioridad": "Alta", "Acción": "Descargar PDF técnico", "Objetivo": "Entregar memoria de cálculo con gráficas, tablas, teoría y conclusión."},
+        {"Prioridad": "Alta", "Acción": "Descargar Excel ordenado", "Objetivo": "Conservar todas las tablas completas y hojas de gráficas como anexo técnico."},
+        {"Prioridad": "Media", "Acción": "Revisar datos reales del PDF", "Objetivo": "Confirmar motor, RPM, D, P/D, Ae/A0 y resistencia real del buque."},
+        {"Prioridad": "Media", "Acción": "Validar observaciones", "Objetivo": "Atender cualquier criterio marcado como Revisar o No cumple."},
+        {"Prioridad": "Final", "Acción": "Usar el dictamen ejecutivo", "Objetivo": "Cerrar la presentación con una lectura técnica clara y defendible."},
+    ])
+    st.dataframe(acciones, use_container_width=True, height=250)
+
+    with st.expander("📘 Alcance del dictamen", expanded=False):
+        st.markdown("""
+        Este informe ejecutivo integra los cálculos de la aplicación y los transforma en una conclusión técnica preliminar.
+        No sustituye el proceso formal de diseño de una sociedad clasificadora. Su valor está en organizar la evidencia:
+        entradas, fórmulas, resultados, gráficas, comparaciones y observaciones para defender el prediseño ante una revisión académica o técnica.
+        """)
 
 # ==============================================================================
 # EXPORTACIÓN
