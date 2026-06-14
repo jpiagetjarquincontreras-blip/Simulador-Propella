@@ -1298,7 +1298,19 @@ if potencia_kw_base <= 0:
     amplitud_empuje_axial_n = 0.08 * empuje_estimado_n
     desplazamiento_axial_est_m = safe_div(amplitud_empuje_axial_n, rigidez_axial_equivalente_n_m)
 potencia_85_mcr_kw = motor_mcr_kw * 0.85
-motor_cumple = potencia_85_mcr_kw >= PB_kw_calc and motor_mcr_kw > 0
+# Validación de motor en tres niveles:
+# 1) IDEAL: PB <= 85% MCR, cumple el criterio de reserva operativa pedido.
+# 2) OBSERVACIÓN: PB > 85% MCR pero PB <= MCR; el motor tiene capacidad máxima,
+#    pero el punto de operación queda por encima del NCR/85% MCR.
+# 3) NO CUMPLE: PB > MCR; el motor no tiene capacidad suficiente.
+motor_cumple_ideal = motor_mcr_kw > 0 and PB_kw_calc <= potencia_85_mcr_kw
+motor_cumple_observacion = motor_mcr_kw > 0 and potencia_85_mcr_kw < PB_kw_calc <= motor_mcr_kw
+motor_no_cumple = motor_mcr_kw > 0 and PB_kw_calc > motor_mcr_kw
+motor_cumple = motor_cumple_ideal or motor_cumple_observacion
+exceso_sobre_85_kw = max(PB_kw_calc - potencia_85_mcr_kw, 0.0)
+exceso_sobre_85_pct = safe_div(exceso_sobre_85_kw, max(potencia_85_mcr_kw, 1e-9)) * 100.0
+margen_hasta_mcr_kw = motor_mcr_kw - PB_kw_calc if motor_mcr_kw > 0 else 0.0
+margen_hasta_mcr_pct = safe_div(margen_hasta_mcr_kw, max(motor_mcr_kw, 1e-9)) * 100.0
 rpm_helice_requerida = safe_div(VA_ms, max(j_opt * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_opt > 0 else 0.0
 # Para validación de transmisión se usa primero la RPM real/manual si existe, porque J óptimo no siempre representa la RPM real de servicio.
 rpm_helice_objetivo = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
@@ -1508,7 +1520,7 @@ def generar_excel():
                 "Cumple" if cavitacion_ok else "No cumple",
                 "Cumple" if burrill_ok else "Revisar",
                 "Cumple" if keller_ok else "No cumple",
-                "Cumple" if motor_cumple else "No cumple",
+                "Cumple ideal" if motor_cumple_ideal else ("Cumple con observación" if motor_cumple_observacion else "No cumple"),
                 "Cumple" if caja_cumple else "Revisar",
                 "Cumple" if torsion_ok else "No cumple",
                 "Cumple" if lateral_ok else "No cumple",
@@ -1850,12 +1862,14 @@ with tab_potencias:
     c3.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
     c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
 
-    if motor_mcr_kw >= MCR_requerido_kw and motor_cumple:
-        estado_html("✅ Cumple potencia: la PB requerida queda cubierta con el motor seleccionado trabajando alrededor del 85% del MCR.", "good")
-    elif motor_mcr_kw >= MCR_requerido_kw:
-        estado_html("⚠️ Potencia cercana: el MCR nominal cubre el requerimiento, pero revisa el criterio de 85% MCR y el punto de operación.", "warn")
+    if motor_mcr_kw <= 0:
+        estado_html("ℹ️ Sin motor real cargado: la cadena de potencias se calcula normalmente y la app puede recomendar candidatos en la pestaña Motor / Reductora.", "warn")
+    elif motor_cumple_ideal:
+        estado_html("✅ Cumple potencia ideal: la PB requerida queda cubierta por el 85% del MCR del motor seleccionado.", "good")
+    elif motor_cumple_observacion:
+        estado_html(f"⚠️ Cumple con observación: la PB requerida supera el 85% MCR en {exceso_sobre_85_pct:.1f}%, pero todavía está por debajo del MCR. Revisa resistencia, Sea Margin o eficiencias adoptadas.", "warn")
     else:
-        estado_html("❌ No cumple potencia: el motor seleccionado no cubre la PB requerida con margen suficiente.", "bad")
+        estado_html("❌ No cumple potencia: la PB requerida supera el MCR del motor seleccionado.", "bad")
 
     st.dataframe(power_chain_df.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
 
@@ -1918,8 +1932,10 @@ with tab_motor:
 
     if motor_mcr_kw <= 0:
         estado_html("ℹ️ No hay motor real cargado. La app no asume ningún motor fijo; usa la tabla de recomendación automática para elegir candidatos preliminares.", "warn")
-    elif motor_cumple:
-        estado_html(f"✅ Motor compatible: {motor_nombre}. El 85% del MCR cubre la PB calculada.", "good")
+    elif motor_cumple_ideal:
+        estado_html(f"✅ Motor compatible ideal: {motor_nombre}. El 85% del MCR cubre la PB calculada.", "good")
+    elif motor_cumple_observacion:
+        estado_html(f"⚠️ Motor compatible con observación: {motor_nombre}. La PB calculada queda {exceso_sobre_85_pct:.1f}% arriba del 85% MCR, pero aún está por debajo del MCR. Es válido como alerta de revisión, no como falla automática.", "warn")
     else:
         estado_html(f"❌ Motor insuficiente: {motor_nombre}. Se requiere un MCR mínimo aproximado de {MCR_requerido_kw:,.0f} kW.", "bad")
 
