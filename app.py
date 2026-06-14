@@ -240,29 +240,29 @@ def crear_figura_wageningen(res_df, j_opt_val):
 
 
 def crear_figura_comparacion(comparacion):
-    """Gráfica profesional: barras agrupadas de calculado vs real y etiqueta de error."""
-    df = comparacion.dropna(subset=["Calculado", "Real PDF/manual"]).copy()
-    fig, ax = plt.subplots(figsize=(10.5, 5.2))
+    """Gráfica profesional: muestra el error porcentual por parámetro para no mezclar escalas diferentes."""
+    df = comparacion.copy()
+    df["Calculado"] = pd.to_numeric(df["Calculado"], errors="coerce")
+    df["Real PDF/manual"] = pd.to_numeric(df["Real PDF/manual"], errors="coerce")
+    df["Error [%]"] = pd.to_numeric(df["Error [%]"], errors="coerce")
+    df = df.dropna(subset=["Error [%]"]).copy()
+    fig, ax = plt.subplots(figsize=(11.5, 5.2))
     if df.empty:
-        ax.text(0.5, 0.5, "Sin datos reales para comparar", ha="center", va="center", fontsize=13, fontweight="bold")
+        ax.text(0.5, 0.5, "Sin datos reales suficientes para comparar", ha="center", va="center", fontsize=13, fontweight="bold")
         ax.axis("off")
         return fig
-    etiquetas = df["Parámetro"].astype(str).str.replace("Potencia al freno PB ", "PB ", regex=False).tolist()
-    x = np.arange(len(df))
-    ancho = 0.36
-    ax.bar(x - ancho/2, df["Calculado"], width=ancho, label="Calculado")
-    ax.bar(x + ancho/2, df["Real PDF/manual"], width=ancho, label="Real / ficha técnica")
-    for i, (_, row) in enumerate(df.iterrows()):
-        err = row.get("Error [%]", np.nan)
-        if pd.notna(err):
-            ymax = max(row["Calculado"], row["Real PDF/manual"])
-            ax.text(i, ymax * 1.03 if ymax else 0.05, f"Error {err:.1f}%", ha="center", va="bottom", fontsize=8, fontweight="bold")
-    ax.set_title("Comparación de resultados calculados contra datos reales", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Valor")
-    ax.set_xticks(x)
-    ax.set_xticklabels(etiquetas, rotation=18, ha="right")
-    ax.grid(True, axis="y", linestyle=":", alpha=0.55)
-    ax.legend(loc="best")
+    df = df.sort_values("Error [%]", ascending=True)
+    ax.barh(df["Parámetro"], df["Error [%]"])
+    ax.axvline(5, linestyle="--", linewidth=1.8, label="Cumple ≤ 5%")
+    ax.axvline(15, linestyle=":", linewidth=1.8, label="Revisar ≤ 15%")
+    ax.set_title("Validación contra ficha técnica — error porcentual", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Error porcentual [%]")
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    ax.legend(loc="lower right")
+    xmax = max(float(df["Error [%]"].max()), 1.0)
+    for i, val in enumerate(df["Error [%]"]):
+        ax.text(val + xmax*0.02, i, f"{val:.1f}%", va="center", fontsize=9, fontweight="bold")
+    ax.set_xlim(0, xmax*1.18)
     fig.tight_layout()
     return fig
 
@@ -1357,6 +1357,68 @@ power_chain_df = pd.DataFrame([
     {"Etapa": "MCR requerido", "Descripción": "MCR mínimo para operar PB al 85%", "Valor": MCR_requerido_kw, "Unidad": "kW"},
 ])
 
+
+def dictamen_error_porcentual(err):
+    try:
+        if pd.isna(err):
+            return "Sin dato real"
+        if err <= 5:
+            return "Cumple"
+        if err <= 15:
+            return "Revisar"
+        return "No cumple"
+    except Exception:
+        return "Sin dato real"
+
+
+def dictamen_eficiencia(valor, minimo=0.0, maximo=1.2):
+    try:
+        if pd.isna(valor):
+            return "Sin dato"
+        if minimo <= float(valor) <= maximo:
+            return "Cumple"
+        return "Revisar"
+    except Exception:
+        return "Sin dato"
+
+
+def style_estado(val):
+    if val in ["Cumple", "Aprobado", "Ideal"]:
+        return "background-color:#dcfce7; color:#166534; font-weight:800"
+    if val in ["Revisar", "Observación", "Cumple con observación", "Sin dato real", "Sin dato"]:
+        return "background-color:#fef3c7; color:#92400e; font-weight:800"
+    if val in ["No cumple", "Riesgo"]:
+        return "background-color:#fee2e2; color:#991b1b; font-weight:800"
+    return ""
+
+
+def formatear_numero_tabla(x):
+    try:
+        if pd.isna(x):
+            return "—"
+        return f"{float(x):,.3f}"
+    except Exception:
+        return str(x)
+
+
+# Tablas de apoyo con dictamen visible.
+power_chain_status_df = power_chain_df.copy()
+power_chain_status_df["Dictamen"] = "Cumple"
+power_chain_status_df.loc[power_chain_status_df["Valor"].isna(), "Dictamen"] = "Revisar"
+
+comparacion_prof_df = comparacion_df.copy()
+comparacion_prof_df["Dictamen"] = comparacion_prof_df["Error [%]"].apply(dictamen_error_porcentual)
+
+efficiency_prof_df = pd.DataFrame([
+    {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h, "Rango esperado": "0.80–1.30", "Dictamen": dictamen_eficiencia(eta_h, 0.80, 1.30)},
+    {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas Wageningen", "Valor": max_eff, "Rango esperado": "0.40–0.85", "Dictamen": dictamen_eficiencia(max_eff, 0.40, 0.85)},
+    {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r, "Rango esperado": "0.90–1.10", "Dictamen": dictamen_eficiencia(eta_r, 0.90, 1.10)},
+    {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_b, 0.35, 0.90)},
+    {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_d, 0.35, 0.90)},
+    {"Eficiencia": "ηS", "Descripción": "Eficiencia del eje", "Valor": eta_s, "Rango esperado": "0.95–1.00", "Dictamen": dictamen_eficiencia(eta_s, 0.95, 1.00)},
+    {"Eficiencia": "ηG", "Descripción": "Eficiencia de engranaje/transmisión", "Valor": eta_g, "Rango esperado": "0.94–1.00", "Dictamen": dictamen_eficiencia(eta_g, 0.94, 1.00)},
+])
+
 torque_nominal = safe_div(PB_kw_calc * 1000.0, omega)
 torque_dinamico_alternante = torque_nominal * 0.15
 wt_modulo_torsional = math.pi * diametro_m**3 / 16.0
@@ -1665,7 +1727,7 @@ def generar_pdf():
 
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_resultados, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_formulas, tab_avanzado = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_avanzado = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -1673,14 +1735,12 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🛠️ Motor / Reductora",
     "📈 Hidrodinámica",
     "⭐ Optimización",
-    "📋 Resultados",
     "🧭 Vibración",
     "⚖️ Balanceo",
     "🗺️ Campbell",
     "🔍 Cavitación",
     "📚 Normativa",
     "📋 Clase",
-    "🧮 Fórmulas / Guía",
     "🧠 Avanzado"
 ])
 
@@ -1816,36 +1876,36 @@ with tab_pdf_comp:
     st.subheader("📄 Lectura de ficha técnica y comparación con buque real")
     st.markdown("""
     <div class="section-card">
-    Esta sección permite que la app funcione en dos modos: con un PDF de ficha técnica para extraer datos reales y comparar, o sin PDF usando datos manuales. La extracción automática es una ayuda; siempre se recomienda revisar los valores detectados.
+    Esta sección valida el prediseño contra datos reales. Si se carga una ficha técnica, la app extrae valores de referencia y los compara con los resultados calculados. Si no hay PDF, se usan datos manuales opcionales.
     </div>
     """, unsafe_allow_html=True)
 
     if datos_pdf:
         st.markdown("### Datos detectados del PDF")
         df_pdf = pd.DataFrame([{"Dato": k, "Valor detectado": v} for k, v in datos_pdf.items()])
-        st.dataframe(df_pdf, use_container_width=True, height=360)
+        st.dataframe(df_pdf, use_container_width=True, height=320)
     else:
         st.info("No se cargó PDF o no se detectaron datos. La app continuará con los parámetros manuales del panel lateral.")
 
-    st.markdown("### Comparación calculado vs real")
-    comparacion_vista = comparacion_df.copy()
-    for col in ["Calculado", "Real PDF/manual", "Error [%]"]:
-        comparacion_vista[col] = pd.to_numeric(comparacion_vista[col], errors="coerce")
+    st.markdown("### Tabla profesional de validación")
+    st.caption("Criterio sugerido: ≤5% cumple, 5–15% requiere revisión, >15% no cumple respecto al dato real disponible.")
     st.dataframe(
-        comparacion_vista.style
-        .format({
-            "Calculado": lambda x: "—" if pd.isna(x) else f"{x:,.3f}",
-            "Real PDF/manual": lambda x: "—" if pd.isna(x) else f"{x:,.3f}",
-            "Error [%]": lambda x: "—" if pd.isna(x) else f"{x:,.2f}"
-        })
-        .map(lambda v: "color:#64748b" if pd.isna(v) else "", subset=["Calculado", "Real PDF/manual", "Error [%]"]),
-        use_container_width=True
+        comparacion_prof_df.style
+        .format({"Calculado": formatear_numero_tabla, "Real PDF/manual": formatear_numero_tabla, "Error [%]": lambda x: "—" if pd.isna(x) else f"{x:.2f}%"})
+        .map(style_estado, subset=["Dictamen"]),
+        use_container_width=True,
+        height=270
     )
 
-    st.markdown("### 📊 Comparación visual profesional")
-    st.caption("La gráfica compara directamente el valor calculado por la app contra el dato real de la ficha técnica o entrada manual. La etiqueta indica el error porcentual.")
+    st.markdown("### 📊 Error porcentual por parámetro")
     fig_cmp = crear_figura_comparacion(comparacion_df)
     st.pyplot(fig_cmp)
+
+    colv1, colv2, colv3 = st.columns(3)
+    errores_validos = pd.to_numeric(comparacion_prof_df["Error [%]"], errors="coerce").dropna()
+    colv1.metric("Error medio", "—" if errores_validos.empty else f"{errores_validos.mean():.2f}%")
+    colv2.metric("Error máximo", "—" if errores_validos.empty else f"{errores_validos.max():.2f}%")
+    colv3.metric("Parámetros comparados", f"{len(errores_validos)}")
 
 # ==============================================================================
 # CADENA DE POTENCIAS
@@ -1855,14 +1915,12 @@ with tab_potencias:
     st.subheader("⚡ Cadena completa de potencias")
     st.markdown("""
     <div class="section-card">
-    Esta sección organiza la cadena de potencia en módulos. Cada subpestaña explica una etapa:
-    resistencia, potencia efectiva, empuje, potencia entregada, potencia al eje, potencia al freno
-    y eficiencias. Así la app no solo entrega números, sino que muestra el flujo completo de cálculo.
+    La cadena de potencias se presenta como una memoria interactiva: cada subpestaña explica una etapa, muestra su fórmula, su tabla de cálculo, una gráfica y un dictamen de cumplimiento preliminar.
     </div>
     """, unsafe_allow_html=True)
 
-    pot_resumen, pot_pe, pot_pt, pot_pd, pot_pb, pot_eff, pot_formulas = st.tabs([
-        "📌 Resumen", "🌊 PE", "🌀 PT", "⚙️ PD", "🔩 PS / PB", "📉 Eficiencias", "🧮 Fórmulas"
+    pot_resumen, pot_pe, pot_pt, pot_pd, pot_pb, pot_eff = st.tabs([
+        "📌 Resumen", "🌊 PE", "🌀 PT", "⚙️ PD", "🔩 PS / PB", "📉 Eficiencias"
     ])
 
     with pot_resumen:
@@ -1873,158 +1931,134 @@ with tab_potencias:
         c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
 
         if motor_mcr_kw <= 0:
-            estado_html("ℹ️ Sin motor real cargado: la cadena de potencias se calcula normalmente y la app puede recomendar candidatos en la pestaña Motor / Reductora.", "warn")
+            estado_html("ℹ️ Sin motor real cargado: se calcula la PB requerida y la app puede recomendar motores candidatos.", "warn")
         elif motor_cumple_ideal:
-            estado_html("✅ Cumple potencia ideal: la PB requerida queda cubierta por el 85% del MCR del motor seleccionado.", "good")
+            estado_html("✅ Cumple potencia ideal: PB requerida ≤ 85% del MCR del motor seleccionado.", "good")
         elif motor_cumple_observacion:
-            estado_html(f"⚠️ Cumple con observación: la PB requerida supera el 85% MCR en {exceso_sobre_85_pct:.1f}%, pero todavía está por debajo del MCR.", "warn")
+            estado_html(f"⚠️ Cumple con observación: PB supera el 85% MCR en {exceso_sobre_85_pct:.1f}%, pero todavía está por debajo del MCR.", "warn")
         else:
-            estado_html("❌ No cumple potencia: la PB requerida supera el MCR del motor seleccionado.", "bad")
+            estado_html("❌ No cumple potencia: PB requerida supera el MCR del motor seleccionado.", "bad")
 
-        st.markdown("### 📊 Diagrama general de cadena de potencias")
-        etapas_plot = power_chain_df[power_chain_df["Unidad"].astype(str).str.contains("kW", na=False)].copy()
-        etapas_plot = etapas_plot[etapas_plot["Etapa"].isin(["PE", "PE + Sea Margin", "PT", "PD", "PS", "PB"])]
+        st.markdown("### Diagrama de crecimiento de potencia")
+        etapas_plot = power_chain_df[power_chain_df["Etapa"].isin(["PE", "PE + Sea Margin", "PT", "PD", "PS", "PB", "MCR requerido"])].copy()
         fig_pot, ax_pot = plt.subplots(figsize=(11, 4.8))
-        ax_pot.plot(etapas_plot["Etapa"], etapas_plot["Valor"], marker="o", linewidth=2.6)
+        ax_pot.plot(etapas_plot["Etapa"], etapas_plot["Valor"], marker="o", linewidth=2.8)
         ax_pot.fill_between(range(len(etapas_plot)), etapas_plot["Valor"], alpha=0.10)
-        ax_pot.set_title("Cadena de potencias: desde PE hasta PB", fontsize=12, fontweight="bold")
-        ax_pot.set_xlabel("Etapa de cálculo")
+        ax_pot.set_title("Cadena de potencias: progresión hasta MCR requerido", fontsize=12, fontweight="bold")
+        ax_pot.set_xlabel("Etapa")
         ax_pot.set_ylabel("Potencia [kW]")
         ax_pot.grid(True, linestyle=":", alpha=0.6)
         for i, val in enumerate(etapas_plot["Valor"]):
-            ax_pot.text(i, val, f"{val:,.0f}", ha="center", va="bottom", fontsize=8)
+            ax_pot.text(i, val, f"{val:,.0f}", ha="center", va="bottom", fontsize=8, fontweight="bold")
         st.pyplot(fig_pot)
 
-        st.markdown("### Tabla completa de la cadena")
-        st.dataframe(power_chain_df.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
+        st.markdown("### Tabla de cadena con dictamen")
+        st.dataframe(
+            power_chain_status_df.style
+            .format({"Valor":"{:,.3f}"})
+            .map(style_estado, subset=["Dictamen"]),
+            use_container_width=True,
+            height=360
+        )
 
     with pot_pe:
         st.markdown("### 🌊 Potencia efectiva PE")
-        st.markdown("La potencia efectiva representa la potencia mínima necesaria para vencer la resistencia total del casco a la velocidad de servicio. En esta etapa todavía no se consideran pérdidas propulsivas.")
-        cols_pe = st.columns(3)
-        with cols_pe[0]:
-            st.metric("RT", f"{resistencia_total_kn:,.1f} kN")
-        with cols_pe[1]:
-            st.metric("Velocidad", f"{velocidad_buque_ms:.2f} m/s")
-        with cols_pe[2]:
-            st.metric("PE sin margen", f"{PE_kw_sin_margen:,.0f} kW")
-        cols_pe_margin = st.columns(2)
-        with cols_pe_margin[0]:
-            st.metric("Sea Margin", f"{margen_servicio:.1f}%")
-        with cols_pe_margin[1]:
-            st.metric("PE con margen", f"{PE_kw:,.0f} kW")
+        st.markdown("La potencia efectiva es la potencia mínima para vencer la resistencia del casco a la velocidad de servicio, antes de pérdidas propulsivas.")
+        st.latex(r"P_E=R_TV_S")
+        cols = st.columns(4)
+        cols[0].metric("RT", f"{resistencia_total_kn:,.1f} kN")
+        cols[1].metric("VS", f"{velocidad_buque_ms:.2f} m/s")
+        cols[2].metric("PE sin margen", f"{PE_kw_sin_margen:,.0f} kW")
+        cols[3].metric("PE con margen", f"{PE_kw:,.0f} kW")
         df_pe = pd.DataFrame([
-            {"Concepto":"Resistencia total RT", "Valor":resistencia_total_kn, "Unidad":"kN"},
-            {"Concepto":"Velocidad del buque VS", "Valor":velocidad_buque_ms, "Unidad":"m/s"},
-            {"Concepto":"PE sin margen", "Valor":PE_kw_sin_margen, "Unidad":"kW"},
-            {"Concepto":"PE con Sea Margin", "Valor":PE_kw, "Unidad":"kW"},
+            {"Parámetro":"Resistencia total RT", "Valor":resistencia_total_kn, "Unidad":"kN", "Fuente/criterio":"Entrada, PDF o estimación", "Dictamen":"Cumple"},
+            {"Parámetro":"Velocidad de servicio VS", "Valor":velocidad_buque_ms, "Unidad":"m/s", "Fuente/criterio":"kn × 0.5144", "Dictamen":"Cumple"},
+            {"Parámetro":"Sea Margin", "Valor":margen_servicio, "Unidad":"%", "Fuente/criterio":"ITTC / criterio usuario", "Dictamen":"Cumple" if margen_servicio >= 10 else "Revisar"},
+            {"Parámetro":"PE con margen", "Valor":PE_kw, "Unidad":"kW", "Fuente/criterio":"PE(1+SM)", "Dictamen":"Cumple"},
         ])
-        st.dataframe(df_pe.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
-        fig, ax = plt.subplots(figsize=(8, 3.8))
-        ax.bar(["PE sin margen", "PE con margen"], [PE_kw_sin_margen, PE_kw])
-        ax.set_ylabel("Potencia [kW]")
-        ax.set_title("Efecto del Sea Margin sobre PE")
+        st.dataframe(df_pe.style.format({"Valor":"{:,.3f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8.5, 3.8))
+        ax.bar(["PE sin margen", "Incremento SM", "PE con margen"], [PE_kw_sin_margen, PE_kw-PE_kw_sin_margen, PE_kw])
+        ax.set_ylabel("kW")
+        ax.set_title("Efecto del Sea Margin sobre la potencia efectiva")
         ax.grid(True, axis="y", linestyle=":", alpha=0.6)
         st.pyplot(fig)
 
     with pot_pt:
         st.markdown("### 🌀 Potencia de empuje PT")
-        st.markdown("La potencia de empuje considera la interacción casco-hélice. La hélice debe producir más empuje que la resistencia neta debido a la deducción de empuje t y trabaja con la velocidad de avance VA.")
-        c1, c2, c3 = st.columns(3)
+        st.markdown("PT considera el empuje que debe producir la hélice y la velocidad de avance afectada por la estela.")
+        st.latex(r"T=\frac{R_T}{1-t}\qquad P_T=TV_A")
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("t", f"{t_fraction:.3f}")
-        c2.metric("VA", f"{v_ms:.2f} m/s")
-        c3.metric("PT", f"{PT_kw:,.0f} kW")
+        c2.metric("VA", f"{VA_ms:.2f} m/s")
+        c3.metric("Empuje", f"{thrust_req_N/1000:,.1f} kN")
+        c4.metric("PT", f"{PT_kw:,.0f} kW")
         df_pt = pd.DataFrame([
-            {"Parámetro":"Resistencia total RT", "Valor":resistencia_total_kn, "Unidad":"kN"},
-            {"Parámetro":"Deducción de empuje t", "Valor":t_fraction, "Unidad":"-"},
-            {"Parámetro":"Velocidad de avance VA", "Valor":v_ms, "Unidad":"m/s"},
-            {"Parámetro":"Potencia de empuje PT", "Valor":PT_kw, "Unidad":"kW"},
+            {"Parámetro":"Deducción de empuje t", "Valor":t_fraction, "Unidad":"-", "Rango esperado":"0.05–0.35", "Dictamen":dictamen_eficiencia(t_fraction,0.05,0.35)},
+            {"Parámetro":"Velocidad de avance VA", "Valor":VA_ms, "Unidad":"m/s", "Rango esperado":">0", "Dictamen":"Cumple" if VA_ms>0 else "No cumple"},
+            {"Parámetro":"Empuje requerido", "Valor":thrust_req_N/1000, "Unidad":"kN", "Rango esperado":"positivo", "Dictamen":"Cumple" if thrust_req_N>0 else "No cumple"},
+            {"Parámetro":"Potencia de empuje PT", "Valor":PT_kw, "Unidad":"kW", "Rango esperado":"positivo", "Dictamen":"Cumple" if PT_kw>0 else "No cumple"},
         ])
-        st.dataframe(df_pt.style.format({"Valor":"{:,.4f}"}), use_container_width=True)
-        fig, ax = plt.subplots(figsize=(8, 3.8))
-        ax.bar(["PE con margen", "PT"], [PE_kw, PT_kw])
-        ax.set_ylabel("Potencia [kW]")
-        ax.set_title("Comparación PE con margen vs PT")
-        ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+        st.dataframe(df_pt.style.format({"Valor":"{:,.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8.5, 3.8))
+        ax.barh(["PE con margen", "PT"], [PE_kw, PT_kw])
+        ax.set_xlabel("kW")
+        ax.set_title("PE con margen vs potencia de empuje")
+        ax.grid(True, axis="x", linestyle=":", alpha=0.6)
         st.pyplot(fig)
 
     with pot_pd:
         st.markdown("### ⚙️ Potencia entregada a la hélice PD")
-        st.markdown("PD es la potencia que realmente llega a la hélice después de considerar la eficiencia cuasi-propulsiva del conjunto casco-hélice.")
-        c1, c2, c3 = st.columns(3)
+        st.markdown("PD es la potencia que debe llegar a la hélice considerando la eficiencia cuasi-propulsiva del conjunto casco-hélice.")
+        st.latex(r"\eta_D=\eta_H\eta_O\eta_R\qquad P_D=\frac{P_E}{\eta_D}")
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("ηH", f"{eta_h:.3f}")
-        c2.metric("ηD", f"{eta_d:.3f}")
-        c3.metric("PD", f"{PD_kw:,.0f} kW")
-        df_pd = pd.DataFrame([
-            {"Concepto":"Eficiencia de casco ηH", "Valor":eta_h, "Unidad":"-"},
-            {"Concepto":"Eficiencia aguas abiertas ηO", "Valor":max_eff, "Unidad":"-"},
-            {"Concepto":"Eficiencia rotativa ηR", "Valor":eta_r, "Unidad":"-"},
-            {"Concepto":"Eficiencia cuasi-propulsiva ηD", "Valor":eta_d, "Unidad":"-"},
-            {"Concepto":"Potencia entregada PD", "Valor":PD_kw, "Unidad":"kW"},
-        ])
-        st.dataframe(df_pd.style.format({"Valor":"{:,.4f}"}), use_container_width=True)
-        fig, ax = plt.subplots(figsize=(8, 3.8))
+        c2.metric("ηO", f"{max_eff:.3f}")
+        c3.metric("ηD", f"{eta_d:.3f}")
+        c4.metric("PD", f"{PD_kw:,.0f} kW")
+        df_pd = efficiency_prof_df[efficiency_prof_df["Eficiencia"].isin(["ηH","ηO","ηR","ηD"])].copy()
+        st.dataframe(df_pd.style.format({"Valor":"{:.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8.5, 3.8))
         ax.bar(["ηH", "ηO", "ηR", "ηD"], [eta_h, max_eff, eta_r, eta_d])
-        ax.set_ylabel("Eficiencia [-]")
         ax.set_ylim(0, max(1.2, max(eta_h, max_eff, eta_r, eta_d)*1.15))
-        ax.set_title("Componentes de eficiencia hasta PD")
+        ax.set_ylabel("Eficiencia [-]")
+        ax.set_title("Eficiencias que gobiernan PD")
         ax.grid(True, axis="y", linestyle=":", alpha=0.6)
         st.pyplot(fig)
 
     with pot_pb:
         st.markdown("### 🔩 Potencia en eje PS y potencia al freno PB")
-        st.markdown("PS considera pérdidas en el eje. PB considera además pérdidas en caja, acoplamiento o transmisión. Esta es la potencia que debe cubrir el motor.")
+        st.markdown("PS incluye pérdidas mecánicas del eje; PB es la potencia que debe cubrir el motor antes de aplicar el criterio MCR.")
+        st.latex(r"P_S=\frac{P_D}{\eta_S}\qquad P_B=\frac{P_S}{\eta_G}\qquad MCR_{req}=\frac{P_B}{0.85}")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("PS", f"{PS_kw:,.0f} kW")
         c2.metric("PB", f"{PB_kw_calc:,.0f} kW")
-        c3.metric("ηS", f"{eta_s:.3f}")
-        c4.metric("ηG", f"{eta_g:.3f}")
+        c3.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+        c4.metric("ηS·ηG", f"{eta_s*eta_g:.3f}")
         df_pb = pd.DataFrame([
-            {"Etapa":"PD", "Descripción":"Potencia entregada a la hélice", "Valor":PD_kw, "Unidad":"kW"},
-            {"Etapa":"PS", "Descripción":"Potencia en el eje", "Valor":PS_kw, "Unidad":"kW"},
-            {"Etapa":"PB", "Descripción":"Potencia al freno requerida", "Valor":PB_kw_calc, "Unidad":"kW"},
-            {"Etapa":"MCR requerido", "Descripción":"MCR mínimo para trabajar a 85%", "Valor":MCR_requerido_kw, "Unidad":"kW"},
+            {"Etapa":"PD", "Descripción":"Potencia entregada a la hélice", "Valor":PD_kw, "Unidad":"kW", "Dictamen":"Cumple"},
+            {"Etapa":"PS", "Descripción":"Potencia en el eje", "Valor":PS_kw, "Unidad":"kW", "Dictamen":"Cumple"},
+            {"Etapa":"PB", "Descripción":"Potencia al freno requerida", "Valor":PB_kw_calc, "Unidad":"kW", "Dictamen":"Cumple"},
+            {"Etapa":"MCR requerido", "Descripción":"MCR mínimo para trabajar al 85%", "Valor":MCR_requerido_kw, "Unidad":"kW", "Dictamen":"Cumple" if MCR_requerido_kw>0 else "Revisar"},
         ])
-        st.dataframe(df_pb.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
-        fig, ax = plt.subplots(figsize=(8, 3.8))
+        st.dataframe(df_pb.style.format({"Valor":"{:,.3f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8.5, 3.8))
         ax.bar(["PD", "PS", "PB", "MCR req."], [PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw])
-        ax.set_ylabel("Potencia [kW]")
+        ax.set_ylabel("kW")
         ax.set_title("Potencia requerida hasta el motor")
         ax.grid(True, axis="y", linestyle=":", alpha=0.6)
         st.pyplot(fig)
 
     with pot_eff:
         st.markdown("### 📉 Eficiencias adoptadas")
-        st.markdown("Esta tabla permite defender las pérdidas consideradas en la cadena de potencia. Son datos editables o estimados, por lo que deben citarse o justificarse en el reporte.")
-        eff_df = pd.DataFrame([
-            {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h},
-            {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas", "Valor": max_eff},
-            {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r},
-            {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b},
-            {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d},
-            {"Eficiencia": "ηS", "Descripción": "Eficiencia del eje", "Valor": eta_s},
-            {"Eficiencia": "ηG", "Descripción": "Eficiencia de caja/transmisión", "Valor": eta_g},
-        ])
-        st.dataframe(eff_df.style.format({"Valor":"{:.4f}"}), use_container_width=True)
+        st.markdown("Esta tabla resume las eficiencias usadas, sus rangos de referencia y un dictamen para defender las hipótesis de cálculo.")
+        st.dataframe(efficiency_prof_df.style.format({"Valor":"{:.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True, height=330)
         fig, ax = plt.subplots(figsize=(9, 4.2))
-        ax.barh(eff_df["Eficiencia"][::-1], eff_df["Valor"][::-1])
+        ax.barh(efficiency_prof_df["Eficiencia"][::-1], efficiency_prof_df["Valor"][::-1])
         ax.set_xlabel("Valor [-]")
         ax.set_title("Mapa de eficiencias del sistema propulsivo")
         ax.grid(True, axis="x", linestyle=":", alpha=0.6)
         st.pyplot(fig)
-
-    with pot_formulas:
-        st.markdown("### 🧮 Fórmulas de la cadena de potencias")
-        st.latex(r"P_E = R_T V_S")
-        st.latex(r"P_{E,SM}=P_E(1+SM)")
-        st.latex(r"T=\frac{R_T}{1-t}")
-        st.latex(r"P_T=T V_A")
-        st.latex(r"\eta_H=\frac{1-t}{1-w}")
-        st.latex(r"\eta_D=\eta_H\eta_O\eta_R")
-        st.latex(r"P_D=\frac{P_E}{\eta_D}")
-        st.latex(r"P_S=\frac{P_D}{\eta_S}")
-        st.latex(r"P_B=\frac{P_S}{\eta_G}")
-
 
 # ==============================================================================
 # MOTOR Y REDUCTORA
@@ -2168,78 +2202,55 @@ with tab_opt:
 
 with tab_hidro:
     st.subheader("📈 Hidrodinámica en Aguas Abiertas — Wageningen Serie B")
-
     st.markdown("""
     <div class="section-card">
-    Las curvas de aguas abiertas describen el comportamiento ideal de la hélice
-    sin interferencia directa del casco. Se calculan los coeficientes KT, KQ y ηO
-    a partir de los polinomios de la Serie B de Wageningen contenidos en el archivo Excel.
-    El punto de máxima eficiencia permite identificar una condición favorable de operación.
+    Esta sección integra las curvas Wageningen y la matriz numérica de resultados. Se eliminó la pestaña independiente de Resultados porque estos valores pertenecen directamente al análisis hidrodinámico.
     </div>
     """, unsafe_allow_html=True)
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("ηO máxima", f"{max_eff*100:.2f}%")
-    k2.metric("J óptimo", f"{j_opt:.3f}")
-    k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
-    k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
+    hidro_curvas, hidro_tabla, hidro_formulas = st.tabs(["📈 Curvas", "📋 Resultados numéricos", "🧮 Fórmulas"])
 
-    fig, ax = plt.subplots(figsize=(11, 5.2))
-    ax.plot(res["J"], res["KT"], linewidth=2.6, label="KT — Coeficiente de empuje")
-    ax.plot(res["J"], res["10KQ"], linewidth=2.6, label="10·KQ — Coeficiente de torque")
-    ax.plot(res["J"], res["nO"], linewidth=3.2, linestyle="--", label="ηO — Eficiencia")
-    ax.axvline(x=j_opt, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt:.3f}")
-    ax.fill_between(res["J"], 0, res["nO"], alpha=0.08)
-    ax.set_title("Curvas KT, 10KQ y ηO — Hélice Wageningen Serie B", fontsize=12, fontweight="bold")
-    ax.set_xlabel("Coeficiente de avance J")
-    ax.set_ylabel("Coeficientes adimensionales")
-    ax.set_xlim(0, 1.2)
-    ax.set_ylim(0, max(1.05, float(res[["KT", "10KQ", "nO"]].max().max()) * 1.1))
-    ax.grid(True, linestyle=":", alpha=0.65)
-    ax.legend(loc="best")
-    st.pyplot(fig)
+    with hidro_curvas:
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("ηO máxima", f"{max_eff*100:.2f}%")
+        k2.metric("J óptimo", f"{j_opt:.3f}")
+        k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
+        k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
 
-    st.info(
-        "Interpretación: KT indica capacidad de empuje; KQ indica demanda de torque; "
-        "ηO expresa eficiencia hidrodinámica ideal. El máximo de ηO es útil para evaluar "
-        "la coherencia preliminar de la geometría P/D, Ae/A0 y Z."
-    )
+        fig, ax = plt.subplots(figsize=(11, 5.2))
+        ax.plot(res["J"], res["KT"], linewidth=2.6, label="KT — Coeficiente de empuje")
+        ax.plot(res["J"], res["10KQ"], linewidth=2.6, label="10·KQ — Coeficiente de torque")
+        ax.plot(res["J"], res["nO"], linewidth=3.2, linestyle="--", label="ηO — Eficiencia")
+        ax.axvline(x=j_opt, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt:.3f}")
+        ax.fill_between(res["J"], 0, res["nO"], alpha=0.08)
+        ax.set_title("Curvas KT, 10KQ y ηO — Hélice Wageningen Serie B", fontsize=12, fontweight="bold")
+        ax.set_xlabel("Coeficiente de avance J")
+        ax.set_ylabel("Coeficientes adimensionales")
+        ax.set_xlim(0, 1.2)
+        ax.set_ylim(0, max(1.05, float(res[["KT", "10KQ", "nO"]].max().max()) * 1.1))
+        ax.grid(True, linestyle=":", alpha=0.65)
+        ax.legend(loc="best")
+        st.pyplot(fig)
+        st.info("KT indica capacidad de empuje; KQ indica demanda de torque; ηO expresa eficiencia hidrodinámica ideal.")
 
+    with hidro_tabla:
+        st.markdown("### 📋 Matriz numérica de resultados Wageningen")
+        tabla = res.copy()
+        st.dataframe(
+            tabla.style
+            .highlight_max(subset=["nO", "ηO (%)"], color="#dcfce7")
+            .format("{:.4f}"),
+            use_container_width=True,
+            height=520
+        )
 
-    with st.expander("🧮 Fórmulas hidrodinámicas usadas", expanded=False):
+    with hidro_formulas:
+        st.markdown("### 🧮 Fórmulas hidrodinámicas usadas")
         st.latex(r"J = \frac{V_A}{nD}")
         st.latex(r"K_T = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
         st.latex(r"K_Q = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
         st.latex(r"\eta_O = \frac{J}{2\pi}\frac{K_T}{K_Q}")
-        st.markdown("""
-        Donde **J** es el coeficiente de avance, **KT** el coeficiente de empuje,
-        **KQ** el coeficiente de torque y **ηO** la eficiencia en aguas abiertas.
-        Los coeficientes polinomiales se leen desde el archivo `Tabla 1.xlsx`.
-        """)
-
-# ==============================================================================
-# RESULTADOS NUMÉRICOS
-# ==============================================================================
-
-with tab_resultados:
-    st.subheader("📋 Matriz Numérica de Resultados")
-
-    st.markdown("""
-    <div class="section-card">
-    La tabla muestra los valores calculados para cada coeficiente de avance J.
-    La columna de eficiencia se resalta automáticamente en su valor máximo para facilitar
-    la identificación del punto óptimo de operación.
-    </div>
-    """, unsafe_allow_html=True)
-
-    tabla = res.copy()
-    st.dataframe(
-        tabla.style
-        .highlight_max(subset=["nO", "ηO (%)"], color="#d8f5d0")
-        .format("{:.4f}"),
-        use_container_width=True,
-        height=500
-    )
+        st.markdown("Los coeficientes polinomiales se leen desde `Tabla 1.xlsx`.")
 
 # ==============================================================================
 # VIBRACIÓN DEL EJE: TORSIONAL, AXIAL Y LATERAL
@@ -2671,9 +2682,7 @@ with tab_cav:
     st.subheader("🔍 Cavitación y régimen de flujo")
     st.markdown("""
     <div class="section-card">
-    La cavitación se organiza en subpestañas para separar claramente la revisión general
-    de flujo, el criterio de Burrill, el criterio de Keller y las fórmulas usadas. Esto hace
-    que la sección sea más limpia, defendible y fácil de explicar en presentación.
+    La cavitación se organiza por análisis: resumen general, Burrill, Keller, Reynolds/σ y fórmulas. Cada subpestaña incluye dictamen y explicación para evitar depender de una pestaña final de fórmulas.
     </div>
     """, unsafe_allow_html=True)
 
@@ -2694,16 +2703,8 @@ with tab_cav:
             {"Análisis":"Burrill τc", "Valor calculado":tau_c_burrill, "Límite/Referencia":tau_c_admisible, "Resultado":"Cumple" if burrill_ok else "Revisar"},
             {"Análisis":"Keller Ae/A0", "Valor calculado":ae_val, "Límite/Referencia":keller_ae_min, "Resultado":"Cumple" if keller_ok else "No cumple"},
         ])
-        def color_resultado(val):
-            if val == "Cumple":
-                return "background-color:#dcfce7; color:#166534; font-weight:bold"
-            if val == "Revisar":
-                return "background-color:#fef3c7; color:#92400e; font-weight:bold"
-            if val == "No cumple":
-                return "background-color:#fee2e2; color:#991b1b; font-weight:bold"
-            return ""
         st.dataframe(
-            resumen_cav.style.format({"Valor calculado":"{:,.4g}"}).map(color_resultado, subset=["Resultado"]),
+            resumen_cav.style.format({"Valor calculado":"{:,.4g}"}).map(style_estado, subset=["Resultado"]),
             use_container_width=True
         )
 
@@ -2716,36 +2717,29 @@ with tab_cav:
 
     with cav_burrill:
         st.markdown("### 🫧 Criterio de Burrill")
-        st.markdown("Burrill compara la carga de pala τc contra un límite admisible dependiente de σ. Es útil para detectar si la hélice está demasiado cargada y puede presentar cavitación perjudicial.")
+        st.markdown("Burrill compara la carga de pala τc contra un límite admisible dependiente de σ. Es útil para detectar si la hélice está demasiado cargada.")
+        st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2A_0}")
         b1, b2, b3 = st.columns(3)
         b1.metric("τc calculado", f"{tau_c_burrill:.3f}")
         b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
         b3.metric("Margen", f"{(tau_c_admisible - tau_c_burrill):.3f}")
-        if burrill_ok:
-            estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible.", "good")
-        else:
-            estado_html("⚠️ Revisar Burrill: la carga de pala es elevada. Conviene aumentar Ae/A0, aumentar D o reducir carga.", "warn")
-        fig_burr = crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible)
-        st.pyplot(fig_burr)
-        st.caption("La línea representa el límite preliminar; el punto de operación debe quedar por debajo de la curva admisible.")
+        estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala es elevada.", "good" if burrill_ok else "warn")
+        st.pyplot(crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
 
     with cav_keller:
         st.markdown("### 📐 Criterio de Keller")
-        st.markdown("Keller estima el área expandida mínima requerida para que la hélice no quede excesivamente cargada. La comparación principal es Ae/A0 actual contra Ae/A0 mínimo.")
+        st.markdown("Keller estima el área expandida mínima requerida para evitar una carga excesiva sobre las palas.")
+        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
         k1, k2, k3 = st.columns(3)
         k1.metric("Ae/A0 mínimo", f"{keller_ae_min:.3f}")
         k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
         k3.metric("Margen", f"{(ae_val - keller_ae_min):.3f}")
-        if keller_ok:
-            estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido.", "good")
-        else:
-            estado_html("❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga de la hélice.", "bad")
-        fig_kel = crear_figura_keller(keller_ae_min, ae_val)
-        st.pyplot(fig_kel)
-        st.caption("La barra del diseño actual debe quedar por encima del mínimo Keller para considerarse aceptable en esta revisión preliminar.")
+        estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido." if keller_ok else "❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga.", "good" if keller_ok else "bad")
+        st.pyplot(crear_figura_keller(keller_ae_min, ae_val))
 
     with cav_flujo:
         st.markdown("### 🌊 Reynolds y coeficiente de cavitación σ")
+        st.latex(r"Re = \frac{V_A D}{\nu}\qquad \sigma = \frac{P_{atm}+\rho gh-P_v}{\frac{1}{2}\rho V_A^2}")
         c1, c2, c3 = st.columns(3)
         c1.metric("Velocidad efectiva VA", f"{v_ms:.2f} m/s")
         c2.metric("Reynolds", f"{reynolds:.2e}")
@@ -2761,7 +2755,10 @@ with tab_cav:
             ax_re.set_title("Comparación de régimen de flujo")
             ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
             st.pyplot(fig_re)
-            st.success("✅ Flujo turbulento típico de hélices navales.") if reynolds_ok else st.warning("⚠️ Reynolds bajo para escala naval.")
+            if reynolds_ok:
+                st.success("✅ Flujo turbulento típico de hélices navales.")
+            else:
+                st.warning("⚠️ Reynolds bajo para escala naval.")
         with col_sig:
             fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
             etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
@@ -2773,7 +2770,10 @@ with tab_cav:
             ax_sig.grid(True, linestyle=":", alpha=0.55)
             ax_sig.legend(fontsize=8)
             st.pyplot(fig_sig)
-            st.success("🟢 σ favorable frente a cavitación.") if cavitacion_ok else st.warning("🟡 σ bajo: revisar inmersión, carga o diámetro.")
+            if cavitacion_ok:
+                st.success("🟢 σ favorable frente a cavitación.")
+            else:
+                st.warning("🟡 σ bajo: revisar inmersión, carga o diámetro.")
 
     with cav_formulas:
         st.markdown("### 🧮 Fórmulas usadas en cavitación")
@@ -2783,10 +2783,8 @@ with tab_cav:
         st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2 A_0}")
         st.latex(r"A_0 = \frac{\pi D^2}{4}")
         st.latex(r"\tau_{c,adm}=0.22+0.18\sigma")
-        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
         st.latex(r"P_0-P_v=P_{atm}+\rho gh-P_v")
         st.info("Estos criterios son preliminares para prediseño. Para aprobación final deben contrastarse con diagramas originales, pruebas de modelo o reglas de clase aplicables.")
-
 
 # ==============================================================================
 # NORMATIVA APLICABLE
@@ -2957,133 +2955,6 @@ with tab_clase:
 # ==============================================================================
 # EXPORTACIÓN
 # ==============================================================================
-
-# ==============================================================================
-# FÓRMULAS DEL MODELO
-# ==============================================================================
-
-with tab_formulas:
-    st.subheader("🧮 Formulario Técnico del Modelo")
-
-    st.markdown("""
-    <div class="section-card">
-    Esta pestaña reúne las principales expresiones matemáticas utilizadas por la aplicación.
-    Su objetivo es que, durante la presentación, se pueda justificar de forma clara qué
-    ecuaciones se emplearon para obtener los resultados de hidrodinámica, cavitación,
-    vibración torsional, vibración lateral y dictamen preliminar.
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("### 1. Velocidad efectiva de avance hacia la hélice")
-    st.latex(r"V_A = V_s(1-w)")
-    st.markdown("Donde **Vs** es la velocidad del buque en m/s y **w** es la fracción de estela.")
-
-    st.markdown("### 2. Coeficiente de avance")
-    st.latex(r"J = \frac{V_A}{nD}")
-    st.markdown("Donde **n** es la velocidad de giro en rev/s y **D** es el diámetro de la hélice.")
-
-    st.markdown("### 3. Polinomios Wageningen Serie B")
-    st.latex(r"K_T = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
-    st.latex(r"K_Q = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
-    st.markdown("Los coeficientes **Ci, si, ti, ui, vi** se leen del archivo `Tabla 1.xlsx`.")
-
-    st.markdown("### 4. Eficiencia en aguas abiertas")
-    st.latex(r"\eta_O = \frac{J}{2\pi}\frac{K_T}{K_Q}")
-
-    st.markdown("### 5. Número de Reynolds")
-    st.latex(r"Re = \frac{V_A D}{\nu}")
-    st.markdown("Se usa para identificar si el flujo se encuentra en régimen laminar, transicional o turbulento.")
-
-    st.markdown("### 6. Coeficiente de cavitación")
-    st.latex(r"\sigma = \frac{P_{atm} + \rho g h - P_v}{\frac{1}{2}\rho V_A^2}")
-    st.markdown("Valores bajos de σ indican mayor riesgo de cavitación.")
-
-    st.markdown("### 7. Torque nominal")
-    st.latex(r"\omega = \frac{2\pi n}{60}")
-    st.latex(r"T = \frac{P}{\omega}")
-
-    st.markdown("### 8. Esfuerzo torsional alternante")
-    st.latex(r"T_{alt} = 0.15T")
-    st.latex(r"W_t = \frac{\pi d^3}{16}")
-    st.latex(r"\tau = \frac{T_{alt}}{W_t}")
-    st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
-
-    st.markdown("### 9. Deflexión y frecuencia lateral")
-    st.latex(r"I = \frac{\pi d^4}{64}")
-    st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
-    st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
-    st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
-    st.latex(r"n_{crit} = 60 f_n")
-
-    st.markdown("### 10. Órdenes del Diagrama de Campbell")
-    st.latex(r"f_{orden} = k\frac{n}{60}")
-    st.latex(r"f_{ZP} = Z\frac{n}{60}")
-
-    st.markdown("### 11. Índice global de diseño")
-    st.markdown("""
-    El índice global se calcula con ponderaciones preliminares:
-
-    - Hidrodinámica: 15 puntos
-    - Reynolds: 10 puntos
-    - Cavitación: 15 puntos
-    - Torsión: 20 puntos
-    - Vibración axial: 20 puntos
-    - Vibración lateral: 20 puntos
-
-    Este índice no sustituye una aprobación oficial de una sociedad de clasificación,
-    pero permite generar un dictamen preliminar de ingeniería.
-    """)
-
-
-
-    st.markdown("---")
-    st.markdown("## 📚 Guía rápida de referencia")
-    st.markdown("""
-    Esta guía se integra aquí para evitar una pestaña adicional. Los rangos son orientativos
-    y sirven para revisar si los datos ingresados son coherentes antes de ejecutar el cálculo.
-    """)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("""
-        ### Rangos típicos de Lpp
-
-        | Tipo de buque | Lpp aproximado |
-        |---|---:|
-        | Remolcador | 20–50 m |
-        | OSV / PSV | 60–110 m |
-        | AHTS | 70–120 m |
-        | Ferry | 80–220 m |
-        | Bulk carrier | 180–250 m |
-        | Buque tanque | 250–330 m |
-        | Portacontenedores | 250–400 m |
-
-        ### Número de palas
-        - **3 palas:** buena eficiencia, más vibración.
-        - **4 palas:** configuración comercial común.
-        - **5 palas:** menor vibración y ruido.
-        - **6–7 palas:** aplicaciones especiales o alta carga.
-        """)
-    with c2:
-        st.markdown("""
-        ### Rangos típicos de Ae/A0
-
-        | Aplicación | Ae/A0 |
-        |---|---:|
-        | Baja carga | 0.40–0.55 |
-        | Mercante estándar | 0.50–0.70 |
-        | Alta carga | 0.70–0.95 |
-
-        ### Interpretación rápida
-        - **KT:** capacidad de empuje.
-        - **KQ:** torque requerido.
-        - **ηO:** eficiencia ideal de aguas abiertas.
-        - **σ:** tendencia a cavitación.
-        - **Burrill:** revisa carga de pala vs cavitación.
-        - **Keller:** revisa área expandida mínima.
-        - **Campbell:** detección de posibles resonancias.
-        """)
-
 
 # ==============================================================================
 # MÓDULOS AVANZADOS: TVA, BODE, ÓRBITAS Y TRANSITORIO
