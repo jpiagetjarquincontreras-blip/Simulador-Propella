@@ -953,7 +953,16 @@ def _add_cuboid(fig, center, size, name="Bloque", opacity=0.75):
     ))
 
 
+
+def _rotar_xy(x, y, ang):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    ca, sa = np.cos(ang), np.sin(ang)
+    return ca*x - sa*y, sa*x + ca*y
+
+
 def crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw, MCR_kw):
+    """Sankey interactivo profesional del flujo de potencia."""
     if go is None:
         return None
     PE_kw = max(float(PE_kw), 0.0)
@@ -965,9 +974,17 @@ def crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw, MCR_kw):
     perdida_eje = max(PS_kw - PD_kw, 0.0)
     perdida_trans = max(PB_kw - PS_kw, 0.0)
     reserva_motor = max(MCR_kw - PB_kw, 0.0)
+
     labels = [
-        "MCR requerido", "PB al freno", "PS en eje", "PD a hélice", "PE útil",
-        "Reserva 15% MCR", "Pérdida transmisión", "Pérdida eje", "Pérdidas propulsivas"
+        f"MCR requerido\n{MCR_kw:,.0f} kW",
+        f"PB motor\n{PB_kw:,.0f} kW",
+        f"PS eje\n{PS_kw:,.0f} kW",
+        f"PD hélice\n{PD_kw:,.0f} kW",
+        f"PE útil\n{PE_kw:,.0f} kW",
+        f"Reserva MCR\n{reserva_motor:,.0f} kW",
+        f"Pérdida transmisión\n{perdida_trans:,.0f} kW",
+        f"Pérdida eje\n{perdida_eje:,.0f} kW",
+        f"Pérdidas propulsivas\n{perdida_prop:,.0f} kW"
     ]
     source = [0, 0, 1, 1, 2, 2, 3, 3]
     target = [1, 5, 2, 6, 3, 7, 4, 8]
@@ -975,153 +992,216 @@ def crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw, MCR_kw):
     fig = go.Figure(data=[go.Sankey(
         arrangement="snap",
         node=dict(
-            pad=18, thickness=18, line=dict(color="rgba(15,23,42,.25)", width=0.5),
+            pad=22, thickness=20,
+            line=dict(color="rgba(15,23,42,.28)", width=0.7),
             label=labels,
-            color=["#4c1d95", "#6d28d9", "#2563eb", "#0891b2", "#059669", "#f59e0b", "#fb7185", "#f97316", "#ef4444"]
+            color=["#312e81", "#4f46e5", "#2563eb", "#0891b2", "#059669", "#f59e0b", "#fb7185", "#f97316", "#ef4444"],
+            hovertemplate="%{label}<extra></extra>"
         ),
         link=dict(
             source=source, target=target, value=values,
-            color=["rgba(109,40,217,.35)", "rgba(245,158,11,.30)", "rgba(37,99,235,.34)", "rgba(251,113,133,.25)", "rgba(8,145,178,.33)", "rgba(249,115,22,.25)", "rgba(5,150,105,.36)", "rgba(239,68,68,.24)"]
+            color=["rgba(79,70,229,.35)", "rgba(245,158,11,.30)", "rgba(37,99,235,.34)", "rgba(251,113,133,.25)", "rgba(8,145,178,.33)", "rgba(249,115,22,.25)", "rgba(5,150,105,.36)", "rgba(239,68,68,.24)"],
+            hovertemplate="Flujo: %{value:,.0f} kW<extra></extra>"
         )
     )])
     fig.update_layout(
-        title="Flujo energético del sistema propulsivo",
+        title=dict(text="Flujo energético interactivo del sistema propulsivo", x=0.02, xanchor="left"),
         font=dict(size=12, color="#0f172a"),
-        height=430,
-        margin=dict(l=20, r=20, t=55, b=15),
+        height=460,
+        margin=dict(l=20, r=20, t=60, b=15),
         paper_bgcolor="white"
     )
     return fig
 
 
-def crear_helice_3d_parametrica(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155):
-    if go is None:
-        return None
+def _propeller_mesh_arrays(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, phase=0.0, x_offset=0.0, axis="z", detail=34):
+    """Genera una hélice conceptual pero más refinada: pala con cuerda radial, twist, skew, rake y espesor.
+    axis='z' orienta la hélice en el plano XY; axis='x' orienta el disco en YZ para el tren propulsor.
+    """
     R = max(D/2.0, 0.1)
     Rhub = max(hub_ratio*R, 0.08*R)
-    n_r = 30
-    radial = np.linspace(Rhub, R, n_r)
-    x_all, y_all, z_all, i_all, j_all, k_all = [], [], [], [], [], []
+    n_r = detail
+    radial = np.linspace(Rhub*1.04, R, n_r)
+    x_all, y_all, z_all, i_all, j_all, k_all, intensity = [], [], [], [], [], [], []
+
     def chord(r):
         mu = (r - Rhub) / max(R - Rhub, 1e-9)
-        base = (0.22 + 0.95*np.sin(np.pi*mu)**0.85) * R * 0.22
-        return base * (0.70 + 1.25*AeAo) / max(Z/4, 0.75)
-    for b in range(Z):
-        base_ang = 2*np.pi*b/Z
+        # cuerda tipo pala naval: crece desde raíz, máximo alrededor 0.55R y reduce hacia punta
+        c = (0.18 + 0.95*np.sin(np.pi*mu)**0.78) * R * 0.30
+        return c * (0.72 + 1.10*AeAo) / max((Z/4.0)**0.30, 0.75)
+
+    for blade in range(Z):
+        base_ang = phase + 2*np.pi*blade/Z
         start = len(x_all)
         for r in radial:
             mu = (r - Rhub) / max(R - Rhub, 1e-9)
             c = chord(r)
             pitch = PD*D
             beta = math.atan2(pitch, 2*np.pi*r)
-            skew = np.deg2rad(12.0)*(mu**1.6)
+            skew = np.deg2rad(20.0)*(mu**1.55)       # barrido hacia punta
+            rake = 0.055*R*(mu**1.4)                 # desplazamiento axial conceptual
             half_ang = c/(2*max(r, 1e-9))
-            for side in [-1, 1]:
+            thick = (0.030 + 0.055*(1-mu)**1.4)*R*0.16
+            # 4 puntos por estación: borde presión/succión visual.
+            for side, surf in [(-1, -1), (1, -1), (-1, 1), (1, 1)]:
                 th = base_ang + skew + side*half_ang
-                camber = 0.035*R*np.sin(np.pi*mu)
-                z_val = side*0.06*c*math.sin(beta) + camber*(1 if side > 0 else -0.35)
-                x_all.append(r*np.cos(th))
-                y_all.append(r*np.sin(th))
-                z_all.append(z_val)
+                camber = 0.045*R*np.sin(np.pi*mu)
+                z_axial = rake + surf*thick + side*0.018*c*np.sin(beta) + camber*0.20
+                xp = r*np.cos(th)
+                yp = r*np.sin(th)
+                zp = z_axial
+                if axis == "z":
+                    x_all.append(xp); y_all.append(yp); z_all.append(zp + x_offset)
+                else:
+                    # disco de hélice en plano YZ, eje longitudinal en X
+                    x_all.append(zp + x_offset); y_all.append(xp); z_all.append(yp)
+                intensity.append(mu)
+        # caras entre estaciones, conectando superficies
         for rr in range(n_r-1):
-            a = start + 2*rr
-            b0 = start + 2*rr + 1
-            c0 = start + 2*(rr+1)
-            d0 = start + 2*(rr+1) + 1
-            i_all += [a, b0]
-            j_all += [b0, d0]
-            k_all += [c0, c0]
+            a = start + 4*rr
+            b = start + 4*(rr+1)
+            # superficie inferior: puntos 0,1
+            i_all += [a, a+1]
+            j_all += [a+1, b+1]
+            k_all += [b, b]
+            # superficie superior: puntos 2,3
+            i_all += [a+2, a+3]
+            j_all += [a+3, b+3]
+            k_all += [b+2, b+2]
+            # borde de ataque y salida
+            i_all += [a, a+2, a+1, a+3]
+            j_all += [a+2, b+2, a+3, b+3]
+            k_all += [b, b, b+1, b+1]
+    return np.array(x_all), np.array(y_all), np.array(z_all), np.array(i_all), np.array(j_all), np.array(k_all), np.array(intensity)
+
+
+def crear_helice_3d_parametrica(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, rpm=75.0, animar=True):
+    if go is None:
+        return None
+    R = max(D/2.0, 0.1)
+    Rhub = max(hub_ratio*R, 0.08*R)
+    x, y, z, i, j, k, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0, axis="z", detail=38)
     fig = go.Figure()
     fig.add_trace(go.Mesh3d(
-        x=x_all, y=y_all, z=z_all, i=i_all, j=j_all, k=k_all,
-        color="#2dd4bf", opacity=0.92, flatshading=True, name="Palas paramétricas"
+        x=x, y=y, z=z, i=i, j=j, k=k,
+        intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False,
+        name="Palas paramétricas", hovertemplate="Pala paramétrica<br>radio normalizado=%{intensity:.2f}<extra></extra>", showscale=False
     ))
+    # borde exterior de disco de referencia
+    theta = np.linspace(0, 2*np.pi, 220)
+    fig.add_trace(go.Scatter3d(x=R*np.cos(theta), y=R*np.sin(theta), z=np.zeros_like(theta), mode="lines", line=dict(width=3, color="#94a3b8"), name="Disco de hélice"))
     # Cubo y eje corto.
-    Xh, Yh, Zh = _cylinder_surface(radius=Rhub, length=0.42*R, x0=-0.21*R, axis="z", n_theta=60, n_len=10)
-    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#334155"],[1,"#64748b"]], showscale=False, opacity=0.95, name="Cubo"))
-    Xs, Ys, Zs = _cylinder_surface(radius=0.055*R, length=1.40*R, x0=-0.90*R, axis="z", n_theta=48, n_len=10)
-    fig.add_trace(go.Surface(x=Xs, y=Ys, z=Zs, colorscale=[[0,"#475569"],[1,"#94a3b8"]], showscale=False, opacity=0.85, name="Eje"))
+    Xh, Yh, Zh = _cylinder_surface(radius=Rhub, length=0.46*R, x0=-0.23*R, axis="z", n_theta=72, n_len=14)
+    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.98, name="Cubo"))
+    Xs, Ys, Zs = _cylinder_surface(radius=max(0.055*R, Rhub*0.22), length=1.50*R, x0=-1.02*R, axis="z", n_theta=60, n_len=12)
+    fig.add_trace(go.Surface(x=Xs, y=Ys, z=Zs, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.88, name="Eje"))
+
+    if animar:
+        frames=[]
+        for n, ang in enumerate(np.linspace(0, 2*np.pi, 24, endpoint=False)):
+            xr, yr = _rotar_xy(x, y, ang)
+            xdr, ydr = _rotar_xy(R*np.cos(theta), R*np.sin(theta), ang)
+            frames.append(go.Frame(data=[
+                go.Mesh3d(x=xr, y=yr, z=z, i=i, j=j, k=k, intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False, showscale=False),
+                go.Scatter3d(x=xdr, y=ydr, z=np.zeros_like(theta), mode="lines", line=dict(width=3, color="#94a3b8"))
+            ], traces=[0,1], name=str(n)))
+        fig.frames = frames
+        fig.update_layout(updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
+            dict(label="▶ Girar", method="animate", args=[None, {"frame":{"duration":80, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+            dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
+        ])])
+
     fig.update_layout(
-        title=f"Hélice 3D paramétrica — Z={Z}, D={D:.2f} m, P/D={PD:.3f}, Ae/A0={AeAo:.3f}",
+        title=dict(text=f"Hélice 3D paramétrica — Z={Z}, D={D:.2f} m, P/D={PD:.3f}, Ae/A0={AeAo:.3f}, n≈{rpm:.1f} rpm", x=0.02, xanchor="left"),
         scene=dict(
-            xaxis_title="X [m]", yaxis_title="Y [m]", zaxis_title="Paso / espesor visual [m]",
-            aspectmode="data",
-            bgcolor="white",
-            xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0"),
-            yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0"),
-            zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0"),
+            xaxis_title="X [m]", yaxis_title="Y [m]", zaxis_title="Eje / paso visual [m]",
+            aspectmode="data", bgcolor="white",
+            camera=dict(eye=dict(x=1.65, y=1.65, z=1.05)),
+            xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
         ),
-        height=620,
-        margin=dict(l=0, r=0, t=55, b=0),
+        height=680,
+        margin=dict(l=0, r=0, t=70, b=0),
         paper_bgcolor="white"
     )
     return fig
 
 
-def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Directa", relacion=1.0, PB=25000, rpm=75):
+def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Directa", relacion=1.0, PB=25000, rpm=75, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155):
     if go is None:
         return None
     fig = go.Figure()
     escala = max(D, 1.0)
-    shaft_radius = max(eje_d_mm/1000.0/2.0, 0.03*escala)
-    shaft_len = max(2.1*D, 8.0)
+    shaft_radius = max(eje_d_mm/1000.0/2.0, 0.025*escala)
+    shaft_len = max(2.45*D, 9.0)
+    # Base / línea de centro
+    fig.add_trace(go.Scatter3d(x=[-0.95*D, shaft_len+0.75*D], y=[0,0], z=[-0.42*D,-0.42*D], mode="lines", line=dict(width=8, color="#e2e8f0"), name="Bancada / línea base"))
     # Eje
-    X, Y, Zc = _cylinder_surface(radius=shaft_radius, length=shaft_len, x0=0, axis="x", n_theta=48, n_len=14)
-    fig.add_trace(go.Surface(x=X, y=Y, z=Zc, colorscale=[[0,"#64748b"],[1,"#cbd5e1"]], showscale=False, opacity=0.95, name="Eje propulsor"))
-    # Motor / reductora
-    _add_cuboid(fig, center=(-0.55*D, 0, 0.18*D), size=(0.65*D, 0.42*D, 0.36*D), name="Motor", opacity=0.82)
+    X, Y, Zc = _cylinder_surface(radius=shaft_radius, length=shaft_len, x0=0, axis="x", n_theta=64, n_len=18)
+    fig.add_trace(go.Surface(x=X, y=Y, z=Zc, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.98, name="Eje propulsor"))
+    # Cojinetes
+    for xb, name in [(0.62*D, "Cojinete de empuje"), (1.35*D, "Cojinete intermedio"), (shaft_len-0.45*D, "Bocina / stern tube")]:
+        Xb, Yb, Zb = _cylinder_surface(radius=shaft_radius*1.55, length=0.16*D, x0=xb, axis="x", n_theta=48, n_len=5)
+        fig.add_trace(go.Surface(x=Xb, y=Yb, z=Zb, colorscale=[[0,"#0f766e"],[1,"#14b8a6"]], showscale=False, opacity=0.90, name=name))
+    # Motor / reductora con mejor apariencia
+    _add_cuboid(fig, center=(-0.62*D, 0, 0.26*D), size=(0.74*D, 0.48*D, 0.42*D), name="Motor principal", opacity=0.86)
+    # cilindros de motor simbólicos
+    for n in range(6):
+        Xc, Yc, Zcc = _cylinder_surface(radius=0.045*D, length=0.13*D, x0=-0.93*D+n*0.12*D, axis="z", n_theta=24, n_len=4)
+        fig.add_trace(go.Surface(x=Xc, y=Yc, z=Zcc+0.50*D, colorscale=[[0,"#1e293b"],[1,"#475569"]], showscale=False, opacity=0.92, name="Cilindros" if n==0 else ""))
     if not str(tipo_trans).startswith("Directa"):
-        _add_cuboid(fig, center=(0.05*D, 0, 0.10*D), size=(0.26*D, 0.34*D, 0.25*D), name="Reductora", opacity=0.78)
-    # Hélice al final simplificada
-    prop_fig = crear_helice_3d_parametrica(D=D, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155)
-    # No podemos fusionar fácil figura completa; agregamos hélice simple tipo disco/palas planas al extremo.
-    R = D/2
-    x0 = shaft_len + 0.15*D
-    for b in range(4):
-        ang = 2*np.pi*b/4
-        xs = [x0, x0, x0, x0]
-        ys = [0.12*R*np.cos(ang+0.25), R*np.cos(ang+0.06), R*np.cos(ang-0.06), 0.12*R*np.cos(ang-0.25)]
-        zs = [0.12*R*np.sin(ang+0.25), R*np.sin(ang+0.06), R*np.sin(ang-0.06), 0.12*R*np.sin(ang-0.25)]
-        fig.add_trace(go.Mesh3d(x=xs, y=ys, z=zs, i=[0,0], j=[1,2], k=[2,3], color="#14b8a6", opacity=0.90, name="Hélice" if b==0 else "", showlegend=(b==0)))
-    Xh, Yh, Zh = _cylinder_surface(radius=0.10*D, length=0.22*D, x0=x0-0.11*D, axis="x", n_theta=48, n_len=8)
-    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#334155"],[1,"#64748b"]], showscale=False, opacity=0.95, name="Cubo hélice"))
-    fig.add_trace(go.Cone(x=[shaft_len+0.55*D], y=[0], z=[0], u=[0.9*D], v=[0], w=[0], sizemode="absolute", sizeref=0.55*D, anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0ea5e9"]], showscale=False, name="Empuje"))
+        _add_cuboid(fig, center=(0.07*D, 0, 0.15*D), size=(0.30*D, 0.36*D, 0.27*D), name=f"Reductora i≈{relacion:.2f}", opacity=0.82)
+    else:
+        fig.add_trace(go.Scatter3d(x=[-0.18*D], y=[0], z=[0.36*D], mode="text", text=["Transmisión directa"], textfont=dict(color="#0f766e", size=13), name="Transmisión directa"))
+    # Hélice paramétrica al final del eje, en plano YZ
+    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0.0, x_offset=shaft_len+0.05*D, axis="x", detail=30)
+    fig.add_trace(go.Mesh3d(x=xp, y=yp, z=zp, i=ii, j=jj, k=kk, intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False, showscale=False, name="Hélice paramétrica"))
+    Xh, Yh, Zh = _cylinder_surface(radius=max(0.10*D, hub_ratio*D/2), length=0.24*D, x0=shaft_len-0.08*D, axis="x", n_theta=60, n_len=8)
+    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.96, name="Cubo"))
+    # Empuje y flujo de agua conceptual
+    fig.add_trace(go.Cone(x=[shaft_len+0.65*D], y=[0], z=[0], u=[0.95*D], v=[0], w=[0], sizemode="absolute", sizeref=0.60*D, anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0284c7"]], showscale=False, name="Empuje"))
+    for yy in np.linspace(-0.9*D, 0.9*D, 5):
+        fig.add_trace(go.Scatter3d(x=[shaft_len+1.25*D, shaft_len+0.25*D], y=[yy, yy*0.55], z=[-0.65*D, -0.20*D], mode="lines", line=dict(width=3, color="rgba(56,189,248,.32)"), name="Flujo de agua" if yy==0 else "", showlegend=(yy==0)))
     fig.update_layout(
-        title=f"Gemelo digital simplificado del tren propulsor — PB={PB:,.0f} kW, n={rpm:.1f} rpm",
+        title=dict(text=f"Gemelo digital del tren propulsor — PB={PB:,.0f} kW, n={rpm:.1f} rpm, D={D:.2f} m", x=0.02, xanchor="left"),
         scene=dict(
-            xaxis_title="Eje longitudinal", yaxis_title="Transversal", zaxis_title="Vertical",
+            xaxis_title="Longitud del tren", yaxis_title="Transversal", zaxis_title="Vertical",
             aspectmode="data", bgcolor="white",
-            xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0"),
-            yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0"),
-            zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0"),
+            camera=dict(eye=dict(x=1.75, y=1.2, z=0.8)),
+            xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
         ),
-        height=600,
-        margin=dict(l=0, r=0, t=55, b=0),
+        height=660,
+        margin=dict(l=0, r=0, t=70, b=0),
         paper_bgcolor="white"
     )
     return fig
 
 
-def crear_cavitacion_3d_visual(D=9.86, sigma=1.0, keller_ok=True, burrill_ok=True):
+def crear_cavitacion_3d_visual(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, sigma=1.0, keller_ok=True, burrill_ok=True):
     if go is None:
         return None
-    fig = crear_helice_3d_parametrica(D=D, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155)
+    fig = crear_helice_3d_parametrica(D=D, Z=Z, PD=PD, AeAo=AeAo, hub_ratio=hub_ratio, rpm=0, animar=False)
     if fig is None:
         return None
-    # Nube de burbujas simbólicas en la periferia: no CFD, solo visual de riesgo.
-    riesgo = 0.25 if (keller_ok and burrill_ok and sigma > 0.2) else 0.85
+    riesgo = 0.18 if (keller_ok and burrill_ok and sigma > 0.2) else 0.78
     rng = np.random.default_rng(7)
-    n = int(45 + 90*riesgo)
+    n = int(35 + 130*riesgo)
     R = D/2
     theta = rng.uniform(0, 2*np.pi, n)
-    rr = rng.uniform(0.65*R, 1.05*R, n)
+    rr = rng.uniform(0.63*R, 1.08*R, n)
     x = rr*np.cos(theta)
     y = rr*np.sin(theta)
-    z = rng.normal(0.08*R, 0.08*R, n)
-    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="markers", marker=dict(size=4+6*riesgo, opacity=0.35, color="#38bdf8"), name="Nube simbólica de cavitación"))
-    fig.update_layout(title="Visualización conceptual de cavitación alrededor de la hélice")
+    z = rng.normal(0.12*R, 0.075*R, n)
+    size = 3.5 + 7.0*riesgo
+    fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="markers", marker=dict(size=size, opacity=0.38, color="#38bdf8"), name="Burbujas simbólicas"))
+    # anillo de zona de punta donde suele aumentar riesgo
+    th = np.linspace(0, 2*np.pi, 180)
+    fig.add_trace(go.Scatter3d(x=0.95*R*np.cos(th), y=0.95*R*np.sin(th), z=np.full_like(th, 0.18*R), mode="lines", line=dict(width=5, color="#f59e0b" if riesgo>0.4 else "#10b981"), name="Zona de punta"))
+    fig.update_layout(title=dict(text="Visualización conceptual de cavitación y zona de punta", x=0.02, xanchor="left"))
     return fig
-
 
 # ==============================================================================
 # CARGA DEL ARCHIVO WAGENINGEN
@@ -3554,14 +3634,14 @@ with tab_clase:
 
 
 with tab_gemelo:
-    st.subheader("🚢 Gemelo Digital del Sistema Propulsivo")
+    st.subheader("🚢 Gemelo Digital Paramétrico del Sistema Propulsivo")
     st.markdown("""
     <div class="section-card">
-    <b>Objetivo del módulo:</b> presentar el diseño como un sistema visual e interactivo, no solo como tablas numéricas. 
-    Esta pestaña integra el flujo energético, un modelo 3D conceptual del tren propulsor y una hélice paramétrica vinculada con los datos de entrada.
+    <b>Objetivo del módulo:</b> convertir los resultados numéricos de la app en una visualización técnica interactiva del sistema propulsivo.
+    El módulo funciona como un <b>gemelo digital conceptual</b>: cuando el usuario cambia diámetro, número de palas, P/D, Ae/A0, potencia, RPM, transmisión o cavitación, las gráficas y modelos se actualizan automáticamente.
     <br><br>
     <span class="small-muted">
-    Nota técnica: los modelos 3D son de <b>prediseño y visualización paramétrica</b>. No sustituyen un modelo CAD de fabricación, CFD ni un plano de taller, pero permiten explicar de forma clara cómo cambian la hélice, el eje y las pérdidas de potencia cuando cambian los parámetros del proyecto.
+    Nota técnica: el modelo 3D es paramétrico y didáctico. No sustituye CAD de fabricación, CFD, planos aprobados ni modelo de astillero; sirve para prediseño, presentación, revisión de consistencia y explicación visual del sistema motor–transmisión–eje–hélice.
     </span>
     </div>
     """, unsafe_allow_html=True)
@@ -3570,46 +3650,59 @@ with tab_gemelo:
         estado_html("⚠️ Para activar el Gemelo Digital instala Plotly agregando `plotly` a requirements.txt.", "warn")
     else:
         twin_resumen, twin_sankey, twin_sistema, twin_helice, twin_cavitacion = st.tabs([
-            "📌 Resumen", "⚡ Flujo energético", "🔩 Tren propulsor 3D", "🌀 Hélice 3D", "🌊 Cavitación visual"
+            "📌 Panel digital", "⚡ Potencia interactiva", "🔩 Tren propulsor 3D", "🌀 Hélice 3D animada", "🌊 Cavitación visual"
         ])
 
         with twin_resumen:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
             c2.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
-            c3.metric("D hélice", f"{diam_prop_m:.2f} m")
+            c3.metric("Hélice", f"Z={z_val} · D={diam_prop_m:.2f} m")
             c4.metric("RPM ref.", f"{rpm_helice_objetivo:.1f} rpm")
-            estado_html("✅ Módulo visual activo: el tren propulsor, la hélice y el flujo de potencia se actualizan con los parámetros de entrada.", "good")
+            estado_html("✅ Gemelo digital activo: las visualizaciones se alimentan de los datos actuales de entrada y resultados calculados por la app.", "good")
+
             st.markdown("""
-            ### ¿Por qué esto hace más profesional la app?
-            - Convierte los resultados en un **gemelo digital conceptual** del sistema motor–transmisión–eje–hélice.
-            - Permite explicar visualmente dónde aparecen las pérdidas de potencia.
-            - Muestra la hélice como geometría paramétrica, ligada a Z, D, P/D, Ae/A0 y hub ratio.
-            - Ayuda a defender el proyecto en presentación porque el profesor puede ver el sistema completo y no solo valores aislados.
+            ### ¿Qué evalúa esta pestaña?
+            - **Flujo energético:** muestra cómo la potencia va desde el MCR del motor hasta la potencia útil efectiva.
+            - **Tren propulsor:** representa motor, transmisión/reductora, eje, cojinetes, hélice y dirección de empuje.
+            - **Hélice paramétrica:** cambia con Z, D, P/D, Ae/A0 y hub ratio.
+            - **Cavitación visual:** transforma Burrill, Keller y σ en una lectura espacial sobre la hélice.
+            - **Defensa del proyecto:** permite explicar el sistema como si fuera un software de diseño, no solo una hoja de cálculo.
             """)
+
+            resumen_twin_df = pd.DataFrame([
+                {"Variable": "Potencia efectiva PE", "Valor": f"{PE_kw:,.1f} kW", "Uso en gemelo": "Inicio del flujo energético útil."},
+                {"Variable": "Potencia al freno PB", "Valor": f"{PB_kw_calc:,.1f} kW", "Uso en gemelo": "Carga requerida en motor."},
+                {"Variable": "MCR requerido", "Valor": f"{MCR_requerido_kw:,.1f} kW", "Uso en gemelo": "Reserva de potencia al 85% MCR."},
+                {"Variable": "Diámetro de hélice", "Valor": f"{diam_prop_m:.2f} m", "Uso en gemelo": "Escala la hélice 3D y el disco propulsor."},
+                {"Variable": "P/D", "Valor": f"{pd_val:.3f}", "Uso en gemelo": "Modifica la torsión geométrica/twist visual de las palas."},
+                {"Variable": "Ae/A0", "Valor": f"{ae_val:.3f}", "Uso en gemelo": "Aumenta o reduce la cuerda/área visual de las palas."},
+                {"Variable": "σ cavitación", "Valor": f"{sigma_n:.3f}", "Uso en gemelo": "Controla la nube simbólica de cavitación."},
+            ])
+            st.dataframe(resumen_twin_df, use_container_width=True, height=285)
 
         with twin_sankey:
             st.markdown("""
             ### Flujo energético interactivo
-            Este diagrama muestra cómo la potencia disponible del motor se reparte entre potencia útil y pérdidas. 
-            A diferencia de una tabla, el Sankey permite ver rápidamente qué etapa domina la pérdida energética del sistema.
+            El Sankey permite identificar visualmente dónde se pierde potencia y cuánta reserva queda hasta el MCR requerido. 
+            Esta lectura es útil para justificar eficiencias, transmisión, margen de servicio y selección de motor.
             """)
             fig_sankey = crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw)
             st.plotly_chart(fig_sankey, use_container_width=True)
             sankey_df = pd.DataFrame([
-                {"Concepto": "PE útil con margen", "Valor [kW]": PE_kw, "Interpretación": "Potencia necesaria para vencer resistencia al avance."},
-                {"Concepto": "Pérdidas propulsivas PD-PE", "Valor [kW]": max(PD_kw-PE_kw, 0), "Interpretación": "Pérdidas por interacción casco-hélice y eficiencia propulsiva."},
-                {"Concepto": "Pérdida de eje PS-PD", "Valor [kW]": max(PS_kw-PD_kw, 0), "Interpretación": "Pérdidas mecánicas en línea de ejes."},
-                {"Concepto": "Pérdida transmisión PB-PS", "Valor [kW]": max(PB_kw_calc-PS_kw, 0), "Interpretación": "Pérdidas en caja reductora o transmisión."},
-                {"Concepto": "Reserva MCR", "Valor [kW]": max(MCR_requerido_kw-PB_kw_calc, 0), "Interpretación": "Reserva para operar al 85% del MCR."},
+                {"Concepto": "PE útil con margen", "Valor [kW]": PE_kw, "Porcentaje de MCR [%]": safe_div(PE_kw, MCR_requerido_kw)*100, "Interpretación": "Potencia útil para vencer resistencia."},
+                {"Concepto": "Pérdidas propulsivas PD-PE", "Valor [kW]": max(PD_kw-PE_kw, 0), "Porcentaje de MCR [%]": safe_div(max(PD_kw-PE_kw,0), MCR_requerido_kw)*100, "Interpretación": "Efecto casco-hélice y eficiencia propulsiva."},
+                {"Concepto": "Pérdida de eje PS-PD", "Valor [kW]": max(PS_kw-PD_kw, 0), "Porcentaje de MCR [%]": safe_div(max(PS_kw-PD_kw,0), MCR_requerido_kw)*100, "Interpretación": "Pérdidas mecánicas en línea de ejes."},
+                {"Concepto": "Pérdida transmisión PB-PS", "Valor [kW]": max(PB_kw_calc-PS_kw, 0), "Porcentaje de MCR [%]": safe_div(max(PB_kw_calc-PS_kw,0), MCR_requerido_kw)*100, "Interpretación": "Caja reductora/acoplamiento/transmisión."},
+                {"Concepto": "Reserva MCR", "Valor [kW]": max(MCR_requerido_kw-PB_kw_calc, 0), "Porcentaje de MCR [%]": safe_div(max(MCR_requerido_kw-PB_kw_calc,0), MCR_requerido_kw)*100, "Interpretación": "Margen para operar al 85% MCR."},
             ])
-            st.dataframe(sankey_df.style.format({"Valor [kW]": "{:,.1f}"}), use_container_width=True)
+            st.dataframe(sankey_df.style.format({"Valor [kW]": "{:,.1f}", "Porcentaje de MCR [%]": "{:.2f}%"}), use_container_width=True, height=250)
 
         with twin_sistema:
             st.markdown("""
-            ### Tren propulsor 3D conceptual
-            El modelo representa el conjunto **motor → transmisión → eje → hélice → empuje**. 
-            La longitud, diámetro visual del eje y tamaño de la hélice se escalan con los datos del proyecto.
+            ### Tren propulsor 3D interactivo
+            El modelo muestra el arreglo conceptual **motor → transmisión → eje → cojinetes → hélice → empuje**. 
+            Puedes rotarlo, acercarlo y moverlo con el mouse. La escala cambia con el diámetro de hélice, diámetro de eje, RPM y tipo de transmisión.
             """)
             fig_sys = crear_sistema_propulsor_3d(
                 D=diam_prop_m,
@@ -3618,35 +3711,55 @@ with tab_gemelo:
                 tipo_trans=transmision_tipo,
                 relacion=relacion_reduccion,
                 PB=PB_kw_calc,
-                rpm=rpm_helice_objetivo
+                rpm=rpm_helice_objetivo,
+                Z=z_val,
+                PD=pd_val,
+                AeAo=ae_val,
+                hub_ratio=hub_ratio
             )
             st.plotly_chart(fig_sys, use_container_width=True)
-            st.caption("Modelo conceptual para presentación. Para fabricación se requiere CAD naval detallado y planos aprobados.")
+            sistema_df = pd.DataFrame([
+                {"Elemento": "Motor", "Dato asociado": f"PB={PB_kw_calc:,.0f} kW / MCR≈{MCR_requerido_kw:,.0f} kW", "Qué representa": "Fuente de potencia del sistema."},
+                {"Elemento": "Transmisión", "Dato asociado": f"{transmision_tipo} · i={relacion_reduccion:.2f}", "Qué representa": "Compatibilidad entre RPM de motor y hélice."},
+                {"Elemento": "Eje", "Dato asociado": f"d≈{diametro_eje_mm:.0f} mm", "Qué representa": "Transmisión de torque y soporte dinámico."},
+                {"Elemento": "Hélice", "Dato asociado": f"D={diam_prop_m:.2f} m · Z={z_val}", "Qué representa": "Conversión de potencia en empuje."},
+                {"Elemento": "Empuje", "Dato asociado": f"T≈{thrust_kN:,.1f} kN", "Qué representa": "Fuerza propulsiva generada."},
+            ])
+            st.dataframe(sistema_df, use_container_width=True, height=250)
 
         with twin_helice:
             st.markdown("""
-            ### Hélice 3D paramétrica
-            Esta visualización toma directamente los parámetros de entrada: número de palas, diámetro, relación paso/diámetro, área expandida y hub ratio.
-            El objetivo es mostrar cómo una decisión geométrica de la hélice se refleja inmediatamente en la forma del propulsor.
+            ### Hélice 3D paramétrica animada
+            Esta hélice no es una pieza CAD final, pero sí representa de forma paramétrica las decisiones principales de diseño: 
+            número de palas, diámetro, paso relativo, área expandida y tamaño de cubo. Puedes rotarla manualmente con el mouse o usar el botón **Girar** dentro de la gráfica.
             """)
-            fig_prop = crear_helice_3d_parametrica(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio)
+            fig_prop = crear_helice_3d_parametrica(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, rpm=rpm_helice_objetivo, animar=True)
             st.plotly_chart(fig_prop, use_container_width=True)
             helice_visual_df = pd.DataFrame([
-                {"Parámetro": "Número de palas Z", "Valor": z_val, "Efecto visual/técnico": "Más palas reducen vibración de paso de pala, pero pueden disminuir eficiencia."},
-                {"Parámetro": "Diámetro D", "Valor": diam_prop_m, "Efecto visual/técnico": "A mayor diámetro, mayor área de disco y menor carga por unidad de área."},
-                {"Parámetro": "P/D", "Valor": pd_val, "Efecto visual/técnico": "Controla el avance geométrico de la pala por revolución."},
-                {"Parámetro": "Ae/A0", "Valor": ae_val, "Efecto visual/técnico": "Mayor área expandida ayuda contra cavitación, pero puede penalizar eficiencia."},
-                {"Parámetro": "Hub ratio", "Valor": hub_ratio, "Efecto visual/técnico": "Define el tamaño relativo del cubo central."},
+                {"Parámetro": "Número de palas Z", "Valor": z_val, "Efecto visual/técnico": "Define cuántas palas se distribuyen angularmente; influye en vibración y eficiencia."},
+                {"Parámetro": "Diámetro D", "Valor": f"{diam_prop_m:.3f} m", "Efecto visual/técnico": "Escala el radio del disco propulsor y la longitud de pala."},
+                {"Parámetro": "P/D", "Valor": f"{pd_val:.3f}", "Efecto visual/técnico": "Aumenta el avance geométrico y la torsión visual de la pala."},
+                {"Parámetro": "Ae/A0", "Valor": f"{ae_val:.3f}", "Efecto visual/técnico": "Modifica la cuerda/área de pala; mayor área suele ayudar contra cavitación."},
+                {"Parámetro": "Hub ratio", "Valor": f"{hub_ratio:.3f}", "Efecto visual/técnico": "Define el tamaño relativo del cubo central."},
+                {"Parámetro": "RPM de referencia", "Valor": f"{rpm_helice_objetivo:.2f} rpm", "Efecto visual/técnico": "Se usa para la interpretación de velocidad de operación del propulsor."},
             ])
-            st.dataframe(helice_visual_df, use_container_width=True)
+            st.dataframe(helice_visual_df, use_container_width=True, height=285)
 
         with twin_cavitacion:
             st.markdown("""
             ### Cavitación visual conceptual
-            Esta vista no es CFD; es una representación didáctica para mostrar zonas donde podría aparecer cavitación si los criterios Burrill/Keller o σ no fueran favorables.
+            Esta vista transforma los resultados de **σ**, **Burrill** y **Keller** en una nube simbólica de cavitación. 
+            No es CFD, pero ayuda a explicar visualmente por qué aumentar Ae/A0, diámetro o inmersión puede reducir el riesgo de cavitación.
             """)
-            fig_cav3d = crear_cavitacion_3d_visual(D=diam_prop_m, sigma=sigma_n, keller_ok=keller_ok, burrill_ok=burrill_ok)
+            fig_cav3d = crear_cavitacion_3d_visual(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, sigma=sigma_n, keller_ok=keller_ok, burrill_ok=burrill_ok)
             st.plotly_chart(fig_cav3d, use_container_width=True)
+            cav_visual_df = pd.DataFrame([
+                {"Criterio": "Coeficiente σ", "Valor": f"{sigma_n:.3f}", "Lectura": "Mayor σ indica menor tendencia a formación de vapor."},
+                {"Criterio": "Burrill", "Valor": "Cumple" if burrill_ok else "Revisar", "Lectura": "Evalúa carga de pala contra límite admisible."},
+                {"Criterio": "Keller", "Valor": "Cumple" if keller_ok else "Revisar", "Lectura": "Evalúa si Ae/A0 es suficiente para limitar cavitación."},
+                {"Criterio": "Ae/A0 actual", "Valor": f"{ae_val:.3f}", "Lectura": "Más área expandida reduce carga de pala, con posible penalización de eficiencia."},
+            ])
+            st.dataframe(cav_visual_df, use_container_width=True, height=220)
             if keller_ok and burrill_ok and sigma_n > 0.20:
                 estado_html("✅ Visualización favorable: los criterios preliminares de cavitación son aceptables y la nube simbólica se mantiene moderada.", "good")
             else:
