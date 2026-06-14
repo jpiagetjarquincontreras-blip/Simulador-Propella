@@ -3021,10 +3021,12 @@ def generar_pdf():
         ["Cavitación visual", "σ, Burrill, Keller", "Relaciona el riesgo de cavitación con partículas y zona de operación"],
         ["Campbell interactivo", "RPM, 1P, ZP, 2ZP, 3ZP, fn", "Permite inspeccionar cruces teóricos y separación frente a operación"],
         ["Órbitas animadas", "amplitud X/Y, fase, velocidad", "Representa movimiento lateral estimado del eje"],
+        ["Laboratorio virtual 3D", "casco, flujo, empuje, vibración y prueba de mar", "Integra visualmente el sistema propulsivo para defensa técnica"],
+        ["Mapa de carga en hélice", "D, Z, P/D, Ae/A0, σ, KT y KQ", "Muestra zonas de mayor carga hidrodinámica en las palas"],
     ], columns=["Módulo visual", "Datos que usa", "Interpretación"])
     add_table(story, visual_df, col_widths=[150, 160, 210], max_rows=20)
 
-    story.append(Paragraph("9. Dictamen técnico final", h2))
+    story.append(Paragraph("9. Síntesis técnica final", h2))
     story.append(Paragraph("La sección final de la aplicación funciona como concentrado ejecutivo: resume áreas que cumplen, puntos a revisar, criterios normativos preliminares y recomendaciones. Su finalidad es que el evaluador pueda identificar rápidamente el estado global del prediseño y la trazabilidad de los cálculos.", body))
 
     story.append(Spacer(1, 10))
@@ -3035,9 +3037,147 @@ def generar_pdf():
     buffer.seek(0)
     return buffer
 
+
+
+# ==============================================================================
+# LABORATORIO VIRTUAL AVANZADO — FACTOR WOW
+# ==============================================================================
+# Estas funciones añaden un módulo de simulación visual de prediseño: casco 3D,
+# prueba de mar animada, mapa de carga en hélice y vibración animada. Son
+# modelos conceptuales e interactivos, ligados a los resultados actuales de la app.
+
+def crear_casco_flujo_empuje_3d_wow(D=9.86, Lpp=320.0, B=58.0, T=20.8, rpm=75.0, thrust_kN=0.0, sigma=1.0, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, wake=0.35):
+    if go is None:
+        return None
+    D = float(max(D, 0.5)); R = D/2.0
+    Lvis = max(7.0*D, 42.0)
+    Bvis = max(2.5*D, 12.0)
+    Tvis = max(1.15*D, 7.0)
+    x = np.linspace(-Lvis, 1.25*D, 70)
+    th = np.linspace(0, 2*np.pi, 54)
+    X, TH = np.meshgrid(x, th)
+    s = (X - x.min())/(x.max()-x.min())
+    # Forma tipo popa/bulbo conceptual: más ancha en el centro, cerrada a popa.
+    taper = np.sin(np.pi*np.clip(s, 0.03, 0.98))**0.42
+    stern_cut = 0.42 + 0.58/(1+np.exp(8*(s-0.72)))
+    half_b = 0.50*Bvis*taper*stern_cut
+    half_t = 0.50*Tvis*(0.58 + 0.42*taper)
+    Y = half_b*np.cos(TH)
+    Zs = -0.12*Tvis + half_t*np.sin(TH)
+
+    fig = go.Figure()
+    fig.add_trace(go.Surface(
+        x=X, y=Y, z=Zs, colorscale=[[0,'rgba(14,165,233,0.15)'],[1,'rgba(59,130,246,0.35)']],
+        showscale=False, opacity=0.32, name='Casco transparente',
+        hovertemplate='<b>Casco conceptual</b><br>Representa el volumen de popa y zona de estela.<br>La escala se ajusta con D y dimensiones principales.<extra></extra>'
+    ))
+    # Línea de crujía y quilla.
+    fig.add_trace(go.Scatter3d(x=[x.min(), x.max()], y=[0,0], z=[-0.62*Tvis,-0.62*Tvis], mode='lines', name='Quilla / crujía', line=dict(color='#334155', width=5), hovertemplate='<b>Línea de crujía</b><br>Referencia longitudinal del buque.<extra></extra>'))
+    # Eje.
+    Xc,Yc,Zc = _cylinder_surface(radius=max(0.035*D,0.12), length=0.62*Lvis, x0=-0.57*Lvis, axis='x', n_theta=48, n_len=12)
+    fig.add_trace(go.Surface(x=Xc,y=Yc,z=Zc-0.10*Tvis, colorscale=[[0,'#334155'],[1,'#94a3b8']], showscale=False, opacity=0.96, name='Línea de eje', hovertemplate=f'<b>Línea de eje</b><br>RPM={rpm:.1f}<br>Empuje≈{thrust_kN:,.1f} kN<extra></extra>'))
+    # Hélice.
+    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, int(Z), PD, AeAo, hub_ratio, phase=0.0, x_offset=0.05*D, axis='x', detail=22)
+    prop_trace = len(fig.data)
+    fig.add_trace(go.Mesh3d(x=xp, y=yp, z=zp-0.10*Tvis, i=ii, j=jj, k=kk, intensity=inten, colorscale='Viridis', opacity=.98, flatshading=False, showscale=False, name='Hélice', hovertemplate=f'<b>Hélice paramétrica</b><br>D={D:.2f} m · Z={Z}<br>P/D={PD:.3f} · Ae/A0={AeAo:.3f}<br>σ={sigma:.3f}<extra></extra>'))
+    # Timón.
+    rud_x = 0.82*D
+    fig.add_trace(go.Mesh3d(x=[rud_x,rud_x,rud_x,rud_x], y=[-.06*D,.06*D,.06*D,-.06*D], z=[-0.98*D,-0.98*D,0.82*D,0.82*D], i=[0,0], j=[1,2], k=[2,3], color='#0f766e', opacity=.45, name='Timón', hovertemplate='<b>Timón conceptual</b><br>Elemento de gobierno aguas abajo del propulsor.<extra></extra>'))
+    # Estela / líneas de corriente y partículas.
+    n_lines = 9
+    line_ids = []
+    for idx, yy in enumerate(np.linspace(-0.95*D,0.95*D,n_lines)):
+        z0 = -0.10*Tvis + 0.20*D*np.sin(idx)
+        xs = np.linspace(-0.65*Lvis, 0.35*D, 80)
+        ys = yy*(0.35 + 0.65*(xs-xs.min())/(xs.max()-xs.min())) + 0.08*D*np.sin(np.linspace(0,2*np.pi,80)+idx)
+        zs = z0 + 0.10*D*np.sin(np.linspace(0,1.6*np.pi,80)+idx)
+        fig.add_trace(go.Scatter3d(x=xs,y=ys,z=zs,mode='lines', name='Líneas de corriente' if idx==0 else '', showlegend=idx==0, line=dict(color='rgba(14,165,233,0.40)', width=4), hovertemplate='<b>Línea de corriente</b><br>Representa entrada de flujo/estela al propulsor.<extra></extra>'))
+        line_ids.append(len(fig.data)-1)
+    # Vector empuje.
+    fig.add_trace(go.Cone(x=[0.35*D], y=[0], z=[-0.10*Tvis], u=[max(0.8*D, thrust_kN/2000)], v=[0], w=[0], sizemode='absolute', sizeref=0.55*D, anchor='tail', colorscale=[[0,'#38bdf8'],[1,'#0284c7']], showscale=False, name='Vector de empuje', hovertemplate=f'<b>Empuje</b><br>T≈{thrust_kN:,.1f} kN<br>Longitud visual proporcional al empuje.<extra></extra>'))
+    # Nube de cavitación según sigma.
+    rng=np.random.default_rng(10)
+    risk = 0.15 if sigma>0.5 else (0.45 if sigma>0.2 else 0.9)
+    nb=int(20+85*risk)
+    ang=rng.uniform(0,2*np.pi,nb); rr=rng.uniform(0.62*R,1.07*R,nb)
+    xb=rng.normal(0.18*D,0.12*D,nb); yb=rr*np.cos(ang); zb=-0.10*Tvis+rr*np.sin(ang)
+    fig.add_trace(go.Scatter3d(x=xb,y=yb,z=zb,mode='markers', name='Cavitación simbólica', marker=dict(size=3+7*risk, color='#93c5fd', opacity=.38), hovertemplate=f'<b>Burbujas simbólicas</b><br>σ={sigma:.3f}<br>Riesgo visual={risk:.2f}<extra></extra>'))
+    # Animación de hélice y partículas de flujo.
+    frames=[]
+    y0=np.asarray(yp); z0=np.asarray(zp-0.10*Tvis)
+    for n,ang0 in enumerate(np.linspace(0,2*np.pi,22,endpoint=False)):
+        ca,sa=np.cos(ang0),np.sin(ang0)
+        yr=ca*y0-sa*(z0+0.10*Tvis)
+        zr=sa*y0+ca*(z0+0.10*Tvis)-0.10*Tvis
+        frames.append(go.Frame(data=[go.Mesh3d(x=xp,y=yr,z=zr,i=ii,j=jj,k=kk,intensity=inten,colorscale='Viridis',opacity=.98,flatshading=False,showscale=False)], traces=[prop_trace], name=str(n)))
+    fig.frames=frames
+    fig.update_layout(updatemenus=[dict(type='buttons', showactive=False, x=.02, y=1.08, buttons=[dict(label='▶ Animar flujo y hélice', method='animate', args=[None, {'frame':{'duration':40,'redraw':True}, 'fromcurrent':True, 'transition':{'duration':0}}]), dict(label='⏸ Pausa', method='animate', args=[[None], {'frame':{'duration':0,'redraw':False}, 'mode':'immediate'}])])])
+    fig.update_layout(title=dict(text='Casco 3D, estela, hélice y vector de empuje',x=.02), height=720, template='plotly_white', scene=dict(aspectmode='data', camera=dict(eye=dict(x=1.65,y=1.8,z=.85)), xaxis_title='Longitud', yaxis_title='Manga', zaxis_title='Vertical', bgcolor='white'), margin=dict(l=0,r=0,t=85,b=0), hoverlabel=dict(bgcolor='white',font_size=12,font_color='#0f172a'))
+    return fig
+
+def crear_prueba_mar_animada_wow(v_serv_kn, rt_kn, pe_kw, pb_kw, sigma_base, eta_d):
+    if go is None:
+        return None
+    v_serv_kn=float(max(v_serv_kn,0.5)); rt_kn=float(max(rt_kn,1)); pe_kw=float(max(pe_kw,1)); pb_kw=float(max(pb_kw,1))
+    v=np.linspace(0.1, v_serv_kn*1.10, 80)
+    rt=rt_kn*(v/v_serv_kn)**2.15
+    pe=pe_kw*(v/v_serv_kn)**3.15
+    pb=pb_kw*(v/v_serv_kn)**3.15
+    sigma=np.maximum(0.05, sigma_base*(v_serv_kn/np.maximum(v,0.1))**1.2)
+    fig=go.Figure()
+    fig.add_trace(go.Scatter(x=v,y=rt,mode='lines',name='Resistencia RT [kN]',line=dict(color='#2563eb',width=3),hovertemplate='V=%{x:.2f} kn<br>RT=%{y:,.1f} kN<extra></extra>'))
+    fig.add_trace(go.Scatter(x=v,y=pe,mode='lines',name='PE [kW]',line=dict(color='#059669',width=3),hovertemplate='V=%{x:.2f} kn<br>PE=%{y:,.0f} kW<extra></extra>'))
+    fig.add_trace(go.Scatter(x=v,y=pb,mode='lines',name='PB [kW]',line=dict(color='#7c3aed',width=3),hovertemplate='V=%{x:.2f} kn<br>PB=%{y:,.0f} kW<extra></extra>'))
+    idx0=int(np.argmin(abs(v-v_serv_kn)))
+    fig.add_trace(go.Scatter(x=[v[idx0]],y=[pb[idx0]],mode='markers+text',name='Punto de servicio',marker=dict(size=16,color='#ef4444'),text=[f'{v[idx0]:.1f} kn'],textposition='top center',hovertemplate='Punto de servicio<br>V=%{x:.2f} kn<br>PB=%{y:,.0f} kW<extra></extra>'))
+    frames=[]
+    for k in range(0,len(v),2):
+        frames.append(go.Frame(data=[go.Scatter(x=[v[k]],y=[pb[k]],mode='markers+text',marker=dict(size=16,color='#ef4444'),text=[f'{v[k]:.1f} kn'],textposition='top center')], traces=[3], name=str(k)))
+    fig.frames=frames
+    fig.add_vline(x=v_serv_kn,line_dash='dash',line_color='#0f172a',annotation_text='Velocidad de servicio')
+    fig.add_annotation(x=.02,y=.98,xref='paper',yref='paper',showarrow=False,align='left',bgcolor='rgba(255,255,255,.9)',bordercolor='#e2e8f0',text=f'ηD≈{eta_d:.3f}<br>σ servicio≈{sigma_base:.2f}<br>Curvas escaladas para prediseño')
+    fig.update_layout(title='Prueba de mar virtual — aceleración hasta velocidad de servicio',xaxis_title='Velocidad [kn]',yaxis_title='Magnitud calculada',height=600,template='plotly_white',hovermode='x unified',updatemenus=[dict(type='buttons',showactive=False,x=.02,y=1.12,buttons=[dict(label='▶ Simular aceleración',method='animate',args=[None,{'frame':{'duration':35,'redraw':True},'fromcurrent':True,'transition':{'duration':0}}]),dict(label='⏸ Pausa',method='animate',args=[[None],{'frame':{'duration':0},'mode':'immediate'}])])],margin=dict(l=70,r=40,t=90,b=70))
+    fig.update_xaxes(showgrid=True,gridcolor='rgba(148,163,184,.28)'); fig.update_yaxes(showgrid=True,gridcolor='rgba(148,163,184,.28)')
+    return fig
+
+def crear_mapa_carga_helice_wow(D=9.86,Z=4,PD=.72,AeAo=.43,hub_ratio=.155,sigma=1.0,KT=0.1,KQ=0.02):
+    if go is None:
+        return None
+    x,y,z,i,j,k,inten=_propeller_mesh_arrays(D,int(Z),PD,AeAo,hub_ratio,phase=0,axis='x',detail=34)
+    # Carga conceptual: más alta hacia 0.7R y en la zona de punta si sigma baja.
+    load=0.45+0.65*np.exp(-((inten-.72)/.18)**2)+0.25*np.clip(.35-sigma,0,1)
+    fig=go.Figure()
+    fig.add_trace(go.Mesh3d(x=x,y=y,z=z,i=i,j=j,k=k,intensity=load,colorscale='Turbo',opacity=.98,flatshading=False,showscale=True,colorbar=dict(title='Carga<br>relativa'),name='Mapa de carga',hovertemplate=f'<b>Pala — mapa de carga</b><br>Carga relativa=%{{intensity:.2f}}<br>D={D:.2f} m · Z={Z}<br>P/D={PD:.3f} · Ae/A0={AeAo:.3f}<br>KT≈{KT:.4f} · KQ≈{KQ:.4f}<extra></extra>'))
+    R=D/2; th=np.linspace(0,2*np.pi,220)
+    fig.add_trace(go.Scatter3d(x=np.zeros_like(th),y=R*np.cos(th),z=R*np.sin(th),mode='lines',line=dict(color='#94a3b8',width=4),name='Disco de hélice',hovertemplate='Disco barrido por la hélice<extra></extra>'))
+    fig.update_layout(title=dict(text='Mapa 3D de carga relativa sobre la hélice',x=.02),height=680,template='plotly_white',scene=dict(aspectmode='data',camera=dict(eye=dict(x=1.65,y=1.85,z=.9)),xaxis_title='Eje X',yaxis_title='Y',zaxis_title='Z',bgcolor='white'),margin=dict(l=0,r=0,t=80,b=0),hoverlabel=dict(bgcolor='white',font_size=12,font_color='#0f172a'))
+    return fig
+
+def crear_vibracion_eje_3d_wow(L=30.0,D=10.0,rpm=75.0,f_lat=1.0,f_tors=1.0,f_ax=16.0,modo='Lateral'):
+    if go is None:
+        return None
+    L=float(max(L,10.0)); D=float(max(D,0.5)); amp=0.10*D
+    x=np.linspace(0,L,160); base_y=np.zeros_like(x); base_z=np.zeros_like(x)
+    fig=go.Figure()
+    fig.add_trace(go.Scatter3d(x=x,y=base_y,z=base_z,mode='lines',name='Eje sin deformar',line=dict(color='#94a3b8',width=7),hovertemplate='Eje sin deformar<extra></extra>'))
+    frames=[]
+    for n,ph in enumerate(np.linspace(0,2*np.pi,32,endpoint=False)):
+        if modo=='Torsional':
+            y=0.25*amp*np.sin(2*np.pi*x/L+ph); z=0.25*amp*np.cos(2*np.pi*x/L+ph)
+        elif modo=='Axial':
+            y=0*x; z=0.18*amp*np.sin(2*np.pi*x/L+ph)
+        else:
+            y=amp*np.sin(np.pi*x/L)*np.cos(ph); z=0.35*amp*np.sin(np.pi*x/L)*np.sin(ph)
+        frames.append(go.Frame(data=[go.Scatter3d(x=x,y=y,z=z,mode='lines',line=dict(color='#2563eb',width=8),name='Eje deformado')], traces=[1] if len(fig.data)>1 else [0], name=str(n)))
+    fig.add_trace(go.Scatter3d(x=x,y=amp*np.sin(np.pi*x/L),z=0*x,mode='lines',name='Eje deformado',line=dict(color='#2563eb',width=8),hovertemplate='Modo de vibración conceptual<br>X=%{x:.2f}<br>Y=%{y:.3f}<br>Z=%{z:.3f}<extra></extra>'))
+    fig.frames=frames
+    fig.update_layout(title=dict(text=f'Animación 3D de vibración del eje — modo {modo}',x=.02),height=600,template='plotly_white',scene=dict(aspectmode='data',camera=dict(eye=dict(x=1.6,y=1.7,z=.8)),xaxis_title='Longitud del eje',yaxis_title='Desplazamiento Y',zaxis_title='Desplazamiento Z'),updatemenus=[dict(type='buttons',showactive=False,x=.02,y=1.10,buttons=[dict(label='▶ Animar modo',method='animate',args=[None,{'frame':{'duration':45,'redraw':True},'fromcurrent':True,'transition':{'duration':0}}]),dict(label='⏸ Pausa',method='animate',args=[[None],{'frame':{'duration':0},'mode':'immediate'}])])],margin=dict(l=0,r=0,t=80,b=0))
+    return fig
+
+
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_gemelo, tab_lab, tab_avanzado, tab_clase = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -3051,8 +3191,9 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🔍 Cavitación",
     "📚 Normativa",
     "🧩 Sistema propulsivo 3D",
+    "🚢 Laboratorio virtual",
     "⚙️ Integridad dinámica",
-    "🧾 Dictamen técnico final"
+    "🧾 Síntesis técnica final"
 ])
 
 # ==============================================================================
@@ -4302,7 +4443,7 @@ with tab_normativa:
 # ==============================================================================
 
 with tab_clase:
-    st.subheader("🧾 Dictamen técnico final y cierre ejecutivo")
+    st.subheader("🧾 Síntesis técnica final y cierre ejecutivo")
 
     st.markdown("""
     <div class="section-card">
@@ -4491,6 +4632,96 @@ with tab_gemelo:
             ])
             st.dataframe(helice_visual_df, use_container_width=True, height=285)
 
+
+
+
+with tab_lab:
+    st.subheader("🚢 Laboratorio virtual de prediseño propulsivo")
+    st.markdown("""
+    <div class="section-card">
+    <b>Objetivo del laboratorio:</b> reunir simulaciones visuales de alto impacto para defender el diseño como un sistema integrado.
+    Este módulo no reemplaza CFD, FEM ni pruebas de canal, pero transforma los resultados de la app en visualizaciones dinámicas:
+    casco y estela 3D, prueba de mar virtual, mapa de carga de hélice y vibración del eje. Todo se actualiza con los datos ingresados por el usuario.
+    </div>
+    """, unsafe_allow_html=True)
+    if go is None:
+        estado_html("⚠️ Para activar el laboratorio virtual instala `plotly` en requirements.txt.", "warn")
+    else:
+        lab_casco, lab_prueba, lab_carga, lab_vib, lab_conc = st.tabs([
+            "🌊 Casco + flujo 3D", "🏁 Prueba de mar", "🌀 Carga en hélice", "🧬 Vibración 3D", "📌 Lectura técnica"
+        ])
+        with lab_casco:
+            st.markdown("""
+            ### Casco transparente, estela, hélice y empuje
+            Esta vista funciona como un **mini gemelo digital visual**. Integra la popa del buque, flujo hacia la hélice,
+            línea de eje, propulsor, timón y vector de empuje. Puedes moverlo libremente con el mouse y activar la animación.
+            """)
+            estado_html("✅ Visualización paramétrica activa: el tamaño de la hélice, estela, cavitación y empuje se recalculan con los datos actuales.", "good")
+            fig_lab = crear_casco_flujo_empuje_3d_wow(
+                D=diam_prop_m, Lpp=eslora, B=manga, T=calado, rpm=rpm_helice_objetivo,
+                thrust_kN=thrust_req_N/1000.0, sigma=sigma_n, Z=z_val, PD=pd_val,
+                AeAo=ae_val, hub_ratio=hub_ratio, wake=w_fraction
+            )
+            st.plotly_chart(fig_lab, use_container_width=True, config=_plotly_config())
+            lab_df = pd.DataFrame([
+                {"Elemento": "Casco transparente", "Dato usado": f"L≈{eslora:.1f} m, B≈{manga:.1f} m, T≈{calado:.1f} m", "Interpretación": "Ubica la línea de ejes dentro de la popa del buque."},
+                {"Elemento": "Estela / flujo", "Dato usado": f"w={w_fraction:.3f}, VA={VA_ms:.2f} m/s", "Interpretación": "Representa cómo el flujo llega al disco de la hélice."},
+                {"Elemento": "Hélice", "Dato usado": f"D={diam_prop_m:.2f} m, Z={z_val}, P/D={pd_val:.3f}", "Interpretación": "Convierte potencia entregada en empuje."},
+                {"Elemento": "Vector de empuje", "Dato usado": f"T≈{thrust_req_N/1000:,.1f} kN", "Interpretación": "Muestra dirección e intensidad relativa del empuje."},
+                {"Elemento": "Cavitación simbólica", "Dato usado": f"σ={sigma_n:.3f}", "Interpretación": "La nube aumenta cuando el margen de cavitación disminuye."},
+            ])
+            dataframe_profesional(lab_df, height=240)
+        with lab_prueba:
+            st.markdown("""
+            ### Prueba de mar virtual
+            Simula el crecimiento de resistencia y potencia desde baja velocidad hasta la velocidad de servicio.
+            Sirve para explicar por qué pequeños incrementos de velocidad exigen grandes aumentos de potencia.
+            """)
+            fig_sea = crear_prueba_mar_animada_wow(velocidad, RT_kn, PE_kw, PB_kw_calc, sigma_n, eta_d)
+            st.plotly_chart(fig_sea, use_container_width=True, config=_plotly_config())
+            sea_df = pd.DataFrame([
+                {"Variable": "Velocidad de servicio", "Valor": f"{velocidad:.2f} kn", "Lectura": "Punto final de la simulación de aceleración."},
+                {"Variable": "RT de diseño", "Valor": f"{RT_kn:,.1f} kN", "Lectura": "Resistencia usada para calcular PE."},
+                {"Variable": "PB requerida", "Valor": f"{PB_kw_calc:,.0f} kW", "Lectura": "Potencia final al freno requerida por el sistema."},
+                {"Variable": "σ de servicio", "Valor": f"{sigma_n:.3f}", "Lectura": "Indicador de margen frente a cavitación."},
+            ])
+            dataframe_profesional(sea_df, height=220)
+        with lab_carga:
+            st.markdown("""
+            ### Mapa 3D de carga relativa en la hélice
+            El color sobre las palas muestra una carga relativa conceptual: zonas verdes/amarillas/rojas indican mayor demanda hidrodinámica.
+            Es útil para explicar visualmente por qué cavitación y eficiencia dependen de P/D, Ae/A0, Z y diámetro.
+            """)
+            fig_load = crear_mapa_carga_helice_wow(diam_prop_m, z_val, pd_val, ae_val, hub_ratio, sigma_n, KT_opt, KQ_opt)
+            st.plotly_chart(fig_load, use_container_width=True, config=_plotly_config())
+            carga_ok = sigma_n > 0.2 and burrill_ok and keller_ok
+            estado_html(("✅ Mapa de carga favorable: los criterios de cavitación preliminares se mantienen dentro del margen." if carga_ok else "⚠️ Mapa de carga con observaciones: revisar cavitación, área expandida o diámetro."), "good" if carga_ok else "warn")
+        with lab_vib:
+            st.markdown("""
+            ### Vibración 3D conceptual del eje
+            Esta animación permite visualizar de forma sencilla los modos lateral, axial y torsional del sistema eje–hélice.
+            No es FEM; es una representación didáctica para explicar el fenómeno de vibración y su relación con Campbell/Bode.
+            """)
+            modo_lab = st.selectbox("Modo a visualizar", ["Lateral", "Axial", "Torsional"], key="modo_lab_vib")
+            fig_vib3d = crear_vibracion_eje_3d_wow(L=max(3.0*diam_prop_m, 18.0), D=diam_prop_m, rpm=rpm_helice_objetivo, f_lat=f_natural_hz, f_tors=f_torsional_est, f_ax=f_axial_natural_hz, modo=modo_lab)
+            st.plotly_chart(fig_vib3d, use_container_width=True, config=_plotly_config())
+            estado_html("✅ Visualización dinámica estable para prediseño: usar junto con Campbell, Bode y márgenes de separación para el dictamen técnico.", "good")
+        with lab_conc:
+            st.markdown("""
+            ### Lectura técnica del laboratorio virtual
+            Este módulo se agregó como apoyo de presentación y revisión visual. Su valor principal es que conecta los resultados numéricos con una interpretación física.
+            """)
+            conc_df = pd.DataFrame([
+                {"Módulo": "Casco + flujo 3D", "Qué demuestra": "Ubicación del sistema propulsivo en popa, flujo de llegada y dirección de empuje.", "Dato clave": f"T≈{thrust_req_N/1000:,.1f} kN"},
+                {"Módulo": "Prueba de mar", "Qué demuestra": "Crecimiento no lineal de resistencia y potencia con la velocidad.", "Dato clave": f"PB≈{PB_kw_calc:,.0f} kW"},
+                {"Módulo": "Carga en hélice", "Qué demuestra": "Zonas de mayor demanda hidrodinámica en las palas.", "Dato clave": f"Ae/A0={ae_val:.3f}"},
+                {"Módulo": "Vibración 3D", "Qué demuestra": "Comportamiento cualitativo de modos lateral, axial y torsional.", "Dato clave": f"n={rpm_helice_objetivo:.1f} rpm"},
+            ])
+            dataframe_profesional(conc_df, height=260)
+            st.markdown("""
+            **Conclusión automática del laboratorio:** el sistema queda representado como un conjunto integrado motor–transmisión–eje–hélice.
+            Las visualizaciones son de prediseño y sirven para defensa técnica; los valores finales deben validarse con fabricante, sociedad clasificadora, pruebas de mar y, si aplica, CFD/FEM.
+            """)
 
 
 with tab_avanzado:
