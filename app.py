@@ -1901,14 +1901,17 @@ with tab_potencias:
     with pot_pe:
         st.markdown("### 🌊 Potencia efectiva PE")
         st.markdown("La potencia efectiva representa la potencia mínima necesaria para vencer la resistencia total del casco a la velocidad de servicio. En esta etapa todavía no se consideran pérdidas propulsivas.")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("RT", f"{RT_kn:,.1f} kN")
-        c2.metric("Velocidad", f"{velocidad_buque_ms:.2f} m/s")
-        c3.metric("PE sin margen", f"{PE_sin_margen_kw:,.0f} kW")
-        c4, c5 = st.columns(2)
-        with c4:
+        cols_pe = st.columns(3)
+        with cols_pe[0]:
+            st.metric("RT", f"{RT_kn:,.1f} kN")
+        with cols_pe[1]:
+            st.metric("Velocidad", f"{velocidad_buque_ms:.2f} m/s")
+        with cols_pe[2]:
+            st.metric("PE sin margen", f"{PE_sin_margen_kw:,.0f} kW")
+        cols_pe_margin = st.columns(2)
+        with cols_pe_margin[0]:
             st.metric("Sea Margin", f"{margen_servicio:.1f}%")
-        with c5:
+        with cols_pe_margin[1]:
             st.metric("PE con margen", f"{PE_kw:,.0f} kW")
         df_pe = pd.DataFrame([
             {"Concepto":"Resistencia total RT", "Valor":RT_kn, "Unidad":"kN"},
