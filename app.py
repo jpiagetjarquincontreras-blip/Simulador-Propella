@@ -175,31 +175,45 @@ st.markdown("""
         padding-top: 1.5rem;
     }
 
-    /* Animación ligera para tablas y gráficas interactivas */
-    div[data-testid="stDataFrame"], div[data-testid="stPlotlyChart"] {
-        animation: fadeInSoft 0.45s ease both;
-    }
-    @keyframes fadeInSoft {
-        from { opacity: 0; transform: translateY(8px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
+    .element-container:has(.js-plotly-plot) { margin-left: auto; margin-right: auto; }
 </style>
-
 """, unsafe_allow_html=True)
 
+
+
 # ==============================================================================
-# MOTOR DE GRÁFICAS INTERACTIVAS
+# MOTOR VISUAL INTERACTIVO GLOBAL
 # ==============================================================================
-# Para que la aplicación sea más tipo software, las figuras estáticas de Matplotlib
-# se convierten automáticamente a Plotly cuando Plotly está disponible. Esto permite:
-# zoom, paneo, descarga, inspección con cursor y lectura de datos en hover.
 _original_st_pyplot = st.pyplot
 
+def _limpiar_trazas_plotly(fig, titulo_base="Gráfica"):
+    if go is None or fig is None:
+        return fig
+    for idx, tr in enumerate(fig.data):
+        nombre = getattr(tr, "name", None)
+        if nombre is None or str(nombre).strip() == "" or str(nombre).startswith("_child") or str(nombre).lower().startswith("trace"):
+            try:
+                tr.name = f"Serie {idx+1}"
+            except Exception:
+                pass
+        try:
+            if getattr(tr, "type", "") in ["scatter", "bar"] and not getattr(tr, "hovertemplate", None):
+                tr.hovertemplate = "<b>%{fullData.name}</b><br>X: %{x}<br>Y: %{y:.4g}<extra></extra>"
+        except Exception:
+            pass
+    fig.update_layout(
+        template="plotly_white", hovermode="closest",
+        font=dict(family="Arial", size=13, color="#0f172a"),
+        title=dict(font=dict(size=18, color="#0f172a"), x=0.02, xanchor="left"),
+        margin=dict(l=60, r=40, t=75, b=60), plot_bgcolor="white", paper_bgcolor="white",
+        transition=dict(duration=450, easing="cubic-in-out"),
+        legend=dict(title=None, bgcolor="rgba(255,255,255,0.82)", bordercolor="#e2e8f0", borderwidth=1),
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    return fig
+
 def _render_matplotlib_interactivo(fig=None, *args, **kwargs):
-    """Reemplazo seguro de st.pyplot: intenta convertir la gráfica a Plotly.
-    Si alguna figura no puede convertirse, usa el render normal de Streamlit.
-    """
     if fig is None:
         fig = plt.gcf()
     use_container_width = kwargs.pop("use_container_width", True)
@@ -207,20 +221,11 @@ def _render_matplotlib_interactivo(fig=None, *args, **kwargs):
         try:
             import plotly.tools as tls
             pfig = tls.mpl_to_plotly(fig)
-            pfig.update_layout(
-                template="plotly_white",
-                hovermode="x unified",
-                height=max(390, int(fig.get_size_inches()[1] * 95)),
-                margin=dict(l=40, r=30, t=65, b=45),
-                font=dict(family="Arial", size=12, color="#0f172a"),
-                plot_bgcolor="white",
-                paper_bgcolor="white",
-                transition=dict(duration=500, easing="cubic-in-out"),
-            )
-            pfig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False)
-            pfig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False)
+            alto = max(430, min(680, int(fig.get_size_inches()[1] * 105)))
+            pfig.update_layout(height=alto)
+            pfig = _limpiar_trazas_plotly(pfig)
             st.plotly_chart(pfig, use_container_width=use_container_width, config={
-                "displaylogo": False,
+                "displaylogo": False, "scrollZoom": True,
                 "modeBarButtonsToRemove": ["lasso2d", "select2d"],
                 "toImageButtonOptions": {"format": "png", "scale": 2}
             })
@@ -231,6 +236,52 @@ def _render_matplotlib_interactivo(fig=None, *args, **kwargs):
     return _original_st_pyplot(fig, *args, **kwargs)
 
 st.pyplot = _render_matplotlib_interactivo
+
+def plotly_campbell_profesional(rpm_operacion, f_lat, f_tors, f_axial, z, max_rpm=None):
+    if go is None:
+        return None
+    rpm_operacion = float(max(rpm_operacion, 0.0))
+    max_rpm = float(max_rpm or max(rpm_operacion*2.2, 180.0))
+    rpm = np.linspace(0, max_rpm, 520)
+    fig = go.Figure()
+    modos = [("Frecuencia natural lateral", f_lat, "#2563eb", "dash"),("Frecuencia natural torsional", f_tors, "#7c3aed", "dot"),("Frecuencia natural axial", f_axial, "#0891b2", "dashdot")]
+    for nombre, fn, color, dash in modos:
+        fig.add_trace(go.Scatter(x=rpm, y=np.full_like(rpm, fn), mode="lines", name=f"{nombre}: {fn:.2f} Hz", line=dict(color=color, width=2.8, dash=dash), hovertemplate=f"<b>{nombre}</b><br>fn = {fn:.3f} Hz<br>RPM evaluada = %{{x:.1f}}<extra></extra>"))
+    ordenes = [("1P",1,"#64748b"),("2P",2,"#14b8a6"),("3P",3,"#22c55e"),("ZP",z,"#f97316"),("2ZP",2*z,"#f59e0b"),("3ZP",3*z,"#ef4444")]
+    for nombre, mult, color in ordenes:
+        y = mult*rpm/60.0
+        fig.add_trace(go.Scatter(x=rpm, y=y, mode="lines", name=f"Orden {nombre}", line=dict(color=color, width=2.25), hovertemplate=f"<b>Orden {nombre}</b><br>RPM = %{{x:.1f}}<br>f = %{{y:.3f}} Hz<br>Multiplicador = {mult}<extra></extra>"))
+    fig.add_vrect(x0=max(rpm_operacion*0.95,0), x1=rpm_operacion*1.05, fillcolor="#fef3c7", opacity=0.35, line_width=0, annotation_text="Banda ±5% operación", annotation_position="top left")
+    fig.add_vline(x=rpm_operacion, line_width=3, line_color="#dc2626", annotation_text=f"Operación {rpm_operacion:.0f} rpm")
+    for modo_nombre, fn, _, _ in modos:
+        for ord_nombre, mult, color in ordenes:
+            rpm_cruce = 60.0*fn/max(mult,1e-9)
+            if 0 <= rpm_cruce <= max_rpm:
+                sep = abs(rpm_cruce-rpm_operacion)/max(rpm_operacion,1e-9)*100
+                fig.add_trace(go.Scatter(x=[rpm_cruce], y=[fn], mode="markers", name=f"Cruce {ord_nombre}", marker=dict(size=7, color=color, symbol="circle-open", line=dict(width=2)), showlegend=False, hovertemplate=(f"<b>Cruce {ord_nombre} / {modo_nombre}</b><br>RPM de cruce = {rpm_cruce:.2f}<br>fn = {fn:.3f} Hz<br>Separación a operación = {sep:.1f}%<extra></extra>")))
+    fig.update_layout(title="Campbell interactivo del sistema eje–hélice", xaxis_title="Velocidad de giro [rpm]", yaxis_title="Frecuencia [Hz]", height=650, template="plotly_white", hovermode="closest", margin=dict(l=70, r=230, t=85, b=65), legend=dict(x=1.02, y=1, xanchor="left", yanchor="top"), font=dict(family="Arial", size=13, color="#0f172a"), transition=dict(duration=600, easing="cubic-in-out"))
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.30)")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.30)")
+    return fig
+
+def plotly_orbita_animada(x_orb, y_orb, amp_x, amp_y, fase_deg, orbit_estado):
+    if go is None:
+        return None
+    frames = []
+    n = len(x_orb)
+    step = max(1, n//80)
+    for k in range(0, n, step):
+        frames.append(go.Frame(data=[go.Scatter(x=x_orb[:k+1], y=y_orb[:k+1], mode="lines", line=dict(color="#2563eb", width=4), name="Trayectoria orbital"), go.Scatter(x=[x_orb[k]], y=[y_orb[k]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], name=str(k)))
+    fig = go.Figure(data=[go.Scatter(x=x_orb, y=y_orb, mode="lines", line=dict(color="#2563eb", width=3), name="Trayectoria orbital", hovertemplate="X=%{x:.2f} µm<br>Y=%{y:.2f} µm<extra></extra>"), go.Scatter(x=[0], y=[0], mode="markers", marker=dict(size=13, color="#0f172a", symbol="cross"), name="Centro nominal"), go.Scatter(x=[x_orb[0]], y=[y_orb[0]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], frames=frames)
+    lim = max(abs(np.nanmax(x_orb)), abs(np.nanmin(x_orb)), abs(np.nanmax(y_orb)), abs(np.nanmin(y_orb)), 1)*1.18
+    fig.update_layout(title=f"Órbita lateral animada del eje — {orbit_estado}", xaxis_title="Desplazamiento X [µm]", yaxis_title="Desplazamiento Y [µm]", height=560, template="plotly_white", hovermode="closest", xaxis=dict(range=[-lim, lim], scaleanchor="y", scaleratio=1, gridcolor="rgba(148,163,184,0.28)"), yaxis=dict(range=[-lim, lim], gridcolor="rgba(148,163,184,0.28)"), margin=dict(l=70, r=40, t=80, b=65), annotations=[dict(x=0.02, y=0.98, xref="paper", yref="paper", showarrow=False, align="left", text=f"Amplitud X={amp_x:.1f} µm · Amplitud Y={amp_y:.1f} µm · Fase={fase_deg}°", bgcolor="rgba(255,255,255,0.85)", bordercolor="#cbd5e1")], updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.12, xanchor="left", yanchor="top", buttons=[dict(label="▶ Animar órbita", method="animate", args=[None, {"frame": {"duration": 45, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}]), dict(label="⏸ Pausa", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])])])
+    return fig
+
+def dataframe_profesional(df, height=360):
+    try:
+        st.dataframe(df, use_container_width=True, height=height, hide_index=True)
+    except TypeError:
+        st.dataframe(df, use_container_width=True, height=height)
 
 # ==============================================================================
 # FUNCIONES AUXILIARES
@@ -537,88 +588,6 @@ def crear_figura_campbell(rpm_operacion, f_lat, f_tors, f_axial, z):
     ax.set_title("Diagrama de Campbell")
     ax.grid(True, linestyle=":", alpha=0.6)
     ax.legend(loc="upper left", fontsize=8, ncols=2)
-    return fig
-
-
-def crear_figura_campbell_plotly(rpm_operacion, f_lat, f_tors, f_axial, z, max_rpm=None):
-    """Campbell interactivo principal, con hover y dictamen visual."""
-    if go is None:
-        return None
-    rpm_operacion = float(max(rpm_operacion, 0.0))
-    max_rpm = float(max_rpm or max(rpm_operacion * 2.0, 150.0))
-    rpm_x = np.linspace(0, max_rpm, 420)
-    fig = go.Figure()
-    modos = [
-        ("Modo lateral", f_lat, "#2563eb", "dash"),
-        ("Modo torsional estimado", f_tors, "#7c3aed", "dot"),
-        ("Modo axial", f_axial, "#0891b2", "dashdot"),
-    ]
-    for nombre, f, color, dash in modos:
-        fig.add_trace(go.Scatter(
-            x=rpm_x, y=np.full_like(rpm_x, f), mode="lines",
-            name=f"{nombre} = {f:.2f} Hz",
-            line=dict(color=color, width=2.4, dash=dash),
-            hovertemplate=f"<b>{nombre}</b><br>Frecuencia natural: {f:.3f} Hz<br>RPM: %{{x:.1f}}<extra></extra>"
-        ))
-    ordenes = [("1P",1,"#94a3b8"),("2P",2,"#14b8a6"),("3P",3,"#22c55e"),("ZP",z,"#f97316"),("2ZP",2*z,"#f59e0b"),("3ZP",3*z,"#ef4444")]
-    for nombre, mult, color in ordenes:
-        y = mult * rpm_x / 60.0
-        fig.add_trace(go.Scatter(
-            x=rpm_x, y=y, mode="lines", name=nombre,
-            line=dict(color=color, width=2.1),
-            hovertemplate=f"<b>Orden {nombre}</b><br>RPM: %{{x:.1f}}<br>Frecuencia excitante: %{{y:.3f}} Hz<br>Multiplicador: {mult}<extra></extra>"
-        ))
-    fig.add_vline(x=rpm_operacion, line_width=3, line_color="#dc2626",
-                  annotation_text=f"Operación {rpm_operacion:.0f} rpm", annotation_position="top")
-    fig.update_layout(
-        title="Diagrama de Campbell interactivo — órdenes de excitación vs modos naturales",
-        xaxis_title="Velocidad de giro [rpm]",
-        yaxis_title="Frecuencia [Hz]",
-        template="plotly_white",
-        height=560,
-        hovermode="x unified",
-        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
-        margin=dict(l=45, r=210, t=70, b=50),
-        font=dict(family="Arial", size=12, color="#0f172a"),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        transition=dict(duration=500, easing="cubic-in-out"),
-    )
-    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.30)", zeroline=False)
-    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.30)", zeroline=False)
-    return fig
-
-
-def crear_barras_interactivas(df, x, y, titulo, xlabel="", ylabel="", color_col=None, value_suffix="", orientacion="v"):
-    """Bar chart Plotly general para reemplazar barras estáticas."""
-    if go is None:
-        return None
-    dff = df.copy()
-    if orientacion == "h":
-        fig = go.Figure(go.Bar(
-            x=dff[y], y=dff[x], orientation="h",
-            text=[f"{v:,.2f}{value_suffix}" if isinstance(v, (int,float,np.floating)) else str(v) for v in dff[y]],
-            textposition="outside",
-            hovertemplate="<b>%{y}</b><br>Valor: %{x:,.3f}"+value_suffix+"<extra></extra>"
-        ))
-        fig.update_layout(xaxis_title=ylabel or y, yaxis_title=xlabel or x)
-    else:
-        fig = go.Figure(go.Bar(
-            x=dff[x], y=dff[y],
-            text=[f"{v:,.2f}{value_suffix}" if isinstance(v, (int,float,np.floating)) else str(v) for v in dff[y]],
-            textposition="outside",
-            hovertemplate="<b>%{x}</b><br>Valor: %{y:,.3f}"+value_suffix+"<extra></extra>"
-        ))
-        fig.update_layout(xaxis_title=xlabel or x, yaxis_title=ylabel or y)
-    fig.update_layout(
-        title=titulo, template="plotly_white", height=460, showlegend=False,
-        margin=dict(l=55, r=35, t=70, b=60),
-        hovermode="closest",
-        font=dict(family="Arial", size=12, color="#0f172a"),
-        transition=dict(duration=500, easing="cubic-in-out"),
-    )
-    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.25)", zeroline=False)
-    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.25)", zeroline=False)
     return fig
 
 
@@ -1943,8 +1912,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
-st.caption("✨ Las gráficas principales se muestran en modo interactivo: puedes acercar, mover, descargar y leer valores pasando el cursor sobre los datos.")
 if df_kt is None or df_kq is None:
     st.stop()
 
@@ -2898,8 +2865,25 @@ def generar_pdf():
     for rec in recomendaciones:
         story.append(Paragraph(f"• {rec}", body))
 
+
+    story.append(PageBreak())
+    story.append(Paragraph("8. Visualizaciones interactivas y sistema propulsivo 3D", h2))
+    story.append(Paragraph("La aplicación incorpora visualizaciones interactivas en Plotly para reforzar la trazabilidad: flujo energético, modelo conceptual 3D del tren propulsor, hélice paramétrica, cavitación visual, Campbell interactivo, órbitas del eje y respuesta dinámica. En el PDF se documentan sus variables de entrada y la interpretación técnica, aunque las animaciones completas se revisan directamente en la aplicación.", body))
+    visual_df = pd.DataFrame([
+        ["Flujo interactivo de potencias", "PE, PD, PS, PB, MCR", "Ubica pérdidas propulsivas, pérdidas de eje y reserva de motor"],
+        ["Sistema propulsivo 3D", "D, Z, d eje, PB, RPM, transmisión", "Representa el arreglo motor-transmisión-eje-hélice y sus componentes"],
+        ["Hélice 3D paramétrica", "D, Z, P/D, Ae/A0, hub ratio", "Muestra cómo los parámetros hidrodinámicos modifican la geometría visual"],
+        ["Cavitación visual", "σ, Burrill, Keller", "Relaciona el riesgo de cavitación con partículas y zona de operación"],
+        ["Campbell interactivo", "RPM, 1P, ZP, 2ZP, 3ZP, fn", "Permite inspeccionar cruces teóricos y separación frente a operación"],
+        ["Órbitas animadas", "amplitud X/Y, fase, velocidad", "Representa movimiento lateral estimado del eje"],
+    ], columns=["Módulo visual", "Datos que usa", "Interpretación"])
+    add_table(story, visual_df, col_widths=[150, 160, 210], max_rows=20)
+
+    story.append(Paragraph("9. Recopilación final", h2))
+    story.append(Paragraph("La sección final de la aplicación funciona como concentrado ejecutivo: resume áreas que cumplen, puntos a revisar, criterios normativos preliminares y recomendaciones. Su finalidad es que el evaluador pueda identificar rápidamente el estado global del prediseño y la trazabilidad de los cálculos.", body))
+
     story.append(Spacer(1, 10))
-    story.append(Paragraph("Conclusión técnica", h2))
+    story.append(Paragraph("10. Conclusión técnica", h2))
     story.append(Paragraph("El sistema propulsor evaluado presenta un prediseño verificable con entradas editables y trazabilidad de cálculo. Los resultados deben interpretarse como una evaluación académica/preliminar: para aprobación de clase se requerirían datos definitivos de pruebas de canal, fabricante, planos de línea de ejes y revisión formal de sociedad clasificadora.", body))
 
     doc.build(story)
@@ -2908,7 +2892,7 @@ def generar_pdf():
 
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_gemelo, tab_avanzado = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -2921,9 +2905,9 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "🗺️ Campbell",
     "🔍 Cavitación",
     "📚 Normativa",
-    "📋 Clase",
     "🧩 Sistema propulsivo 3D",
-    "⚙️ Integridad dinámica"
+    "⚙️ Integridad dinámica",
+    "🧾 Recopilación final"
 ])
 
 # ==============================================================================
@@ -3852,26 +3836,33 @@ with tab_campbell:
 
     st.markdown("""
     <div class="section-card">
-    Esta es la versión principal e interactiva del Campbell. Puedes pasar el cursor sobre cada línea para ver
-    la RPM, frecuencia excitante, modo natural y orden correspondiente. El dictamen se toma de la separación
-    entre las RPM de cruce y la RPM de operación.
+    El diagrama de Campbell compara las frecuencias naturales del sistema contra las
+    frecuencias de excitación producidas por el giro del eje y por el paso de palas.
+    En esta versión se incluyen los órdenes **1P, 2P, 3P, ZP, 2ZP y 3ZP**, además de los
+    modos lateral, torsional estimado y axial.
     </div>
     """, unsafe_allow_html=True)
 
-    riesgos_campbell = campbell_df["Riesgo"].astype(str).tolist() if "Riesgo" in campbell_df.columns else []
-    if "Alto" in riesgos_campbell:
-        estado_html("❌ Campbell: se detectan cruces cercanos al punto de operación. Conviene revisar RPM, rigidez del eje, apoyos o hélice.", "bad")
-    elif "Medio" in riesgos_campbell:
-        estado_html("⚠️ Campbell: existen cruces moderadamente cercanos. El diseño es utilizable como prediseño, pero debe revisarse en detalle.", "warn")
-    else:
-        estado_html("✅ Campbell: no se observan cruces críticos cercanos a la RPM de operación en el rango evaluado.", "good")
-
-    max_rpm_grafica = max(rpm_motor * 2.0, rpm_critica_lateral * 1.25, rpm_critica_axial_zp * 1.35, 120)
+    max_rpm_grafica = max(rpm_motor * 2.3, rpm_critica_lateral * 1.25, rpm_critica_axial_zp * 1.35, 150)
     if HAS_PLOTLY:
-        fig_c = crear_figura_campbell_plotly(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val, max_rpm=max_rpm_grafica)
-        st.plotly_chart(fig_c, use_container_width=True, config={"displaylogo": False, "toImageButtonOptions": {"format": "png", "scale": 2}})
+        fig_c = plotly_campbell_profesional(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val, max_rpm=max_rpm_grafica)
+        st.plotly_chart(fig_c, use_container_width=True, config={"displaylogo": False, "scrollZoom": True, "toImageButtonOptions": {"format": "png", "scale": 2}})
     else:
-        st.pyplot(crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val))
+        rpm_x = np.linspace(0, max_rpm_grafica, 500)
+        fig_c, ax_c = plt.subplots(figsize=(12, 6.2))
+        ax_c.axhline(y=f_natural_hz, linestyle="--", linewidth=2.4, label=f"Modo lateral = {f_natural_hz:.2f} Hz")
+        ax_c.axhline(y=f_torsional_est, linestyle="-.", linewidth=2.0, label=f"Modo torsional est. = {f_torsional_est:.2f} Hz")
+        ax_c.axhline(y=f_axial_natural_hz, linestyle=":", linewidth=3.0, label=f"Modo axial = {f_axial_natural_hz:.2f} Hz")
+        ordenes_campbell = [("1P", 1), ("2P", 2), ("3P", 3), ("ZP", z_val), ("2ZP", 2 * z_val), ("3ZP", 3 * z_val)]
+        for nombre, mult in ordenes_campbell:
+            ax_c.plot(rpm_x, mult * rpm_x / 60.0, linewidth=1.7, label=nombre)
+        ax_c.axvline(x=rpm_motor, linestyle="-", linewidth=2.4, label=f"RPM operación = {rpm_motor:.0f}")
+        ax_c.set_xlabel("Velocidad de giro [rpm]")
+        ax_c.set_ylabel("Frecuencia [Hz]")
+        ax_c.set_title("Campbell del sistema eje–hélice")
+        ax_c.grid(True, linestyle=":", alpha=0.62)
+        ax_c.legend(loc="upper left", fontsize=8, ncols=2)
+        st.pyplot(fig_c)
 
     st.markdown("### 📋 Tabla de resonancias e intersecciones")
     st.markdown("""
@@ -3940,6 +3931,15 @@ with tab_cav:
             resumen_cav.style.format({"Valor calculado":"{:,.4g}"}).map(style_estado, subset=["Resultado"]),
             use_container_width=True
         )
+
+        cav_detalle_df = pd.DataFrame([
+            {"Criterio": "Reynolds", "Fórmula / base": "Re = VA·D/ν", "Valor": f"{reynolds:.3e}", "Referencia": "> 1e7 para flujo turbulento naval", "Lectura técnica": "Confirma régimen de flujo representativo de hélice marina."},
+            {"Criterio": "Coeficiente σ", "Fórmula / base": "σ=(Patm+ρgh-Pv)/(0.5ρVA²)", "Valor": f"{sigma_n:.3f}", "Referencia": "Mayor σ implica menor tendencia a vaporizar", "Lectura técnica": "Evalúa presión disponible frente a formación de cavidades."},
+            {"Criterio": "Burrill", "Fórmula / base": "Comparación τc vs τ admisible", "Valor": f"τc={tau_c_burrill:.3f}", "Referencia": f"τadm≈{tau_c_admisible:.3f}", "Lectura técnica": "Revisa carga de pala frente a riesgo preliminar de cavitación."},
+            {"Criterio": "Keller", "Fórmula / base": "Ae/A0 actual ≥ Ae/A0 mínimo", "Valor": f"{ae_val:.3f}", "Referencia": f"mín≈{keller_ae_min:.3f}", "Lectura técnica": "Verifica si el área expandida es suficiente para distribuir carga."},
+        ])
+        st.markdown("### 📌 Detalle técnico de criterios")
+        dataframe_profesional(cav_detalle_df, height=260)
 
         if burrill_ok and keller_ok and reynolds_ok and cavitacion_ok:
             estado_html("✅ Dictamen de cavitación preliminar favorable: cumple Reynolds, σ, Burrill y Keller.", "good")
@@ -4149,14 +4149,14 @@ with tab_normativa:
 # ==============================================================================
 
 with tab_clase:
-    st.subheader("📋 Dictamen Orientativo de Cumplimiento")
+    st.subheader("🧾 Recopilación final y conclusión técnica")
 
     st.markdown("""
     <div class="section-card">
-    Esta sección no sustituye una aprobación oficial de ABS, DNV, Lloyd's Register,
-    Bureau Veritas u otra sociedad de clasificación. Funciona como dictamen preliminar
-    de ingeniería para revisar si el diseño presenta señales de riesgo en torsión,
-    cavitación, vibración lateral e hidrodinámica.
+    Esta sección funciona como cierre ejecutivo del proyecto: recopila los resultados principales,
+    resume los dictámenes de cumplimiento preliminar y genera una conclusión final defendible
+    para la presentación. No sustituye la aprobación oficial de ABS, DNV, Lloyd's Register,
+    Bureau Veritas u otra sociedad de clasificación, pero ayuda a demostrar trazabilidad técnica.
     </div>
     """, unsafe_allow_html=True)
 
@@ -4678,15 +4678,19 @@ with tab_avanzado:
         o4.metric("Dictamen", orbit_estado)
         estado_html(f"{'✅' if orbit_estado=='Cumple' else '⚠️' if orbit_estado=='Revisar' else '❌'} Órbitas: {orbit_estado}. La visualización sugiere {'movimiento lateral controlado' if orbit_estado=='Cumple' else 'posible sensibilidad lateral a revisar'}.", "good" if orbit_estado=="Cumple" else "warn" if orbit_estado=="Revisar" else "bad")
 
-        fig_orb, ax_orb = plt.subplots(figsize=(6.8, 6.2))
-        ax_orb.plot(x_orb, y_orb, linewidth=2.6)
-        ax_orb.scatter([0], [0], s=80, marker="+")
-        ax_orb.set_aspect("equal", adjustable="box")
-        ax_orb.set_title("Órbita lateral estimada del eje")
-        ax_orb.set_xlabel("Desplazamiento X [µm]")
-        ax_orb.set_ylabel("Desplazamiento Y [µm]")
-        ax_orb.grid(True, linestyle=":", alpha=0.55)
-        st.pyplot(fig_orb)
+        if HAS_PLOTLY:
+            fig_orb = plotly_orbita_animada(x_orb, y_orb, amp_x, amp_y, fase_deg, orbit_estado)
+            st.plotly_chart(fig_orb, use_container_width=True, config={"displaylogo": False, "scrollZoom": True, "toImageButtonOptions": {"format": "png", "scale": 2}})
+        else:
+            fig_orb, ax_orb = plt.subplots(figsize=(7.2, 6.4))
+            ax_orb.plot(x_orb, y_orb, linewidth=2.6)
+            ax_orb.scatter([0], [0], s=80, marker="+")
+            ax_orb.set_aspect("equal", adjustable="box")
+            ax_orb.set_title("Órbita lateral estimada del eje")
+            ax_orb.set_xlabel("Desplazamiento X [µm]")
+            ax_orb.set_ylabel("Desplazamiento Y [µm]")
+            ax_orb.grid(True, linestyle=":", alpha=0.55)
+            st.pyplot(fig_orb)
 
         orb_df = pd.DataFrame([
             {"Parámetro": "Separación lateral mínima", "Valor": sep_lat, "Unidad": "%", "Interpretación": "Mayor separación implica menor riesgo de resonancia"},
