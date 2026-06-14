@@ -3148,12 +3148,12 @@ with tab_normativa:
     </div>
     """, unsafe_allow_html=True)
 
-    potencia_norma_estado = "Cumple" if pb_req_kw <= mcr_requerido_kw else "Revisar"
+    potencia_norma_estado = "Cumple" if PB_kw_calc <= MCR_requerido_kw else "Revisar"
     mcr_real_disponible = motor_mcr_kw if motor_mcr_kw > 0 else 0.0
     if mcr_real_disponible > 0:
-        if pb_req_kw <= 0.85*mcr_real_disponible:
+        if PB_kw_calc <= 0.85*mcr_real_disponible:
             motor_norma_estado = "Cumple ideal"
-        elif pb_req_kw <= mcr_real_disponible:
+        elif PB_kw_calc <= mcr_real_disponible:
             motor_norma_estado = "Cumple con observación"
         else:
             motor_norma_estado = "No cumple"
@@ -3176,7 +3176,7 @@ with tab_normativa:
         {"Área": "Cavitación Burrill", "Referencia técnica": "Burrill / diagrama σ - τc", "Qué exige / controla": "Verificar que la carga de pala no exceda el límite preliminar admisible.", "Variable de la app": f"τc={tau_c_burrill:.3f}, τadm={tau_c_admisible:.3f}", "Dictamen": burrill_norma_estado},
         {"Área": "Cavitación Keller", "Referencia técnica": "Keller / área expandida mínima", "Qué exige / controla": "Verificar que Ae/A0 instalada sea mayor o igual al área mínima requerida.", "Variable de la app": f"Ae/A0={ae_val:.3f}, mínimo={keller_ae_min:.3f}", "Dictamen": keller_norma_estado},
         {"Área": "Régimen hidrodinámico", "Referencia técnica": "ITTC / similitud Reynolds", "Qué exige / controla": "Confirmar flujo turbulento típico de hélice naval para que el análisis sea representativo.", "Variable de la app": f"Re={reynolds:.2e}", "Dictamen": reynolds_norma_estado},
-        {"Área": "Motor propulsor", "Referencia técnica": "Fabricante / punto de operación 85% MCR", "Qué exige / controla": "PB de diseño idealmente ≤85% MCR; si queda entre NCR y MCR se reporta como observación.", "Variable de la app": f"PB={pb_req_kw:,.0f} kW, MCR real={mcr_real_disponible:,.0f} kW", "Dictamen": motor_norma_estado},
+        {"Área": "Motor propulsor", "Referencia técnica": "Fabricante / punto de operación 85% MCR", "Qué exige / controla": "PB de diseño idealmente ≤85% MCR; si queda entre NCR y MCR se reporta como observación.", "Variable de la app": f"PB={PB_kw_calc:,.0f} kW, MCR real={mcr_real_disponible:,.0f} kW", "Dictamen": motor_norma_estado},
         {"Área": "Transmisión / reductora", "Referencia técnica": "Fabricante de caja / práctica de shafting", "Qué exige / controla": "Relación compatible entre RPM motor y RPM hélice, o transmisión directa si es motor lento.", "Variable de la app": f"Tipo={transmision_tipo}, i={relacion_reduccion:.2f}", "Dictamen": transmision_norma_estado},
         {"Área": "Eje propulsor - torsión", "Referencia técnica": "ABS/DNV/IACS UR M68 como marco de verificación torsional", "Qué exige / controla": "Esfuerzo torsional alternante menor que el límite admisible preliminar.", "Variable de la app": f"τ={esfuerzo_real_mpa:.2f} MPa, τadm={tau_admisible_mpa:.2f} MPa", "Dictamen": eje_norma_estado},
         {"Área": "Vibración lateral / whirling", "Referencia técnica": "ABS/DNV shaft alignment y práctica de velocidad crítica", "Qué exige / controla": "RPM de operación fuera de la banda crítica ±20% alrededor de la velocidad crítica.", "Variable de la app": f"Operación={rpm_motor:.1f} rpm, zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
