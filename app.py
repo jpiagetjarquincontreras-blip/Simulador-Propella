@@ -4692,7 +4692,17 @@ with tab_lab:
             El color sobre las palas muestra una carga relativa conceptual: zonas verdes/amarillas/rojas indican mayor demanda hidrodinámica.
             Es útil para explicar visualmente por qué cavitación y eficiencia dependen de P/D, Ae/A0, Z y diámetro.
             """)
-            fig_load = crear_mapa_carga_helice_wow(diam_prop_m, z_val, pd_val, ae_val, hub_ratio, sigma_n, KT_opt, KQ_opt)
+            
+            # KT y KQ se toman del punto de máxima eficiencia de las curvas Wageningen actuales.
+            # Así el Laboratorio Virtual no depende de variables externas no definidas.
+            try:
+                _idx_wow = int(res["nO"].idxmax())
+                KT_actual_wow = float(res.loc[_idx_wow, "KT"])
+                KQ_actual_wow = float(res.loc[_idx_wow, "KQ"])
+            except Exception:
+                KT_actual_wow = 0.10
+                KQ_actual_wow = 0.02
+            fig_load = crear_mapa_carga_helice_wow(diam_prop_m, z_val, pd_val, ae_val, hub_ratio, sigma_n, KT_actual_wow, KQ_actual_wow)
             st.plotly_chart(fig_load, use_container_width=True, config=_plotly_config())
             carga_ok = sigma_n > 0.2 and burrill_ok and keller_ok
             estado_html(("✅ Mapa de carga favorable: los criterios de cavitación preliminares se mantienen dentro del margen." if carga_ok else "⚠️ Mapa de carga con observaciones: revisar cavitación, área expandida o diámetro."), "good" if carga_ok else "warn")
