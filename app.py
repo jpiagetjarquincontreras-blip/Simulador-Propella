@@ -35,6 +35,7 @@ st.set_page_config(
 )
 
 APP_AUTHOR = "Jade Fernanda Jarquín Contreras"
+APP_AUTHOR_SHORT = "J. F. Jarquín C."
 APP_VERSION = "Naval Propulsion & Shaft Dynamics Pro · v1.0"
 
 # ==============================================================================
@@ -203,15 +204,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Firma discreta de software: visible, pero sin ocupar protagonismo en la interfaz.
 st.sidebar.markdown("---")
-st.sidebar.markdown(f"""
-<div class="author-badge">
-<b>{APP_VERSION}</b><br>
-Desarrollado por<br>
-<b>{APP_AUTHOR}</b><br>
-<span style="color:#64748b;">Ingeniería Naval</span>
-</div>
-""", unsafe_allow_html=True)
+st.sidebar.caption(f"{APP_VERSION} · © 2026 · {APP_AUTHOR_SHORT}")
 
 
 # ==============================================================================
@@ -5197,6 +5192,6 @@ with tab_avanzado:
 # Firma discreta de autoría
 st.markdown(f"""
 <div class="author-footer">
-{APP_VERSION} · Desarrollado por <b>{APP_AUTHOR}</b>
+{APP_VERSION} · © 2026 · {APP_AUTHOR_SHORT}
 </div>
 """, unsafe_allow_html=True)
