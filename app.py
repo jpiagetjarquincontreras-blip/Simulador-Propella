@@ -1323,6 +1323,9 @@ else:
 relacion_recomendada = safe_div(motor_ncr_rpm, max(rpm_helice_objetivo, 1e-9), default=0.0) if motor_ncr_rpm > 0 else 0.0
 tolerancia_rpm = max(5.0, 0.10 * max(rpm_helice_objetivo, 1.0))
 caja_cumple = True if transmision_tipo.startswith("Automática") or motor_ncr_rpm <= 0 else abs(rpm_helice_por_caja - rpm_helice_objetivo) <= tolerancia_rpm
+# Alias usado en el módulo avanzado de cumplimiento.
+# Se separa para evitar errores si más adelante se cambia el nombre interno de la validación de caja/transmisión.
+transmision_ok = bool(caja_cumple)
 
 # Keller: área expandida mínima preliminar para evitar cavitación excesiva.
 p0_pv = (p_atm_auto + rho_auto * g_auto * inmersion_eje_m - p_vap_auto)
