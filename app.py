@@ -1855,55 +1855,163 @@ with tab_potencias:
     st.subheader("⚡ Cadena completa de potencias")
     st.markdown("""
     <div class="section-card">
-    Aquí se calcula el flujo completo pedido en el proyecto: resistencia total, potencia efectiva, potencia de empuje, potencia entregada, potencia en el eje y potencia al freno. También se muestra el efecto del Sea Margin y de las eficiencias adoptadas.
+    Esta sección organiza la cadena de potencia en módulos. Cada subpestaña explica una etapa:
+    resistencia, potencia efectiva, empuje, potencia entregada, potencia al eje, potencia al freno
+    y eficiencias. Así la app no solo entrega números, sino que muestra el flujo completo de cálculo.
     </div>
     """, unsafe_allow_html=True)
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("PE con margen", f"{PE_kw:,.0f} kW")
-    c2.metric("PD", f"{PD_kw:,.0f} kW")
-    c3.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
-    c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
 
-    if motor_mcr_kw <= 0:
-        estado_html("ℹ️ Sin motor real cargado: la cadena de potencias se calcula normalmente y la app puede recomendar candidatos en la pestaña Motor / Reductora.", "warn")
-    elif motor_cumple_ideal:
-        estado_html("✅ Cumple potencia ideal: la PB requerida queda cubierta por el 85% del MCR del motor seleccionado.", "good")
-    elif motor_cumple_observacion:
-        estado_html(f"⚠️ Cumple con observación: la PB requerida supera el 85% MCR en {exceso_sobre_85_pct:.1f}%, pero todavía está por debajo del MCR. Revisa resistencia, Sea Margin o eficiencias adoptadas.", "warn")
-    else:
-        estado_html("❌ No cumple potencia: la PB requerida supera el MCR del motor seleccionado.", "bad")
-
-    st.dataframe(power_chain_df.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
-
-    st.markdown("### Eficiencias usadas")
-    eff_df = pd.DataFrame([
-        {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h},
-        {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas", "Valor": max_eff},
-        {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r},
-        {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b},
-        {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d},
-        {"Eficiencia": "ηS", "Descripción": "Eficiencia del eje", "Valor": eta_s},
-        {"Eficiencia": "ηG", "Descripción": "Eficiencia de caja/transmisión", "Valor": eta_g},
+    pot_resumen, pot_pe, pot_pt, pot_pd, pot_pb, pot_eff, pot_formulas = st.tabs([
+        "📌 Resumen", "🌊 PE", "🌀 PT", "⚙️ PD", "🔩 PS / PB", "📉 Eficiencias", "🧮 Fórmulas"
     ])
-    st.dataframe(eff_df.style.format({"Valor":"{:.4f}"}), use_container_width=True)
 
-    st.markdown("### 📊 Gráfica de crecimiento de potencia")
-    etapas_plot = power_chain_df[power_chain_df["Unidad"].astype(str).str.contains("kW", na=False)].copy()
-    etapas_plot = etapas_plot[etapas_plot["Etapa"].isin(["PE", "PE + Sea Margin", "PT", "PD", "PS", "PB"])]
-    fig_pot, ax_pot = plt.subplots(figsize=(10.5, 4.8))
-    ax_pot.plot(etapas_plot["Etapa"], etapas_plot["Valor"], marker="o", linewidth=2.6)
-    ax_pot.fill_between(range(len(etapas_plot)), etapas_plot["Valor"], alpha=0.10)
-    ax_pot.set_title("Cadena de potencias: desde PE hasta PB", fontsize=12, fontweight="bold")
-    ax_pot.set_xlabel("Etapa de cálculo")
-    ax_pot.set_ylabel("Potencia [kW]")
-    ax_pot.grid(True, linestyle=":", alpha=0.6)
-    for i, val in enumerate(etapas_plot["Valor"]):
-        ax_pot.text(i, val, f"{val:,.0f}", ha="center", va="bottom", fontsize=8)
-    st.pyplot(fig_pot)
+    with pot_resumen:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PE con margen", f"{PE_kw:,.0f} kW")
+        c2.metric("PD", f"{PD_kw:,.0f} kW")
+        c3.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
+        c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
 
-    st.caption("La gráfica permite ver cómo la potencia aumenta al aplicar margen de servicio y pérdidas por eficiencias hasta llegar a la potencia al freno requerida en el motor.")
+        if motor_mcr_kw <= 0:
+            estado_html("ℹ️ Sin motor real cargado: la cadena de potencias se calcula normalmente y la app puede recomendar candidatos en la pestaña Motor / Reductora.", "warn")
+        elif motor_cumple_ideal:
+            estado_html("✅ Cumple potencia ideal: la PB requerida queda cubierta por el 85% del MCR del motor seleccionado.", "good")
+        elif motor_cumple_observacion:
+            estado_html(f"⚠️ Cumple con observación: la PB requerida supera el 85% MCR en {exceso_sobre_85_pct:.1f}%, pero todavía está por debajo del MCR.", "warn")
+        else:
+            estado_html("❌ No cumple potencia: la PB requerida supera el MCR del motor seleccionado.", "bad")
 
-    with st.expander("🧮 Fórmulas de la cadena de potencias", expanded=False):
+        st.markdown("### 📊 Diagrama general de cadena de potencias")
+        etapas_plot = power_chain_df[power_chain_df["Unidad"].astype(str).str.contains("kW", na=False)].copy()
+        etapas_plot = etapas_plot[etapas_plot["Etapa"].isin(["PE", "PE + Sea Margin", "PT", "PD", "PS", "PB"])]
+        fig_pot, ax_pot = plt.subplots(figsize=(11, 4.8))
+        ax_pot.plot(etapas_plot["Etapa"], etapas_plot["Valor"], marker="o", linewidth=2.6)
+        ax_pot.fill_between(range(len(etapas_plot)), etapas_plot["Valor"], alpha=0.10)
+        ax_pot.set_title("Cadena de potencias: desde PE hasta PB", fontsize=12, fontweight="bold")
+        ax_pot.set_xlabel("Etapa de cálculo")
+        ax_pot.set_ylabel("Potencia [kW]")
+        ax_pot.grid(True, linestyle=":", alpha=0.6)
+        for i, val in enumerate(etapas_plot["Valor"]):
+            ax_pot.text(i, val, f"{val:,.0f}", ha="center", va="bottom", fontsize=8)
+        st.pyplot(fig_pot)
+
+        st.markdown("### Tabla completa de la cadena")
+        st.dataframe(power_chain_df.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
+
+    with pot_pe:
+        st.markdown("### 🌊 Potencia efectiva PE")
+        st.markdown("La potencia efectiva representa la potencia mínima necesaria para vencer la resistencia total del casco a la velocidad de servicio. En esta etapa todavía no se consideran pérdidas propulsivas.")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("RT", f"{RT_kn:,.1f} kN")
+        c2.metric("Velocidad", f"{velocidad_buque_ms:.2f} m/s")
+        c3.metric("PE sin margen", f"{PE_sin_margen_kw:,.0f} kW")
+        c4, c5 = st.columns(2)
+        with c4:
+            st.metric("Sea Margin", f"{margen_servicio:.1f}%")
+        with c5:
+            st.metric("PE con margen", f"{PE_kw:,.0f} kW")
+        df_pe = pd.DataFrame([
+            {"Concepto":"Resistencia total RT", "Valor":RT_kn, "Unidad":"kN"},
+            {"Concepto":"Velocidad del buque VS", "Valor":velocidad_buque_ms, "Unidad":"m/s"},
+            {"Concepto":"PE sin margen", "Valor":PE_sin_margen_kw, "Unidad":"kW"},
+            {"Concepto":"PE con Sea Margin", "Valor":PE_kw, "Unidad":"kW"},
+        ])
+        st.dataframe(df_pe.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8, 3.8))
+        ax.bar(["PE sin margen", "PE con margen"], [PE_sin_margen_kw, PE_kw])
+        ax.set_ylabel("Potencia [kW]")
+        ax.set_title("Efecto del Sea Margin sobre PE")
+        ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+        st.pyplot(fig)
+
+    with pot_pt:
+        st.markdown("### 🌀 Potencia de empuje PT")
+        st.markdown("La potencia de empuje considera la interacción casco-hélice. La hélice debe producir más empuje que la resistencia neta debido a la deducción de empuje t y trabaja con la velocidad de avance VA.")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("t", f"{t_fraction:.3f}")
+        c2.metric("VA", f"{v_ms:.2f} m/s")
+        c3.metric("PT", f"{PT_kw:,.0f} kW")
+        df_pt = pd.DataFrame([
+            {"Parámetro":"Resistencia total RT", "Valor":RT_kn, "Unidad":"kN"},
+            {"Parámetro":"Deducción de empuje t", "Valor":t_fraction, "Unidad":"-"},
+            {"Parámetro":"Velocidad de avance VA", "Valor":v_ms, "Unidad":"m/s"},
+            {"Parámetro":"Potencia de empuje PT", "Valor":PT_kw, "Unidad":"kW"},
+        ])
+        st.dataframe(df_pt.style.format({"Valor":"{:,.4f}"}), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8, 3.8))
+        ax.bar(["PE con margen", "PT"], [PE_kw, PT_kw])
+        ax.set_ylabel("Potencia [kW]")
+        ax.set_title("Comparación PE con margen vs PT")
+        ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+        st.pyplot(fig)
+
+    with pot_pd:
+        st.markdown("### ⚙️ Potencia entregada a la hélice PD")
+        st.markdown("PD es la potencia que realmente llega a la hélice después de considerar la eficiencia cuasi-propulsiva del conjunto casco-hélice.")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("ηH", f"{eta_h:.3f}")
+        c2.metric("ηD", f"{eta_d:.3f}")
+        c3.metric("PD", f"{PD_kw:,.0f} kW")
+        df_pd = pd.DataFrame([
+            {"Concepto":"Eficiencia de casco ηH", "Valor":eta_h, "Unidad":"-"},
+            {"Concepto":"Eficiencia aguas abiertas ηO", "Valor":max_eff, "Unidad":"-"},
+            {"Concepto":"Eficiencia rotativa ηR", "Valor":eta_r, "Unidad":"-"},
+            {"Concepto":"Eficiencia cuasi-propulsiva ηD", "Valor":eta_d, "Unidad":"-"},
+            {"Concepto":"Potencia entregada PD", "Valor":PD_kw, "Unidad":"kW"},
+        ])
+        st.dataframe(df_pd.style.format({"Valor":"{:,.4f}"}), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8, 3.8))
+        ax.bar(["ηH", "ηO", "ηR", "ηD"], [eta_h, max_eff, eta_r, eta_d])
+        ax.set_ylabel("Eficiencia [-]")
+        ax.set_ylim(0, max(1.2, max(eta_h, max_eff, eta_r, eta_d)*1.15))
+        ax.set_title("Componentes de eficiencia hasta PD")
+        ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+        st.pyplot(fig)
+
+    with pot_pb:
+        st.markdown("### 🔩 Potencia en eje PS y potencia al freno PB")
+        st.markdown("PS considera pérdidas en el eje. PB considera además pérdidas en caja, acoplamiento o transmisión. Esta es la potencia que debe cubrir el motor.")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PS", f"{PS_kw:,.0f} kW")
+        c2.metric("PB", f"{PB_kw_calc:,.0f} kW")
+        c3.metric("ηS", f"{eta_s:.3f}")
+        c4.metric("ηG", f"{eta_g:.3f}")
+        df_pb = pd.DataFrame([
+            {"Etapa":"PD", "Descripción":"Potencia entregada a la hélice", "Valor":PD_kw, "Unidad":"kW"},
+            {"Etapa":"PS", "Descripción":"Potencia en el eje", "Valor":PS_kw, "Unidad":"kW"},
+            {"Etapa":"PB", "Descripción":"Potencia al freno requerida", "Valor":PB_kw_calc, "Unidad":"kW"},
+            {"Etapa":"MCR requerido", "Descripción":"MCR mínimo para trabajar a 85%", "Valor":MCR_requerido_kw, "Unidad":"kW"},
+        ])
+        st.dataframe(df_pb.style.format({"Valor":"{:,.3f}"}), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8, 3.8))
+        ax.bar(["PD", "PS", "PB", "MCR req."], [PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw])
+        ax.set_ylabel("Potencia [kW]")
+        ax.set_title("Potencia requerida hasta el motor")
+        ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+        st.pyplot(fig)
+
+    with pot_eff:
+        st.markdown("### 📉 Eficiencias adoptadas")
+        st.markdown("Esta tabla permite defender las pérdidas consideradas en la cadena de potencia. Son datos editables o estimados, por lo que deben citarse o justificarse en el reporte.")
+        eff_df = pd.DataFrame([
+            {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h},
+            {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas", "Valor": max_eff},
+            {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r},
+            {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b},
+            {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d},
+            {"Eficiencia": "ηS", "Descripción": "Eficiencia del eje", "Valor": eta_s},
+            {"Eficiencia": "ηG", "Descripción": "Eficiencia de caja/transmisión", "Valor": eta_g},
+        ])
+        st.dataframe(eff_df.style.format({"Valor":"{:.4f}"}), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(9, 4.2))
+        ax.barh(eff_df["Eficiencia"][::-1], eff_df["Valor"][::-1])
+        ax.set_xlabel("Valor [-]")
+        ax.set_title("Mapa de eficiencias del sistema propulsivo")
+        ax.grid(True, axis="x", linestyle=":", alpha=0.6)
+        st.pyplot(fig)
+
+    with pot_formulas:
+        st.markdown("### 🧮 Fórmulas de la cadena de potencias")
         st.latex(r"P_E = R_T V_S")
         st.latex(r"P_{E,SM}=P_E(1+SM)")
         st.latex(r"T=\frac{R_T}{1-t}")
@@ -1913,6 +2021,7 @@ with tab_potencias:
         st.latex(r"P_D=\frac{P_E}{\eta_D}")
         st.latex(r"P_S=\frac{P_D}{\eta_S}")
         st.latex(r"P_B=\frac{P_S}{\eta_G}")
+
 
 # ==============================================================================
 # MOTOR Y REDUCTORA
@@ -2556,145 +2665,125 @@ with tab_campbell:
 # ==============================================================================
 
 with tab_cav:
-    st.subheader("🔍 Análisis de Cavitación y Número de Reynolds")
-
+    st.subheader("🔍 Cavitación y régimen de flujo")
     st.markdown("""
     <div class="section-card">
-    Esta sección separa el análisis de cavitación en tres partes: condición general de flujo
-    mediante Reynolds y σ, criterio de <b>Burrill</b> para carga de pala y criterio de
-    <b>Keller</b> para área expandida mínima. Los criterios se presentan como revisión
-    preliminar de prediseño.
+    La cavitación se organiza en subpestañas para separar claramente la revisión general
+    de flujo, el criterio de Burrill, el criterio de Keller y las fórmulas usadas. Esto hace
+    que la sección sea más limpia, defendible y fácil de explicar en presentación.
     </div>
     """, unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Velocidad efectiva Va", f"{v_ms:.2f} m/s")
-    c2.metric("Número de Reynolds", f"{reynolds:.2e}")
-    c3.metric("Coef. cavitación σ", f"{sigma_n:.3f}")
+    cav_resumen, cav_burrill, cav_keller, cav_flujo, cav_formulas = st.tabs([
+        "📋 Resumen", "🫧 Burrill", "📐 Keller", "🌊 Reynolds / σ", "🧮 Fórmulas"
+    ])
 
-    st.markdown("---")
-    st.markdown("## 1) Criterio de Burrill")
-    st.markdown("""
-    El criterio de Burrill compara el coeficiente de cavitación disponible, σ, contra
-    la carga de empuje de la hélice, τc. En esta app se usa una curva admisible
-    preliminar para detectar si el diseño queda dentro de una zona aceptable o si la
-    pala está demasiado cargada.
-    """)
+    with cav_resumen:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Reynolds", f"{reynolds:.2e}")
+        c2.metric("σ", f"{sigma_n:.3f}")
+        c3.metric("τc Burrill", f"{tau_c_burrill:.3f}")
+        c4.metric("Ae/A0 Keller mín.", f"{keller_ae_min:.3f}")
 
-    b1, b2, b3 = st.columns(3)
-    b1.metric("τc Burrill", f"{tau_c_burrill:.3f}")
-    b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
-    b3.metric("Margen Burrill", f"{(tau_c_admisible - tau_c_burrill):.3f}")
+        resumen_cav = pd.DataFrame([
+            {"Análisis":"Reynolds", "Valor calculado":reynolds, "Límite/Referencia":"> 1e7", "Resultado":"Cumple" if reynolds_ok else "Revisar"},
+            {"Análisis":"Sigma cavitación", "Valor calculado":sigma_n, "Límite/Referencia":"> 0.20 preliminar", "Resultado":"Cumple" if cavitacion_ok else "Revisar"},
+            {"Análisis":"Burrill τc", "Valor calculado":tau_c_burrill, "Límite/Referencia":tau_c_admisible, "Resultado":"Cumple" if burrill_ok else "Revisar"},
+            {"Análisis":"Keller Ae/A0", "Valor calculado":ae_val, "Límite/Referencia":keller_ae_min, "Resultado":"Cumple" if keller_ok else "No cumple"},
+        ])
+        def color_resultado(val):
+            if val == "Cumple":
+                return "background-color:#dcfce7; color:#166534; font-weight:bold"
+            if val == "Revisar":
+                return "background-color:#fef3c7; color:#92400e; font-weight:bold"
+            if val == "No cumple":
+                return "background-color:#fee2e2; color:#991b1b; font-weight:bold"
+            return ""
+        st.dataframe(
+            resumen_cav.style.format({"Valor calculado":"{:,.4g}"}).map(color_resultado, subset=["Resultado"]),
+            use_container_width=True
+        )
 
-    if burrill_ok:
-        estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible.", "good")
-    else:
-        estado_html("⚠️ Revisar Burrill: la carga de pala es elevada. Conviene aumentar Ae/A0, aumentar D o reducir carga.", "warn")
+        if burrill_ok and keller_ok and reynolds_ok and cavitacion_ok:
+            estado_html("✅ Dictamen de cavitación preliminar favorable: cumple Reynolds, σ, Burrill y Keller.", "good")
+        elif keller_ok and burrill_ok:
+            estado_html("⚠️ Dictamen con observaciones: Burrill y Keller cumplen, pero conviene revisar Reynolds o σ.", "warn")
+        else:
+            estado_html("❌ Dictamen de cavitación con riesgo: revisar área expandida, diámetro, inmersión o carga de la hélice.", "bad")
 
-    fig_burr = crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible)
-    st.pyplot(fig_burr)
+    with cav_burrill:
+        st.markdown("### 🫧 Criterio de Burrill")
+        st.markdown("Burrill compara la carga de pala τc contra un límite admisible dependiente de σ. Es útil para detectar si la hélice está demasiado cargada y puede presentar cavitación perjudicial.")
+        b1, b2, b3 = st.columns(3)
+        b1.metric("τc calculado", f"{tau_c_burrill:.3f}")
+        b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
+        b3.metric("Margen", f"{(tau_c_admisible - tau_c_burrill):.3f}")
+        if burrill_ok:
+            estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible.", "good")
+        else:
+            estado_html("⚠️ Revisar Burrill: la carga de pala es elevada. Conviene aumentar Ae/A0, aumentar D o reducir carga.", "warn")
+        fig_burr = crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible)
+        st.pyplot(fig_burr)
+        st.caption("La línea representa el límite preliminar; el punto de operación debe quedar por debajo de la curva admisible.")
 
-    with st.expander("🧮 Fórmulas del criterio de Burrill", expanded=False):
+    with cav_keller:
+        st.markdown("### 📐 Criterio de Keller")
+        st.markdown("Keller estima el área expandida mínima requerida para que la hélice no quede excesivamente cargada. La comparación principal es Ae/A0 actual contra Ae/A0 mínimo.")
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Ae/A0 mínimo", f"{keller_ae_min:.3f}")
+        k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
+        k3.metric("Margen", f"{(ae_val - keller_ae_min):.3f}")
+        if keller_ok:
+            estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido.", "good")
+        else:
+            estado_html("❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga de la hélice.", "bad")
+        fig_kel = crear_figura_keller(keller_ae_min, ae_val)
+        st.pyplot(fig_kel)
+        st.caption("La barra del diseño actual debe quedar por encima del mínimo Keller para considerarse aceptable en esta revisión preliminar.")
+
+    with cav_flujo:
+        st.markdown("### 🌊 Reynolds y coeficiente de cavitación σ")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Velocidad efectiva VA", f"{v_ms:.2f} m/s")
+        c2.metric("Reynolds", f"{reynolds:.2e}")
+        c3.metric("σ", f"{sigma_n:.3f}")
+        col_re, col_sig = st.columns(2)
+        with col_re:
+            fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
+            etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
+            valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
+            ax_re.barh(etiquetas_re, valores_re)
+            ax_re.set_xscale("log")
+            ax_re.set_xlabel("Número de Reynolds Re [escala log]")
+            ax_re.set_title("Comparación de régimen de flujo")
+            ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
+            st.pyplot(fig_re)
+            st.success("✅ Flujo turbulento típico de hélices navales.") if reynolds_ok else st.warning("⚠️ Reynolds bajo para escala naval.")
+        with col_sig:
+            fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
+            etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
+            valores_sig = [0.20, 0.50, 1.00, sigma_n]
+            ax_sig.barh(etiquetas_sig, valores_sig)
+            ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite preliminar σ = 0.20")
+            ax_sig.set_xlabel("Coeficiente de cavitación σ")
+            ax_sig.set_title("Riesgo general de cavitación")
+            ax_sig.grid(True, linestyle=":", alpha=0.55)
+            ax_sig.legend(fontsize=8)
+            st.pyplot(fig_sig)
+            st.success("🟢 σ favorable frente a cavitación.") if cavitacion_ok else st.warning("🟡 σ bajo: revisar inmersión, carga o diámetro.")
+
+    with cav_formulas:
+        st.markdown("### 🧮 Fórmulas usadas en cavitación")
+        st.latex(r"V_A = V_s(1-w)")
+        st.latex(r"Re = \frac{V_A D}{\nu}")
         st.latex(r"\sigma = \frac{P_{atm}+\rho gh-P_v}{\frac{1}{2}\rho V_A^2}")
         st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2 A_0}")
         st.latex(r"A_0 = \frac{\pi D^2}{4}")
         st.latex(r"\tau_{c,adm}=0.22+0.18\sigma")
-        st.markdown("""
-        En esta versión la línea admisible es preliminar y sirve para comparación didáctica.
-        Para diseño final debe validarse con el diagrama Burrill original o con criterios de casa clasificadora.
-        """)
-
-    st.markdown("---")
-    st.markdown("## 2) Criterio de Keller")
-    st.markdown("""
-    El criterio de Keller estima el área expandida mínima que debe tener la hélice para
-    evitar una carga excesiva de pala. La app compara el valor mínimo requerido contra
-    el Ae/A0 actualmente seleccionado.
-    """)
-
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Ae/A0 mínimo Keller", f"{keller_ae_min:.3f}")
-    k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
-    k3.metric("Margen Keller", f"{(ae_val - keller_ae_min):.3f}")
-
-    if keller_ok:
-        estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido.", "good")
-    else:
-        estado_html("❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga de la hélice.", "bad")
-
-    fig_kel = crear_figura_keller(keller_ae_min, ae_val)
-    st.pyplot(fig_kel)
-
-    with st.expander("🧮 Fórmulas del criterio de Keller", expanded=False):
         st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
         st.latex(r"P_0-P_v=P_{atm}+\rho gh-P_v")
-        st.markdown("""
-        Donde **T** es el empuje requerido, **Z** el número de palas, **D** el diámetro de hélice
-        y **h** la inmersión del eje. Si el Ae/A0 actual es menor que el mínimo, la hélice queda
-        demasiado cargada para el área disponible.
-        """)
+        st.info("Estos criterios son preliminares para prediseño. Para aprobación final deben contrastarse con diagramas originales, pruebas de modelo o reglas de clase aplicables.")
 
-    st.markdown("---")
-    st.markdown("## 3) Reynolds y σ general")
-    col_re, col_sig = st.columns(2)
-
-    with col_re:
-        st.markdown("### 🌊 Número de Reynolds")
-        fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
-        etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
-        valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
-        ax_re.barh(etiquetas_re, valores_re)
-        ax_re.set_xscale("log")
-        ax_re.set_xlabel("Número de Reynolds Re [escala log]")
-        ax_re.set_title("Comparación de régimen de flujo")
-        ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
-        st.pyplot(fig_re)
-        if reynolds_ok:
-            st.success("✅ Flujo turbulento típico de hélices navales.")
-        else:
-            st.warning("⚠️ Reynolds bajo para escala naval.")
-
-    with col_sig:
-        st.markdown("### ⚠️ Coeficiente de cavitación σ")
-        fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
-        etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
-        valores_sig = [0.20, 0.50, 1.00, sigma_n]
-        ax_sig.barh(etiquetas_sig, valores_sig)
-        ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite preliminar σ = 0.20")
-        ax_sig.set_xlabel("Coeficiente de cavitación σ")
-        ax_sig.set_title("Riesgo general de cavitación")
-        ax_sig.grid(True, linestyle=":", alpha=0.55)
-        ax_sig.legend(fontsize=8)
-        st.pyplot(fig_sig)
-        if sigma_n < 0.20:
-            st.error("🔴 Riesgo elevado de cavitación por σ bajo.")
-        elif sigma_n < 0.50:
-            st.warning("🟡 Zona de precaución: validar con análisis más detallado.")
-        else:
-            st.success("🟢 Condición preliminar favorable frente a cavitación.")
-
-    st.markdown("---")
-    st.markdown("### 📋 Resumen de cavitación")
-    cav_resumen_df = pd.DataFrame([
-        {"Análisis": "Reynolds", "Valor calculado": reynolds, "Límite/Referencia": "> 1e7", "Resultado": "Cumple" if reynolds_ok else "Revisar"},
-        {"Análisis": "Sigma cavitación", "Valor calculado": sigma_n, "Límite/Referencia": "> 0.20 preliminar", "Resultado": "Cumple" if cavitacion_ok else "Revisar"},
-        {"Análisis": "Burrill τc", "Valor calculado": tau_c_burrill, "Límite/Referencia": tau_c_admisible, "Resultado": "Cumple" if burrill_ok else "Revisar"},
-        {"Análisis": "Keller Ae/A0", "Valor calculado": ae_val, "Límite/Referencia": keller_ae_min, "Resultado": "Cumple" if keller_ok else "No cumple"},
-    ])
-    def colorear_resultado_cavitacion(val):
-        val = str(val)
-        if val == "Cumple":
-            return "background-color: #dcfce7; color: #166534; font-weight: bold"
-        if val == "No cumple":
-            return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
-        return "background-color: #fef3c7; color: #92400e; font-weight: bold"
-
-    st.dataframe(
-        cav_resumen_df.style
-        .format({"Valor calculado":"{:.4f}", "Límite/Referencia":"{}"})
-        .map(colorear_resultado_cavitacion, subset=["Resultado"]),
-        use_container_width=True
-    )
 
 # ==============================================================================
 # NORMATIVA APLICABLE
