@@ -951,7 +951,8 @@ with st.sidebar:
             "Remolcador",
             "Ferry"
         ],
-        help="Este selector solo sirve como guía visual. Los valores siguen siendo editables por el usuario."
+        index=1,
+        help="Este selector solo sirve como guía visual. Los valores siguen siendo editables por el usuario. Por defecto se abre como buque tanque KVLCC2."
     )
 
     st.markdown("---")
@@ -1026,6 +1027,31 @@ with st.sidebar:
     )
 
     st.markdown("---")
+    st.subheader("🌊 Superficies y ajustes hidrodinámicos")
+    superficie_mojada_sin_timon_m2 = st.number_input(
+        "Superficie mojada sin timón Swo [m²]",
+        value=float(nvl(datos_pdf.get("swo_m2"), 27194.0)),
+        min_value=0.0,
+        step=100.0,
+        help="Dato de referencia del KVLCC2. Se muestra como entrada visible; si no se conoce puede dejarse como estimación o ajustarse."
+    )
+    superficie_mojada_con_timon_m2 = st.number_input(
+        "Superficie mojada con timón Sw [m²]",
+        value=float(nvl(datos_pdf.get("sw_m2"), 27467.0)),
+        min_value=0.0,
+        step=100.0,
+        help="Superficie mojada total incluyendo timón. Sirve como respaldo para cálculos de resistencia cuando se dispone del dato."
+    )
+    ajuste_estela_no_uniforme_pct = st.number_input(
+        "Nonuniform Wake Adjustment [%]",
+        value=float(nvl(datos_pdf.get("wake_adjustment_pct"), 5.0)),
+        min_value=0.0,
+        max_value=30.0,
+        step=0.5,
+        help="Ajuste por estela no uniforme. Por defecto se usa 5% según los datos del buque de referencia."
+    )
+
+    st.markdown("---")
     st.subheader("🌀 Interacción casco-propulsor")
 
     w_estimado = estimar_estela(modo_guia)
@@ -1033,7 +1059,7 @@ with st.sidebar:
 
     estela = st.number_input(
         "Fracción de estela w [-]",
-        value=float(nvl(datos_pdf.get("w"), w_estimado)),
+        value=float(nvl(datos_pdf.get("w"), 0.351)),
         min_value=0.0,
         max_value=0.8,
         step=0.001,
@@ -1045,14 +1071,14 @@ with st.sidebar:
         "Fracción de deducción de empuje t [-]",
         0.05,
         0.35,
-        float(nvl(datos_pdf.get("t"), t_estimado)),
+        float(nvl(datos_pdf.get("t"), 0.220)),
         0.005,
         help="Valor editable. Si no se conoce, se estima preliminarmente como una fracción de la estela."
     )
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=float(nvl(datos_pdf.get("eta_r"), 1.000)),
+        value=float(nvl(datos_pdf.get("eta_r"), 1.015)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
@@ -1062,7 +1088,7 @@ with st.sidebar:
 
     inmersion_eje_m = st.number_input(
         "Inmersión del centro del eje h [m]",
-        value=float(nvl(datos_pdf.get("inmersion_eje_m"), max(0.50 * calado, 0.1))),
+        value=float(nvl(datos_pdf.get("inmersion_eje_m"), 14.10)),
         min_value=0.1,
         step=0.1,
         help="Si no se conoce, se aproxima como 50% del calado. Debe corregirse con plano de arreglo de popa si existe."
@@ -1075,6 +1101,7 @@ with st.sidebar:
     diam_prop_m = st.number_input("Diámetro de hélice D [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 9.86)), min_value=0.1, step=0.01)
     pd_val = st.slider("Relación paso/diámetro P/D [-]", 0.5, 1.4, float(nvl(datos_pdf.get("prop_pd"), 0.721)), 0.001)
     ae_val = st.slider("Relación de área expandida Ae/A0 [-]", 0.3, 1.0, float(nvl(datos_pdf.get("prop_aeao"), 0.431)), 0.001)
+    hub_ratio = st.number_input("Relación del cubo Hub Ratio [-]", value=float(nvl(datos_pdf.get("hub_ratio"), 0.155)), min_value=0.0, max_value=0.5, step=0.001, format="%.3f")
     margen_servicio = st.slider("Margen de servicio requerido [%]", 0.0, 30.0, float(nvl(datos_pdf.get("sea_margin_pct"), 15.0)), 0.5)
 
     st.markdown("---")
@@ -1087,10 +1114,10 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("⚡ Cadena de potencias")
     rt_estimado_kn = estimar_resistencia_ittc_kn(lwl, manga, calado, velocidad, modo_guia, rho_auto)
-    usar_rt_auto = st.checkbox("Usar RT estimada automáticamente", value=("rt_kn" not in datos_pdf), help="Si no tienes resistencia de pruebas o CFD, la app estima RT con una aproximación ITTC preliminar. Puedes desactivarlo y escribir tu propio valor.")
+    usar_rt_auto = st.checkbox("Usar RT estimada automáticamente", value=False, help="Por defecto se usa RT = 2120 kN del buque de referencia KVLCC2. Activa esta opción si quieres que la app estime RT para otro buque sin dato de resistencia.")
     resistencia_total_kn = st.number_input(
         "Resistencia total RT [kN]",
-        value=float(nvl(datos_pdf.get("rt_kn"), rt_estimado_kn)),
+        value=float(nvl(datos_pdf.get("rt_kn"), 2120.0)),
         min_value=0.0, step=50.0,
         disabled=usar_rt_auto,
         help="RT es la resistencia al avance. Si está en automático, se estima con dimensiones, velocidad y tipo de buque; si tienes un dato real, desactiva el automático."
@@ -1137,7 +1164,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("⚙️ Parámetros mecánicos visibles")
     st.caption("Si no tienes estos datos, la app puede estimarlos. No se usa ningún valor fijo de un barco específico.")
-    rpm_motor_default = float(nvl(datos_pdf.get("ncr_rpm"), rpm_real if rpm_real > 0 else 100.0))
+    rpm_motor_default = float(nvl(datos_pdf.get("ncr_rpm"), rpm_real if rpm_real > 0 else 75.0))
     rpm_motor = st.number_input("RPM de operación para vibración [rpm]", value=rpm_motor_default, min_value=0.1, step=1.0, help="Si no hay PDF, se usa un valor preliminar editable para que el análisis vibratorio pueda ejecutarse.")
     potencia_kw_base = st.number_input("Potencia base manual para análisis de eje [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 0.0)), min_value=0.0, step=100.0, help="Opcional. Si lo dejas en 0, la app usará automáticamente la PB calculada en la cadena de potencias.")
     potencia_kw = potencia_kw_base * (1 + margen_servicio / 100) if potencia_kw_base > 0 else 0.0
@@ -1543,6 +1570,10 @@ def construir_resumen_dataframe():
             "Puntal D [m]",
             "Calado T [m]",
             "Velocidad [kn]",
+            "Superficie mojada sin timón Swo [m²]",
+            "Superficie mojada con timón Sw [m²]",
+            "Nonuniform Wake Adjustment [%]",
+            "Hub Ratio [-]",
             "Potencia con margen [kW]",
             "PB calculada [kW]",
             "MCR requerido [kW]",
@@ -1579,6 +1610,10 @@ def construir_resumen_dataframe():
             puntal,
             calado,
             velocidad,
+            superficie_mojada_sin_timon_m2,
+            superficie_mojada_con_timon_m2,
+            ajuste_estela_no_uniforme_pct,
+            hub_ratio,
             potencia_kw,
             PB_kw_calc,
             MCR_requerido_kw,
@@ -1735,15 +1770,61 @@ def generar_pdf():
 
     story = []
     story.append(Paragraph("Universal Ship Propulsion & Shafting Analysis Suite", title_style))
-    story.append(Paragraph("Reporte técnico integral de propulsión naval", h2))
-    story.append(Paragraph("Este reporte integra resultados de hidrodinámica, cadena de potencias, selección de motor, transmisión, cavitación Burrill/Keller, vibraciones, Campbell y comparación con datos reales cuando existe ficha técnica cargada.", body))
+    story.append(Paragraph("Reporte técnico integral de diseño de sistema propulsor", h2))
+    story.append(Paragraph("Buque de referencia: KVLCC2 / buque tanque VLCC", styles["Heading3"]))
+    story.append(Paragraph("El presente documento funciona como memoria técnica automática. Integra datos de entrada, hipótesis, metodología de cálculo, resultados, gráficas, dictámenes y recomendaciones para el prediseño del sistema propulsor naval.", body))
     story.append(Spacer(1, 12))
 
-    story.append(Paragraph(f"Dictamen general: {dictamen}", h2))
-    add_table(story, construir_resumen_dataframe(), col_widths=[230, 250], max_rows=45)
+    story.append(Paragraph("1. Objetivo", h2))
+    story.append(Paragraph("Diseñar y verificar preliminarmente el sistema de propulsión de un buque mediante la cadena de potencia, curvas Wageningen B-Series, selección de motor, transmisión, cavitación Burrill/Keller, vibraciones del eje y comparación con datos reales o de ficha técnica.", body))
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("2. Datos principales de entrada", h2))
+    datos_entrada_pdf = pd.DataFrame([
+        ["Tipo de buque", modo_guia, "Entrada del usuario / valor por defecto"],
+        ["Lpp", f"{eslora:.3f} m", "Dato principal"],
+        ["LWL", f"{lwl:.3f} m", "Dato principal"],
+        ["Manga B", f"{manga:.3f} m", "Dato principal"],
+        ["Puntal", f"{puntal:.3f} m", "Dato principal"],
+        ["Calado", f"{calado:.3f} m", "Dato principal"],
+        ["Velocidad de servicio", f"{velocidad:.3f} kn", "Dato principal"],
+        ["Superficie mojada sin timón", f"{superficie_mojada_sin_timon_m2:,.1f} m²", "Dato visible"],
+        ["Superficie mojada con timón", f"{superficie_mojada_con_timon_m2:,.1f} m²", "Dato visible"],
+        ["RT", f"{resistencia_total_kn:,.1f} kN", "Entrada o estimación"],
+        ["Sea Margin", f"{margen_servicio:.1f} %", "Criterio ITTC / usuario"],
+        ["w", f"{estela:.3f}", "Interacción casco-propulsor"],
+        ["t", f"{t_fraction:.3f}", "Interacción casco-propulsor"],
+        ["ηR", f"{eta_r:.3f}", "Eficiencia rotativa relativa"],
+        ["Z", f"{z_val}", "Geometría hélice"],
+        ["D hélice", f"{diam_prop_m:.3f} m", "Geometría hélice"],
+        ["P/D", f"{pd_val:.3f}", "Geometría hélice"],
+        ["Ae/A0", f"{ae_val:.3f}", "Geometría hélice"],
+        ["Hub ratio", f"{hub_ratio:.3f}", "Geometría hélice"],
+        ["Inmersión del eje", f"{inmersion_eje_m:.3f} m", "Cavitación"],
+    ], columns=["Parámetro", "Valor", "Comentario"])
+    add_table(story, datos_entrada_pdf, col_widths=[170, 120, 220], max_rows=30)
+
+    story.append(Paragraph("3. Hipótesis y metodología", h2))
+    hipotesis_df = pd.DataFrame([
+        ["Propiedades del fluido", f"ρ={rho_auto:.3f} kg/m³, ν=1.1883e-6 m²/s, Pv={p_vap_auto:.1f} Pa", "Agua salada a 15 °C / ITTC"],
+        ["Potencia efectiva", "PE = RT · Vs", "Convierte resistencia al avance en potencia"],
+        ["Velocidad de avance", "VA = Vs(1-w)", "Incluye efecto de estela"],
+        ["Eficiencia de casco", "ηH = (1-t)/(1-w)", "Interacción casco-hélice"],
+        ["Potencia al freno", "PB = PS / ηG", "Potencia requerida en motor"],
+        ["MCR requerido", "MCR = PB / 0.85", "Margen operativo del 15%"],
+        ["Burrill", "Comparación τc vs τ admisible", "Riesgo preliminar de cavitación"],
+        ["Keller", "Ae/A0 actual vs Ae/A0 mínimo", "Área expandida mínima"],
+        ["Vibración", "Comparación de frecuencias naturales y órdenes 1P/ZP", "Revisión preliminar, no sustituye TVA de clase"],
+    ], columns=["Tema", "Fórmula / criterio", "Uso"])
+    add_table(story, hipotesis_df, col_widths=[120, 190, 200], max_rows=25)
+
+    story.append(Paragraph(f"4. Dictamen general: {dictamen}", h2))
+    story.append(Paragraph("El dictamen resume los módulos principales de la aplicación. Cuando aparece una observación, no implica necesariamente falla de diseño; indica que el valor debe revisarse, justificarse o compararse contra una restricción real del buque.", body))
+    add_table(story, construir_resumen_dataframe(), col_widths=[230, 250], max_rows=55)
 
     story.append(PageBreak())
-    story.append(Paragraph("Cadena de potencias", h2))
+    story.append(Paragraph("5. Cadena de potencias", h2))
+    story.append(Paragraph("Esta sección documenta la progresión RT → PE → PT → PD → PS → PB. Permite rastrear las pérdidas desde el casco hasta el motor y verificar el efecto del Sea Margin y de las eficiencias adoptadas.", body))
     add_table(story, power_chain_df, col_widths=[90, 240, 90, 60])
 
     story.append(Paragraph("Comparación con datos reales", h2))
@@ -1769,6 +1850,10 @@ def generar_pdf():
     story.append(Paragraph("Recomendaciones", h2))
     for rec in recomendaciones:
         story.append(Paragraph(f"• {rec}", body))
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Conclusión técnica", h2))
+    story.append(Paragraph("El sistema propulsor evaluado presenta un prediseño verificable con entradas editables y trazabilidad de cálculo. Los resultados deben interpretarse como una evaluación académica/preliminar: para aprobación de clase se requerirían datos definitivos de pruebas de canal, fabricante, planos de línea de ejes y revisión formal de sociedad clasificadora.", body))
 
     doc.build(story)
     buffer.seek(0)
