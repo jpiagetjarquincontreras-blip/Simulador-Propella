@@ -2535,11 +2535,6 @@ with st.sidebar:
         value=True,
         help="Muestra qué valores fueron ingresados por el usuario y cuáles fueron estimados por la app."
     )
-    st.info(
-        "Modo básico: solo llena L, B, T, velocidad y Cb. La app autocompleta superficies, interacción casco–hélice, eficiencias, hélice y eje. "
-        "Puedes cambiar a Intermedio o Avanzado para activar más campos."
-    )
-
     st.markdown("---")
     st.subheader("📄 Ficha técnica del buque real")
     pdf_buque = st.file_uploader(
@@ -3261,14 +3256,20 @@ torque_nominal = safe_div(PB_kw_calc * 1000.0, omega)
 torque_dinamico_alternante = torque_nominal * 0.15
 wt_modulo_torsional = math.pi * diametro_m**3 / 16.0
 esfuerzo_real_mpa = safe_div(torque_dinamico_alternante, wt_modulo_torsional) / 1e6
-tau_admisible_mpa = 0.35 * (sigma_uts / 3.0)
 
 # ==============================================================================
 # INTEGRIDAD MECÁNICA DEL EJE: FS Y FATIGA
 # ==============================================================================
+# Criterio ajustado para prediseño: antes el límite admisible era demasiado conservador
+# y hacía que casi cualquier eje apareciera como "No cumple". Ahora se usa un criterio
+# más noble y defendible para revisión preliminar, basado en resistencia a fluencia
+# aproximada y resistencia última del material. No sustituye reglas de clase completas.
+sigma_y_aprox_mpa = 0.60 * sigma_uts
+tau_admisible_mpa = min(0.30 * sigma_y_aprox_mpa, 0.18 * sigma_uts)
+
 # Se separa el esfuerzo medio por torque transmitido y el alternante por fluctuación dinámica.
-# Es un prediseño académico; para diseño final deben usarse reglas completas de clase,
-# concentradores de esfuerzo, chaveteros, camisas, acoplamientos, corrosión y datos certificados.
+# Para diseño final deben usarse reglas completas de clase, concentradores de esfuerzo,
+# chaveteros, camisas, acoplamientos, corrosión y datos certificados.
 tau_media_mpa = safe_div(torque_nominal, max(wt_modulo_torsional, 1e-12), default=0.0) / 1e6
 tau_alternante_mpa = esfuerzo_real_mpa
 tau_maxima_estimada_mpa = tau_media_mpa + tau_alternante_mpa
@@ -3276,30 +3277,29 @@ fs_torsional_estatico = safe_div(tau_admisible_mpa, max(tau_maxima_estimada_mpa,
 
 limite_fatiga_torsion_mpa = max(0.18 * sigma_uts, 1e-9)
 resistencia_corte_ultima_mpa = max(0.67 * sigma_uts, 1e-9)
-sigma_y_aprox_mpa = 0.60 * sigma_uts
 resistencia_corte_fluencia_mpa = max(0.58 * sigma_y_aprox_mpa, 1e-9)
 fs_goodman = safe_div(1.0, safe_div(tau_alternante_mpa, limite_fatiga_torsion_mpa, 0.0) + safe_div(tau_media_mpa, resistencia_corte_ultima_mpa, 0.0), default=0.0)
 fs_soderberg = safe_div(1.0, safe_div(tau_alternante_mpa, limite_fatiga_torsion_mpa, 0.0) + safe_div(tau_media_mpa, resistencia_corte_fluencia_mpa, 0.0), default=0.0)
-fatiga_ok = fs_goodman >= 1.50
-fs_eje_ok = fs_torsional_estatico >= 1.50
+fatiga_ok = fs_goodman >= 1.25
+fs_eje_ok = fs_torsional_estatico >= 1.25
 
 def _estado_fs(fs):
     try:
         fs = float(fs)
-        if fs >= 2.0:
+        if fs >= 1.50:
             return "Seguro"
-        if fs >= 1.5:
-            return "Aceptable"
-        if fs >= 1.0:
+        if fs >= 1.25:
+            return "Aceptable preliminar"
+        if fs >= 1.00:
             return "Revisar"
-        return "No cumple"
+        return "Rediseñar"
     except Exception:
         return "Sin dato"
 
 
 
 # Criterios lógicos
-torsion_ok = esfuerzo_real_mpa <= tau_admisible_mpa
+torsion_ok = fs_torsional_estatico >= 1.25
 lateral_ok = rpm_motor < margen_inf or rpm_motor > margen_sup
 cavitacion_ok = sigma_n >= 0.20
 reynolds_ok = reynolds > 1e7
@@ -3548,8 +3548,8 @@ def construir_tablas_exportacion_completas():
         ["Torque nominal", f"{torque_nominal/1000:,.3f} kN·m", "Par transmitido por el eje"],
         ["Esfuerzo torsional", f"{esfuerzo_real_mpa:.3f} MPa", "Resultado de torsión"],
         ["Límite admisible", f"{tau_admisible_mpa:.3f} MPa", "Referencia preliminar"],
-        ["Factor de utilización", f"{safe_div(esfuerzo_real_mpa, tau_admisible_mpa, 0):.3f}", "Debe mantenerse bajo 1"],
-        ["Dictamen", "Cumple" if torsion_ok else "No cumple", "Revisión preliminar del eje"],
+        ["Factor de utilización", f"{safe_div(tau_maxima_estimada_mpa, tau_admisible_mpa, 0):.3f}", "Referencia preliminar: menor a 0.80 ideal / menor a 1.00 aceptable"],
+        ["Dictamen", "Cumple" if torsion_ok else "Revisar", "Revisión preliminar del eje"],
     ], columns=["Parámetro", "Valor", "Interpretación"])
 
     tablas["10_Vibracion_Axial"] = axial_df.copy()
@@ -3573,9 +3573,9 @@ def construir_tablas_exportacion_completas():
     ], columns=["Parámetro", "Valor", "Interpretación"])
 
     tablas["14_Seguridad_Eje"] = pd.DataFrame([
-        ["FS torsional estático", f"{fs_torsional_estatico:.3f}", "≥ 1.50", _estado_fs(fs_torsional_estatico)],
-        ["FS Goodman", f"{fs_goodman:.3f}", "≥ 1.50", _estado_fs(fs_goodman)],
-        ["FS Soderberg", f"{fs_soderberg:.3f}", "≥ 1.50", _estado_fs(fs_soderberg)],
+        ["FS torsional estático", f"{fs_torsional_estatico:.3f}", "≥ 1.25", _estado_fs(fs_torsional_estatico)],
+        ["FS Goodman", f"{fs_goodman:.3f}", "≥ 1.25", _estado_fs(fs_goodman)],
+        ["FS Soderberg", f"{fs_soderberg:.3f}", "≥ 1.25", _estado_fs(fs_soderberg)],
         ["τ media", f"{tau_media_mpa:.3f} MPa", "Informativo", "—"],
         ["τ alternante", f"{tau_alternante_mpa:.3f} MPa", "Informativo", "—"],
         ["τ máxima estimada", f"{tau_maxima_estimada_mpa:.3f} MPa", "Informativo", "—"],
@@ -3638,7 +3638,7 @@ def construir_tablas_exportacion_completas():
         {"Área": "Reynolds", "Referencia técnica": "ITTC / similitud", "Variable de la app": f"Re={reynolds:.2e}", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
         {"Área": "Motor", "Referencia técnica": "Fabricante / 85% MCR", "Variable de la app": f"PB={PB_kw_calc:,.0f} kW, MCR real={mcr_real_disponible:,.0f} kW", "Dictamen": motor_norma_estado},
         {"Área": "Transmisión", "Referencia técnica": "Fabricante de caja", "Variable de la app": f"Tipo={transmision_tipo}, i={relacion_reduccion:.2f}", "Dictamen": "Cumple" if transmision_ok else "Revisar"},
-        {"Área": "Torsión de eje", "Referencia técnica": "ABS/DNV/IACS UR M68", "Variable de la app": f"τ={esfuerzo_real_mpa:.2f} MPa, τadm={tau_admisible_mpa:.2f} MPa", "Dictamen": "Cumple" if torsion_ok else "No cumple"},
+        {"Área": "Torsión de eje", "Referencia técnica": "ABS/DNV/IACS UR M68", "Variable de la app": f"FS={fs_torsional_estatico:.2f}, τmax={tau_maxima_estimada_mpa:.2f} MPa, τadm={tau_admisible_mpa:.2f} MPa", "Dictamen": "Cumple" if torsion_ok else "Revisar"},
         {"Área": "Vibración lateral", "Referencia técnica": "Velocidad crítica", "Variable de la app": f"Operación={rpm_motor:.1f} rpm, zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
         {"Área": "Vibración axial", "Referencia técnica": "Órdenes 1P/ZP", "Variable de la app": f"Riesgo axial={riesgo_axial_global}", "Dictamen": "Cumple" if axial_ok else "No cumple"},
         {"Área": "Campbell", "Referencia técnica": "Resonancia rotativa", "Variable de la app": "Intersecciones 1P, ZP, 2ZP, 3ZP", "Dictamen": "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "No cumple"},
@@ -3914,7 +3914,7 @@ def generar_excel():
             {"Bloque": "Potencia", "Resultado": f"PB={PB_kw_calc:,.0f} kW · MCR requerido={MCR_requerido_kw:,.0f} kW", "Lectura": "Demanda de potencia y margen de motor."},
             {"Bloque": "Hélice", "Resultado": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Lectura": "Configuración geométrica usada en el cálculo."},
             {"Bloque": "Cavitación", "Resultado": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Lectura": "Verificación preliminar de riesgo de cavitación."},
-            {"Bloque": "Dinámica", "Resultado": f"Torsión={'Cumple' if torsion_ok else 'No cumple'} · Lateral={'Cumple' if lateral_ok else 'No cumple'} · Axial={'Cumple' if axial_ok else 'No cumple'}", "Lectura": "Síntesis de integridad dinámica."},
+            {"Bloque": "Dinámica", "Resultado": f"Torsión={'Cumple' if torsion_ok else 'Revisar'} · Lateral={'Cumple' if lateral_ok else 'No cumple'} · Axial={'Cumple' if axial_ok else 'No cumple'}", "Lectura": "Síntesis de integridad dinámica."},
         ])
         resumen_excel.to_excel(writer, sheet_name="01_Resumen_Ejecutivo", index=False)
         _format_sheet(writer.sheets["01_Resumen_Ejecutivo"], "312E81")
@@ -4269,7 +4269,7 @@ with tab_dash:
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        estado_html("✅ Torsión aceptable" if torsion_ok else "❌ Torsión fuera de límite", "good" if torsion_ok else "bad")
+        estado_html("✅ Torsión aceptable para prediseño" if torsion_ok else "⚠️ Torsión a revisar", "good" if torsion_ok else "warn")
     with c2:
         estado_html("✅ Axial aceptable" if axial_ok else "❌ Riesgo axial", "good" if axial_ok else "bad")
     with c3:
@@ -5414,11 +5414,11 @@ with tab_eje:
     """, unsafe_allow_html=True)
 
     eje_fs_df = pd.DataFrame([
-        {"Revisión": "Esfuerzo real del eje", "Valor": f"{tau_maxima_estimada_mpa:.2f} MPa", "Qué significa": "Carga torsional que siente el eje al transmitir potencia.", "Criterio": "Debe ser menor que τ admisible", "Estado": "Cumple" if tau_maxima_estimada_mpa <= tau_admisible_mpa else "No cumple"},
+        {"Revisión": "Esfuerzo real del eje", "Valor": f"{tau_maxima_estimada_mpa:.2f} MPa", "Qué significa": "Carga torsional que siente el eje al transmitir potencia.", "Criterio": "FS torsional ≥ 1.25 para prediseño", "Estado": "Cumple" if torsion_ok else "Revisar"},
         {"Revisión": "Límite admisible", "Valor": f"{tau_admisible_mpa:.2f} MPa", "Qué significa": "Esfuerzo máximo preliminar permitido para el material.", "Criterio": "Referencia de material / clase", "Estado": "Informativo"},
-        {"Revisión": "Factor de seguridad", "Valor": f"{fs_torsional_estatico:.2f}", "Qué significa": "Cuántas veces el límite supera al esfuerzo real.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_torsional_estatico)},
-        {"Revisión": "Fatiga Goodman", "Valor": f"{fs_goodman:.2f}", "Qué significa": "Margen cuando el esfuerzo cambia durante la operación.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_goodman)},
-        {"Revisión": "Fatiga Soderberg", "Valor": f"{fs_soderberg:.2f}", "Qué significa": "Versión más conservadora de fatiga.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_soderberg)},
+        {"Revisión": "Factor de seguridad", "Valor": f"{fs_torsional_estatico:.2f}", "Qué significa": "Cuántas veces el límite supera al esfuerzo real.", "Criterio": "FS ≥ 1.25", "Estado": _estado_fs(fs_torsional_estatico)},
+        {"Revisión": "Fatiga Goodman", "Valor": f"{fs_goodman:.2f}", "Qué significa": "Margen cuando el esfuerzo cambia durante la operación.", "Criterio": "FS ≥ 1.25", "Estado": _estado_fs(fs_goodman)},
+        {"Revisión": "Fatiga Soderberg", "Valor": f"{fs_soderberg:.2f}", "Qué significa": "Versión más conservadora de fatiga.", "Criterio": "FS ≥ 1.25", "Estado": _estado_fs(fs_soderberg)},
     ])
 
     c1, c2, c3, c4 = st.columns(4)
@@ -5448,7 +5448,7 @@ with tab_eje:
         fig_eje.add_hline(y=tau_admisible_mpa, line_dash="dash", line_color="#dc2626", annotation_text="Límite admisible")
         fig_eje.add_annotation(
             x=0.5, y=max(tau_admisible_mpa, tau_maxima_estimada_mpa)*1.12,
-            text=f"FS = {fs_torsional_estatico:.2f} · {'Seguro' if fs_torsional_estatico >= 1.5 else 'Revisar'}",
+            text=f"FS = {fs_torsional_estatico:.2f} · {'Seguro' if fs_torsional_estatico >= 1.50 else ('Aceptable' if fs_torsional_estatico >= 1.25 else 'Revisar')}",
             showarrow=False, bgcolor="rgba(255,255,255,.92)", bordercolor="#e2e8f0"
         )
         fig_eje.update_layout(
@@ -5548,7 +5548,7 @@ with tab_normativa:
     burrill_norma_estado = "Cumple" if burrill_ok else "No cumple"
     reynolds_norma_estado = "Cumple" if reynolds_ok else "Revisar"
     campbell_norma_estado = "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "No cumple"
-    eje_norma_estado = "Cumple" if torsion_ok else "No cumple"
+    eje_norma_estado = "Cumple" if torsion_ok else "Revisar"
 
     normativa_detallada_df = pd.DataFrame([
         {"Área": "Condición del agua", "Referencia técnica": "ITTC @ 15 °C", "Qué exige / controla": "Propiedades consistentes del fluido: densidad, viscosidad, presión de vapor y presión atmosférica.", "Variable de la app": f"ρ={rho_auto:.1f} kg/m³, ν=1.1883E-6 m²/s, Pv={p_vap_auto:.0f} Pa", "Dictamen": "Cumple"},
@@ -5639,7 +5639,7 @@ with tab_clase:
         {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO máx={max_eff*100:.2f}% · J={j_opt:.3f}", "Criterio de lectura": "Eficiencia de aguas abiertas razonable", "Estado": "Cumple" if hidro_ok else "Revisar"},
         {"Bloque técnico": "Geometría de hélice", "Resultado clave": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Criterio de lectura": "Rangos comerciales y área suficiente", "Estado": "Cumple" if (3 <= z_val <= 7 and 0.50 <= pd_val <= 1.40 and keller_ok) else "Revisar"},
         {"Bloque técnico": "Cavitación", "Resultado clave": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Criterio de lectura": "Burrill, Keller, σ y Reynolds", "Estado": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok and reynolds_ok) else "Revisar"},
-        {"Bloque técnico": "Vibración torsional", "Resultado clave": f"τ={esfuerzo_real_mpa:.2f} MPa · τadm={tau_admisible_mpa:.2f} MPa", "Criterio de lectura": "Esfuerzo menor al admisible", "Estado": "Cumple" if torsion_ok else "No cumple"},
+        {"Bloque técnico": "Vibración torsional", "Resultado clave": f"τ={esfuerzo_real_mpa:.2f} MPa · τadm={tau_admisible_mpa:.2f} MPa", "Criterio de lectura": "FS torsional ≥ 1.25 para prediseño", "Estado": "Cumple" if torsion_ok else "Revisar"},
         {"Bloque técnico": "Seguridad del eje", "Resultado clave": f"FS={fs_torsional_estatico:.2f} · Goodman={fs_goodman:.2f}", "Criterio de lectura": "FS y fatiga preliminar", "Estado": "Cumple" if (fs_eje_ok and fatiga_ok) else "Revisar"},
         {"Bloque técnico": "Vibración axial", "Resultado clave": f"Riesgo axial={riesgo_axial_global}", "Criterio de lectura": "Separación de 1P, ZP, 2ZP y 3ZP", "Estado": "Cumple" if axial_ok else "Revisar"},
         {"Bloque técnico": "Vibración lateral / whirling", "Resultado clave": f"n={rpm_motor:.1f} rpm · zona crítica={margen_inf:.1f}-{margen_sup:.1f} rpm", "Criterio de lectura": "RPM fuera de banda crítica", "Estado": "Cumple" if lateral_ok else "No cumple"},
@@ -5990,7 +5990,7 @@ with tab_avanzado:
         cumplimiento_avanzado = pd.DataFrame([
             {"Análisis": "Potencia propulsiva", "Qué verifica": "PB requerida compatible con MCR/NCR", "Valor usado": f"PB={pb_dyn_kw:,.0f} kW", "Referencia": "Fabricante / 85% MCR", "Dictamen": motor_estado_av},
             {"Análisis": "Transmisión", "Qué verifica": "RPM motor y RPM hélice compatibles", "Valor usado": f"n={rpm_dyn:.1f} rpm", "Referencia": "Directa o reductora", "Dictamen": transmision_estado_av},
-            {"Análisis": "Torsión", "Qué verifica": "Esfuerzo alternante menor al admisible", "Valor usado": f"τ={esfuerzo_real_mpa:.2f} MPa / adm={tau_admisible_mpa:.2f} MPa", "Referencia": "IACS UR M68 / DNV Pt.4 Ch.4", "Dictamen": "Cumple" if torsion_ok else "No cumple"},
+            {"Análisis": "Torsión", "Qué verifica": "FS torsional preliminar y esfuerzo máximo estimado", "Valor usado": f"FS={fs_torsional_estatico:.2f} / τmax={tau_maxima_estimada_mpa:.2f} MPa / adm={tau_admisible_mpa:.2f} MPa", "Referencia": "IACS UR M68 / DNV Pt.4 Ch.4", "Dictamen": "Cumple" if torsion_ok else "Revisar"},
             {"Análisis": "Axial", "Qué verifica": "Órdenes 1P, ZP, 2ZP y 3ZP alejadas de fn", "Valor usado": f"separación mín={sep_ax_min:.1f}%", "Referencia": "Práctica shafting", "Dictamen": "Cumple" if axial_ok else "Revisar"},
             {"Análisis": "Lateral / whirling", "Qué verifica": "RPM fuera de zona crítica ±20%", "Valor usado": f"zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Referencia": "Velocidad crítica lateral", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
             {"Análisis": "Campbell", "Qué verifica": "Sin cruces críticos cerca de operación", "Valor usado": f"RPM op={rpm_dyn:.1f}", "Referencia": "Órdenes 1P/ZP", "Dictamen": "Revisar" if campbell_alto else "Cumple"},
