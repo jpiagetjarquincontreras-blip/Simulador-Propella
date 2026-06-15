@@ -5,7 +5,6 @@ import math
 import re
 import tempfile
 import os
-import gc
 from io import BytesIO
 import matplotlib.pyplot as plt
 
@@ -381,66 +380,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ==============================================================================
-# AJUSTE VISUAL SUTIL Y PROFESIONAL
-# ==============================================================================
-st.markdown("""
-<style>
-    :root {
-        --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
-        --brand:#4c1d95; --brand2:#2563eb; --ok:#059669; --warn:#d97706; --bad:#dc2626;
-    }
-    .block-container {
-        max-width: 1380px;
-        padding-left: 2.1rem;
-        padding-right: 2.1rem;
-    }
-    .section-card, div[data-testid="stMetric"], [data-testid="stExpander"] details {
-        border: 1px solid rgba(148,163,184,.28) !important;
-        box-shadow: 0 10px 26px rgba(15,23,42,.055) !important;
-    }
-    [data-testid="stExpander"] details {
-        border-radius: 16px !important;
-        background: rgba(255,255,255,.96) !important;
-        overflow: hidden;
-    }
-    [data-testid="stExpander"] summary {
-        font-weight: 800 !important;
-        letter-spacing: .1px;
-        background: linear-gradient(90deg, #ffffff 0%, #f8fafc 100%) !important;
-        border-bottom: 1px solid rgba(226,232,240,.75);
-    }
-    .stButton > button, .stDownloadButton > button {
-        border-radius: 12px !important;
-        border: 1px solid #cbd5e1 !important;
-        box-shadow: 0 5px 14px rgba(15,23,42,.06) !important;
-        font-weight: 800 !important;
-    }
-    div[data-testid="stMetric"] {
-        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%) !important;
-    }
-    .stDataFrame, [data-testid="stDataFrame"] {
-        border-radius: 14px !important;
-        overflow: hidden !important;
-    }
-    .formula-card {
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 16px 18px;
-        margin: 12px 0;
-        box-shadow: 0 8px 22px rgba(15,23,42,.045);
-    }
-    .formula-card h4 { margin: 0 0 6px 0; font-size: 16px; color: #0f172a !important; }
-    .formula-card p { margin: 0; color: #475569 !important; font-size: 14px; line-height: 1.55; }
-    .formula-tag {
-        display:inline-block; padding: 3px 9px; border-radius: 999px;
-        background:#eef2ff; color:#3730a3 !important; font-size: 12px; font-weight: 800;
-        margin-bottom: 8px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # Firma de autoría: se conserva únicamente en el pie final de la aplicación y en el reporte PDF.
 # No se muestra nombre en la barra lateral para mantener una interfaz más limpia y profesional.
 
@@ -487,26 +426,26 @@ def _limpiar_trazas_plotly(fig, titulo_base="Gráfica"):
     return fig
 
 def _render_matplotlib_interactivo(fig=None, *args, **kwargs):
-    """Render ligero para Streamlit Cloud.
-    Mantiene TODAS las gráficas y secciones, pero evita convertir cada
-    figura Matplotlib a Plotly porque esa conversión consume mucha RAM.
-    Después de mostrar cada figura, la cierra y limpia memoria.
-    """
     if fig is None:
         fig = plt.gcf()
-    try:
-        result = _original_st_pyplot(fig, *args, **kwargs)
-    finally:
+    use_container_width = kwargs.pop("use_container_width", True)
+    if HAS_PLOTLY:
         try:
+            import plotly.tools as tls
+            pfig = tls.mpl_to_plotly(fig)
+            alto = max(430, min(680, int(fig.get_size_inches()[1] * 105)))
+            pfig.update_layout(height=alto)
+            pfig = _limpiar_trazas_plotly(pfig)
+            st.plotly_chart(pfig, use_container_width=use_container_width, config={
+                "displaylogo": False, "scrollZoom": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                "toImageButtonOptions": {"format": "png", "scale": 2}
+            })
             plt.close(fig)
-            plt.close('all')
+            return
         except Exception:
             pass
-        try:
-            gc.collect()
-        except Exception:
-            pass
-    return result
+    return _original_st_pyplot(fig, *args, **kwargs)
 
 st.pyplot = _render_matplotlib_interactivo
 
@@ -515,7 +454,7 @@ def plotly_campbell_profesional(rpm_operacion, f_lat, f_tors, f_axial, z, max_rp
         return None
     rpm_operacion = float(max(rpm_operacion, 0.0))
     max_rpm = float(max_rpm or max(rpm_operacion*2.2, 180.0))
-    rpm = np.linspace(0, max_rpm, 260)
+    rpm = np.linspace(0, max_rpm, 520)
     fig = go.Figure()
     modos = [("Frecuencia natural lateral", f_lat, "#2563eb", "dash"),("Frecuencia natural torsional", f_tors, "#7c3aed", "dot"),("Frecuencia natural axial", f_axial, "#0891b2", "dashdot")]
     for nombre, fn, color, dash in modos:
@@ -542,7 +481,7 @@ def plotly_orbita_animada(x_orb, y_orb, amp_x, amp_y, fase_deg, orbit_estado):
         return None
     frames = []
     n = len(x_orb)
-    step = max(1, n//35)
+    step = max(1, n//80)
     for k in range(0, n, step):
         frames.append(go.Frame(data=[go.Scatter(x=x_orb[:k+1], y=y_orb[:k+1], mode="lines", line=dict(color="#2563eb", width=4), name="Trayectoria orbital"), go.Scatter(x=[x_orb[k]], y=[y_orb[k]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], name=str(k)))
     fig = go.Figure(data=[go.Scatter(x=x_orb, y=y_orb, mode="lines", line=dict(color="#2563eb", width=3), name="Trayectoria orbital", hovertemplate="X=%{x:.2f} µm<br>Y=%{y:.2f} µm<extra></extra>"), go.Scatter(x=[0], y=[0], mode="markers", marker=dict(size=13, color="#0f172a", symbol="cross"), name="Centro nominal"), go.Scatter(x=[x_orb[0]], y=[y_orb[0]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], frames=frames)
@@ -608,7 +547,7 @@ def plotly_burrill_prof(sigma_actual, tau_actual, tau_adm_actual):
         return None
     sigma_actual = float(sigma_actual); tau_actual = float(tau_actual); tau_adm_actual = float(tau_adm_actual)
     xmax = max(1.2, sigma_actual*1.18)
-    sig = np.linspace(0.05, xmax, 160)
+    sig = np.linspace(0.05, xmax, 260)
     tau_adm = 0.22 + 0.18*sig
     cumple = tau_actual <= tau_adm_actual
     margen = tau_adm_actual - tau_actual
@@ -837,7 +776,7 @@ def diagnostico_score(score):
 
 def fig_to_bytes(fig):
     buffer = BytesIO()
-    fig.savefig(buffer, format="png", dpi=120, bbox_inches="tight")
+    fig.savefig(buffer, format="png", dpi=160, bbox_inches="tight")
     buffer.seek(0)
     return buffer
 
@@ -1042,7 +981,7 @@ def crear_figura_mapa_eficiencias(eff_df):
 
 def crear_figura_burrill(sigma_actual, tau_actual, tau_adm_actual):
     max_sigma = max(1.2, sigma_actual * 1.15)
-    sig = np.linspace(0.05, max_sigma, 140)
+    sig = np.linspace(0.05, max_sigma, 220)
     tau_adm = 0.22 + 0.18 * sig
     fig, ax = plt.subplots(figsize=(8.2, 4.8))
     ax.plot(sig, tau_adm, linewidth=2.6, label="Límite preliminar admisible")
@@ -1097,7 +1036,7 @@ def crear_figura_keller(ae_min, ae_actual):
 
 def crear_figura_campbell(rpm_operacion, f_lat, f_tors, f_axial, z):
     max_rpm = max(rpm_operacion * 2.0, 120)
-    rpm_x = np.linspace(0, max_rpm, 220)
+    rpm_x = np.linspace(0, max_rpm, 400)
     fig, ax = plt.subplots(figsize=(9, 4.8))
     ax.axhline(y=f_lat, linestyle="--", linewidth=2, label=f"Lateral {f_lat:.2f} Hz")
     ax.axhline(y=f_tors, linestyle="-.", linewidth=2, label=f"Torsional {f_tors:.2f} Hz")
@@ -1118,7 +1057,7 @@ def insertar_figura_excel(writer, fig, sheet_name, cell="A1"):
         from openpyxl.drawing.image import Image as XLImage
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
         tmp.close()
-        fig.savefig(tmp.name, format="png", dpi=110, bbox_inches="tight")
+        fig.savefig(tmp.name, format="png", dpi=150, bbox_inches="tight")
         ws = writer.book.create_sheet(sheet_name)
         img = XLImage(tmp.name)
         img.anchor = cell
@@ -3643,7 +3582,7 @@ def insertar_figura_excel_con_texto(writer, fig, sheet_name, descripcion=""):
         from openpyxl.drawing.image import Image as XLImage
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
         tmp.close()
-        fig.savefig(tmp.name, format="png", dpi=110, bbox_inches="tight")
+        fig.savefig(tmp.name, format="png", dpi=170, bbox_inches="tight")
         ws = writer.book.create_sheet(_safe_sheet_name(sheet_name))
         ws["A1"] = "Descripción técnica"
         ws["A1"].font = ws["A1"].font.copy(bold=True)
@@ -5282,40 +5221,28 @@ with tab_eje:
 
     with st.expander("🧮 Fórmulas y explicación para defenderlo", expanded=False):
         st.markdown("""
-        <div class="formula-card">
-            <span class="formula-tag">1 · Torque del eje</span>
-            <h4>¿Qué calcula?</h4>
-            <p>Convierte la potencia del motor en el giro real que recibe el eje. A mayor potencia o menor rpm, mayor torque.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.latex(r"T = \frac{9550\,P_B}{n}")
-
+        **1. Torque transmitido por el eje**  
+        El motor entrega potencia y el eje la transmite como torque hacia la hélice.
+        """)
+        st.latex(r"T=rac{9550\,PB}{n}")
         st.markdown("""
-        <div class="formula-card">
-            <span class="formula-tag">2 · Esfuerzo por torsión</span>
-            <h4>¿Qué representa?</h4>
-            <p>Es el esfuerzo que aparece dentro del eje por transmitir el torque. Si el diámetro baja, el esfuerzo sube mucho porque depende de d³.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.latex(r"\tau = \frac{16T}{\pi d^3}")
-
+        **2. Esfuerzo cortante por torsión**  
+        Mientras menor sea el diámetro del eje, mayor será el esfuerzo. Por eso el diámetro es tan importante.
+        """)
+        st.latex(r"	au=rac{16T}{\pi d^3}")
         st.markdown("""
-        <div class="formula-card">
-            <span class="formula-tag">3 · Factor de seguridad</span>
-            <h4>¿Cómo se interpreta?</h4>
-            <p>Compara lo que el eje puede soportar contra lo que realmente está trabajando. Por ejemplo, FS = 2 significa que el límite admisible es el doble del esfuerzo calculado.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.latex(r"FS = \frac{\tau_{adm}}{\tau_{real}}")
-
+        **3. Factor de seguridad**  
+        Si `FS = 2`, significa que el límite admisible es aproximadamente el doble del esfuerzo real.
+        """)
+        st.latex(r"FS=rac{	au_{adm}}{	au_{real}}")
         st.markdown("""
-        <div class="formula-card">
-            <span class="formula-tag">4 · Fatiga</span>
-            <h4>¿Por qué se revisa?</h4>
-            <p>El eje no gira una sola vez: trabaja miles o millones de ciclos. Goodman y Soderberg son criterios preliminares para comprobar que esa carga repetida no lo acerque a una falla por fatiga.</p>
-        </div>
-        <blockquote>Esta revisión no reemplaza la aprobación de una casa clasificadora. Sirve como predimensionamiento para demostrar que el torque calculado no genera un esfuerzo mayor al admisible y que existe margen preliminar frente a fatiga.</blockquote>
-        """, unsafe_allow_html=True)
+        **4. Fatiga**  
+        La fatiga revisa que el eje no solo soporte una carga una vez, sino muchas vueltas durante operación.
+        Goodman y Soderberg se usan como criterios preliminares para carga variable.
+
+        **Cómo defenderlo en presentación:**  
+        > “Esta revisión no reemplaza una aprobación de ABS o DNV, pero permite demostrar que el torque calculado no genera un esfuerzo mayor al admisible del eje. Además, se revisa un margen preliminar por fatiga para justificar que el eje no trabaja al límite.”
+        """)
 
     st.markdown("### Zonas prohibidas o de precaución por Campbell")
     if zonas_prohibidas_df.empty:
