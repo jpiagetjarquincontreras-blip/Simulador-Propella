@@ -2471,43 +2471,6 @@ def estimar_voladizo_m(diametro_m):
     return float(min(max(0.35 * diametro_m, 0.8), 5.0))
 
 
-
-# ==============================================================================
-# BUQUE DE REFERENCIA PRECARGADO
-# ==============================================================================
-# Estos valores corresponden al buque KVLCC2 usado como caso base de la app.
-# El usuario puede modificarlos manualmente o reemplazarlos cargando un PDF.
-DEFAULT_BUQUE_KVLCC2 = {
-    "tipo_buque": "VLCC / Buque tanque",
-    "loa_m": 333.13,
-    "lwl_m": 325.50,
-    "lpp_m": 320.00,
-    "manga": 58.00,
-    "puntal_m": 30.00,
-    "calado": 20.80,
-    "velocidad_kn": 15.50,
-    "swo_m2": 27194.0,
-    "sw_m2": 27467.0,
-    "rt_kn": 2120.0,
-    "sea_margin_pct": 15.0,
-    "wake_adjustment_pct": 5.0,
-    "eta_r": 1.015,
-    "t": 0.220,
-    "w": 0.351,
-    "prop_z": 4,
-    "prop_diam_m": 9.86,
-    "prop_pd": 0.721,
-    "prop_aeao": 0.431,
-    "hub_ratio": 0.155,
-    "inmersion_eje_m": 14.10,
-    # La ficha del usuario reporta 1001.325; se interpreta como 100.1325 kPa.
-    "p_atm_pa": 100132.5,
-    "p_vap_pa": 1704.0,
-    "rho_kg_m3": 1026.021,
-    "g_ms2": 9.80665,
-}
-DEFAULT_BUQUE_KVLCC2_FIELDS = set(DEFAULT_BUQUE_KVLCC2.keys())
-
 # ==============================================================================
 # ENCABEZADO
 # ==============================================================================
@@ -2561,8 +2524,8 @@ with st.sidebar:
             "Avanzado / manual: quiero editar todo",
             "Validación: comparar contra Maxsurf / Michigan / ficha"
         ],
-        index=2,
-        help="La app inicia con el caso KVLCC2 precargado. Puedes cambiar a Básico, Intermedio o Validación según los datos disponibles."
+        index=0,
+        help="La app activa u oculta entradas según el nivel. Si faltan datos, los estima con criterios de prediseño y deja visible el origen."
     )
     editar_intermedio = nivel_datos in ["Intermedio: tengo algunos coeficientes", "Avanzado / manual: quiero editar todo", "Validación: comparar contra Maxsurf / Michigan / ficha"]
     editar_avanzado = nivel_datos in ["Avanzado / manual: quiero editar todo", "Validación: comparar contra Maxsurf / Michigan / ficha"]
@@ -2580,33 +2543,13 @@ with st.sidebar:
         help="Opcional. La app intentará detectar datos reales como Lpp, velocidad, motor, MCR, hélice y RPM. Después podrás corregirlos manualmente."
     )
     texto_pdf = extraer_texto_pdf(pdf_buque) if pdf_buque is not None else ""
-    datos_pdf_detectados = parsear_ficha_tecnica(texto_pdf) if texto_pdf else {}
-    hay_pdf_valido = bool(datos_pdf_detectados)
-
-    # Datos base: la app arranca con el buque KVLCC2 ya precargado.
-    # Si se sube un PDF, solo reemplaza los campos que realmente detecte.
-    datos_pdf = DEFAULT_BUQUE_KVLCC2.copy()
-    for _k, _v in datos_pdf_detectados.items():
-        if _v not in [None, "", 0, 0.0]:
-            datos_pdf[_k] = _v
-
+    datos_pdf = parsear_ficha_tecnica(texto_pdf) if texto_pdf else {}
+    hay_pdf_valido = bool(datos_pdf)
+    # Cuando no se carga PDF, la aplicación conserva los valores internos de
+    # prediseño que usaba la versión anterior. El PDF solo sirve para comparar
+    # o reemplazar datos reales; no debe ser obligatorio para que la app calcule.
     if pdf_buque is not None:
-        st.success("PDF leído. Los datos detectados reemplazaron los valores precargados cuando fue posible.")
-
-    with st.expander("🚢 Caso base precargado: KVLCC2", expanded=True):
-        st.caption("Estos valores aparecen de entrada para que la app calcule sin depender de cargar un PDF. Puedes modificarlos en cualquier momento.")
-        st.dataframe(pd.DataFrame([
-            {"Dato":"LOA", "Valor":"333.13 m"},
-            {"Dato":"LWL", "Valor":"325.50 m"},
-            {"Dato":"Lpp", "Valor":"320.00 m"},
-            {"Dato":"B", "Valor":"58.00 m"},
-            {"Dato":"D", "Valor":"30.00 m"},
-            {"Dato":"T", "Valor":"20.80 m"},
-            {"Dato":"Velocidad", "Valor":"15.50 kn"},
-            {"Dato":"RT calma", "Valor":"2120 kN"},
-            {"Dato":"w / t / ηR", "Valor":"0.351 / 0.220 / 1.015"},
-            {"Dato":"Hélice", "Valor":"Z=4 · D=9.86 m · P/D=0.721 · Ae/A0=0.431"},
-        ]), use_container_width=True, hide_index=True, height=388)
+        st.success("PDF leído. Revisa los datos detectados en la pestaña 📄 PDF / Comparación.")
 
     st.markdown("---")
     st.subheader("🌎 Constantes físicas")
@@ -2854,7 +2797,7 @@ with st.sidebar:
     rt_modo = st.radio(
         "Modo de resistencia total RT",
         ["Automática preliminar", "Dato conocido / manual"],
-        index=1 if datos_pdf.get("rt_kn") else 0,
+        index=1 if modo_validacion and datos_pdf.get("rt_kn") else 0,
         horizontal=True,
         disabled=(nivel_datos == "Básico: solo dimensiones principales"),
         help="En modo básico se calcula automáticamente. En validación puedes introducir RT de Maxsurf, PPP, canal, CFD o ficha técnica."
@@ -2968,10 +2911,8 @@ with st.sidebar:
     # Trazabilidad del autocompletado
     # --------------------------------------------------------------------------
     def _origen(campo, manual_condicion):
-        if campo in datos_pdf_detectados and datos_pdf_detectados.get(campo) not in [None, "", 0, 0.0]:
+        if datos_pdf.get(campo) not in [None, "", 0, 0.0]:
             return "📄 Detectado desde PDF / ficha"
-        if campo in DEFAULT_BUQUE_KVLCC2_FIELDS and DEFAULT_BUQUE_KVLCC2.get(campo) not in [None, "", 0, 0.0]:
-            return "🔵 Precargado KVLCC2"
         return "🟢 Ingresado por usuario" if manual_condicion else "🟡 Estimado por la app"
 
     datos_estimados_df = pd.DataFrame([
