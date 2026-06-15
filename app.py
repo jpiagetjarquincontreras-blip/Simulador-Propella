@@ -2349,7 +2349,61 @@ def estimar_eta_s(tipo_transmision="Directa / sin caja reductora"):
 def estimar_eta_g(tipo_transmision="Directa / sin caja reductora"):
     return 1.000 if str(tipo_transmision).startswith("Directa") else 0.975
 
-def estimar_resistencia_ittc_kn(lwl, manga, calado, velocidad_kn, tipo_buque, rho=1025.0, nu=1.1883e-6, sw_m2=0.0, ajuste_pct=0.0):
+def estimar_coeficientes_forma(tipo_buque, cb=None):
+    """
+    Estima coeficientes geométricos mínimos para que la app pueda operar
+    aun cuando el usuario solo tenga dimensiones principales.
+    """
+    cb = coef_bloque_referencia(tipo_buque) if cb is None else float(cb)
+    cm = 0.977 + 0.085 * (cb - 0.60)
+    cm = float(min(max(cm, 0.70), 0.999))
+    cp = safe_div(cb, cm, default=cb)
+    cp = float(min(max(cp, 0.45), 0.90))
+    cwp = 0.180 + 0.860 * cp
+    cwp = float(min(max(cwp, 0.55), 0.98))
+    return cp, cm, cwp
+
+def estimar_superficie_mojada_simple(lwl, manga, calado, cb=None):
+    """Estimación preliminar de superficie mojada tipo Mumford simplificada."""
+    L = max(float(lwl), 1.0)
+    B = max(float(manga), 0.1)
+    T = max(float(calado), 0.1)
+    cb = 0.70 if cb is None else float(cb)
+    return float(L * (2.0*T + B) * math.sqrt(max(cb, 0.30)))
+
+def estimar_propulsor_inicial(tipo_buque, calado, manga, velocidad_kn):
+    """Recomienda una geometría inicial de hélice para modo básico."""
+    tipo = str(tipo_buque)
+    T = max(float(calado), 0.1)
+    B = max(float(manga), 0.1)
+    if tipo == "Buque tanque":
+        z, pd, ae, hub = 4, 0.72, 0.55, 0.16
+        d = 0.72 * T
+    elif tipo == "Bulk carrier":
+        z, pd, ae, hub = 4, 0.75, 0.52, 0.16
+        d = 0.70 * T
+    elif tipo == "Portacontenedores":
+        z, pd, ae, hub = 5, 0.90, 0.65, 0.17
+        d = 0.62 * T
+    elif tipo in ["OSV / PSV", "AHTS"]:
+        z, pd, ae, hub = 4, 0.85, 0.70, 0.18
+        d = 0.55 * T
+    elif tipo == "Remolcador":
+        z, pd, ae, hub = 4, 0.80, 0.75, 0.20
+        d = 0.50 * T
+    elif tipo == "Ferry":
+        z, pd, ae, hub = 5, 0.95, 0.65, 0.18
+        d = 0.55 * T
+    else:
+        z, pd, ae, hub = 4, 0.80, 0.60, 0.17
+        d = 0.62 * T
+    d = float(min(max(d, 0.80), max(0.85*T, 1.0), max(B*0.22, 1.0)))
+    return int(z), float(d), float(pd), float(ae), float(hub)
+
+def etiqueta_origen(valor, origen):
+    return {"Valor usado": valor, "Origen": origen}
+
+def estimar_resistencia_ittc_kn(lwl, manga, calado, velocidad_kn, tipo_buque, rho=1025.0, nu=1.1883e-6, sw_m2=0.0, ajuste_pct=0.0, cb=None):
     """
     Estimación preliminar universal de resistencia total RT.
 
@@ -2371,7 +2425,7 @@ def estimar_resistencia_ittc_kn(lwl, manga, calado, velocidad_kn, tipo_buque, rh
     L = max(float(lwl), 1.0)
     B = max(float(manga), 0.1)
     T = max(float(calado), 0.1)
-    cb = coef_bloque_referencia(tipo_buque)
+    cb = coef_bloque_referencia(tipo_buque) if cb is None else float(cb)
 
     if sw_m2 and sw_m2 > 0:
         s_mojada = float(sw_m2)
@@ -2457,7 +2511,33 @@ with st.sidebar:
             "Ferry"
         ],
         index=1,
-        help="Este selector solo sirve como guía visual. Los valores siguen siendo editables por el usuario. Por defecto se abre como buque tanque KVLCC2."
+        help="Define rangos típicos para autocompletar datos cuando el usuario no tiene toda la información."
+    )
+
+    st.markdown("---")
+    st.subheader("🧠 Modo de datos disponibles")
+    nivel_datos = st.selectbox(
+        "¿Qué tantos datos tiene el usuario?",
+        [
+            "Básico: solo dimensiones principales",
+            "Intermedio: tengo algunos coeficientes",
+            "Avanzado / manual: quiero editar todo",
+            "Validación: comparar contra Maxsurf / Michigan / ficha"
+        ],
+        index=0,
+        help="La app activa u oculta entradas según el nivel. Si faltan datos, los estima con criterios de prediseño y deja visible el origen."
+    )
+    editar_intermedio = nivel_datos in ["Intermedio: tengo algunos coeficientes", "Avanzado / manual: quiero editar todo", "Validación: comparar contra Maxsurf / Michigan / ficha"]
+    editar_avanzado = nivel_datos in ["Avanzado / manual: quiero editar todo", "Validación: comparar contra Maxsurf / Michigan / ficha"]
+    modo_validacion = nivel_datos == "Validación: comparar contra Maxsurf / Michigan / ficha"
+    mostrar_estimaciones = st.toggle(
+        "Mostrar tabla de datos estimados y origen",
+        value=True,
+        help="Muestra qué valores fueron ingresados por el usuario y cuáles fueron estimados por la app."
+    )
+    st.info(
+        "Modo básico: solo llena L, B, T, velocidad y Cb. La app autocompleta superficies, interacción casco–hélice, eficiencias, hélice y eje. "
+        "Puedes cambiar a Intermedio o Avanzado para activar más campos."
     )
 
     st.markdown("---")
@@ -2531,21 +2611,67 @@ with st.sidebar:
         help="Velocidad de operación del buque. Buques mercantes usualmente operan entre 10 y 25 nudos."
     )
 
+    cb_auto = coef_bloque_referencia(modo_guia)
+    cb_buque = st.number_input(
+        "Coeficiente de bloque Cb [-]",
+        value=float(nvl(datos_pdf.get("cb"), cb_auto)),
+        min_value=0.30,
+        max_value=0.95,
+        step=0.001,
+        format="%.3f",
+        help="Dato básico recomendado. Si no se conoce, la app propone un Cb típico según el tipo de buque."
+    )
+    cp_auto, cm_auto, cwp_auto = estimar_coeficientes_forma(modo_guia, cb_buque)
+    with st.expander("📐 Coeficientes de forma estimados / editables", expanded=editar_intermedio):
+        cp_buque = st.number_input(
+            "Coeficiente prismático Cp [-]",
+            value=float(nvl(datos_pdf.get("cp"), cp_auto)),
+            min_value=0.30,
+            max_value=0.95,
+            step=0.001,
+            format="%.3f",
+            disabled=not editar_intermedio,
+            help="En modo básico se estima con Cb/Cm. En modo intermedio o avanzado puedes editarlo."
+        )
+        cm_buque = st.number_input(
+            "Coeficiente de sección media Cm [-]",
+            value=float(nvl(datos_pdf.get("cm"), cm_auto)),
+            min_value=0.50,
+            max_value=1.00,
+            step=0.001,
+            format="%.3f",
+            disabled=not editar_intermedio,
+            help="Si no existe el dato, se estima con una relación empírica dependiente de Cb."
+        )
+        cwp_buque = st.number_input(
+            "Coeficiente de flotación Cwp [-]",
+            value=float(nvl(datos_pdf.get("cwp"), cwp_auto)),
+            min_value=0.40,
+            max_value=1.00,
+            step=0.001,
+            format="%.3f",
+            disabled=not editar_intermedio,
+            help="Si no existe el dato, se estima a partir de Cp."
+        )
+
     st.markdown("---")
     st.subheader("🌊 Superficies y ajustes hidrodinámicos")
+    sw_auto = estimar_superficie_mojada_simple(lwl, manga, calado, cb_buque)
     superficie_mojada_sin_timon_m2 = st.number_input(
         "Superficie mojada sin timón Swo [m²]",
-        value=float(nvl(datos_pdf.get("swo_m2"), 27194.0)),
+        value=float(nvl(datos_pdf.get("swo_m2"), sw_auto * 0.99)),
         min_value=0.0,
         step=100.0,
-        help="Dato de referencia del KVLCC2. Se muestra como entrada visible; si no se conoce puede dejarse como estimación o ajustarse."
+        disabled=not editar_intermedio,
+        help="En modo básico se estima con LWL, B, T y Cb. Activa modo intermedio/avanzado para editarla."
     )
     superficie_mojada_con_timon_m2 = st.number_input(
         "Superficie mojada con timón Sw [m²]",
-        value=float(nvl(datos_pdf.get("sw_m2"), 27467.0)),
+        value=float(nvl(datos_pdf.get("sw_m2"), sw_auto)),
         min_value=0.0,
         step=100.0,
-        help="Superficie mojada total incluyendo timón. Sirve como respaldo para cálculos de resistencia cuando se dispone del dato."
+        disabled=not editar_intermedio,
+        help="Superficie mojada total. En modo básico se estima automáticamente; en modo intermedio/avanzado puedes reemplazarla por Maxsurf o ficha técnica."
     )
     ajuste_estela_no_uniforme_pct = st.number_input(
         "Nonuniform Wake Adjustment [%]",
@@ -2553,61 +2679,102 @@ with st.sidebar:
         min_value=0.0,
         max_value=30.0,
         step=0.5,
-        help="Ajuste por estela no uniforme. Por defecto se usa 5% según los datos del buque de referencia."
+        disabled=not editar_avanzado,
+        help="Ajuste avanzado por estela no uniforme. En modo básico queda como hipótesis típica visible."
     )
 
     st.markdown("---")
     st.subheader("🌀 Interacción casco-propulsor")
 
-    w_estimado = estimar_estela(modo_guia)
+    w_estimado = estimar_estela(modo_guia, cb_buque)
     t_estimado = estimar_deduccion_empuje(w_estimado)
 
     estela = st.number_input(
         "Fracción de estela w [-]",
-        value=float(nvl(datos_pdf.get("w"), 0.351)),
+        value=float(nvl(datos_pdf.get("w"), w_estimado)),
         min_value=0.0,
         max_value=0.8,
         step=0.001,
         format="%.3f",
-        help="Valor editable. Si no se conoce, la app propone una estimación según tipo de buque y coeficiente de bloque de referencia."
+        disabled=not editar_avanzado,
+        help="En modo básico/intermedio se estima por tipo de buque y Cb. Activa modo avanzado o validación para ajustarla manualmente."
     )
 
     t_fraction = st.slider(
         "Fracción de deducción de empuje t [-]",
         0.05,
         0.35,
-        float(nvl(datos_pdf.get("t"), 0.220)),
+        float(nvl(datos_pdf.get("t"), t_estimado)),
         0.005,
-        help="Valor editable. Si no se conoce, se estima preliminarmente como una fracción de la estela."
+        disabled=not editar_avanzado,
+        help="En modo básico/intermedio se estima a partir de w. Activa modo avanzado o validación para editarla."
     )
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=float(nvl(datos_pdf.get("eta_r"), 1.015)),
+        value=float(nvl(datos_pdf.get("eta_r"), 1.010)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
         format="%.3f",
-        help="Si no se conoce, 1.000 es una hipótesis neutra de prediseño."
+        disabled=not editar_intermedio,
+        help="En modo básico se usa valor típico; en intermedio/avanzado puedes editarlo."
     )
 
     inmersion_eje_m = st.number_input(
         "Inmersión del centro del eje h [m]",
-        value=float(nvl(datos_pdf.get("inmersion_eje_m"), 14.10)),
+        value=float(nvl(datos_pdf.get("inmersion_eje_m"), max(0.50*calado, 0.1))),
         min_value=0.1,
         step=0.1,
-        help="Si no se conoce, se aproxima como 50% del calado. Debe corregirse con plano de arreglo de popa si existe."
+        disabled=not editar_intermedio,
+        help="Si no se conoce, se aproxima como 50% del calado. Activa modo intermedio/avanzado para editarlo."
     )
 
     st.markdown("---")
     st.subheader("⚙️ Geometría de la hélice")
 
-    z_val = st.slider("Número de palas Z", 3, 7, int(nvl(datos_pdf.get("prop_z"), 4)))
-    diam_prop_m = st.number_input("Diámetro de hélice D [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 9.86)), min_value=0.1, step=0.01)
-    pd_val = st.slider("Relación paso/diámetro P/D [-]", 0.5, 1.4, float(nvl(datos_pdf.get("prop_pd"), 0.721)), 0.001)
-    ae_val = st.slider("Relación de área expandida Ae/A0 [-]", 0.3, 1.0, float(nvl(datos_pdf.get("prop_aeao"), 0.431)), 0.001)
-    hub_ratio = st.number_input("Relación del cubo Hub Ratio [-]", value=float(nvl(datos_pdf.get("hub_ratio"), 0.155)), min_value=0.0, max_value=0.5, step=0.001, format="%.3f")
-    margen_servicio = st.slider("Margen de servicio requerido [%]", 0.0, 30.0, float(nvl(datos_pdf.get("sea_margin_pct"), 15.0)), 0.5)
+    z_auto, d_auto, pd_auto, ae_auto, hub_auto = estimar_propulsor_inicial(modo_guia, calado, manga, velocidad)
+    z_val = st.slider(
+        "Número de palas Z", 3, 7,
+        int(nvl(datos_pdf.get("prop_z"), z_auto)),
+        disabled=not editar_intermedio,
+        help="En modo básico se recomienda según tipo de buque."
+    )
+    diam_prop_m = st.number_input(
+        "Diámetro de hélice D [m]",
+        value=float(nvl(datos_pdf.get("prop_diam_m"), d_auto)),
+        min_value=0.1,
+        step=0.01,
+        disabled=not editar_intermedio,
+        help="En modo básico se estima a partir del calado y tipo de buque."
+    )
+    pd_val = st.slider(
+        "Relación paso/diámetro P/D [-]", 0.5, 1.4,
+        float(nvl(datos_pdf.get("prop_pd"), pd_auto)), 0.001,
+        disabled=not editar_intermedio,
+        help="En modo básico se usa una relación preliminar tipo Wageningen."
+    )
+    ae_val = st.slider(
+        "Relación de área expandida Ae/A0 [-]", 0.3, 1.0,
+        float(nvl(datos_pdf.get("prop_aeao"), ae_auto)), 0.001,
+        disabled=not editar_intermedio,
+        help="En modo básico se recomienda por carga esperada de hélice."
+    )
+    hub_ratio = st.number_input(
+        "Relación del cubo Hub Ratio [-]",
+        value=float(nvl(datos_pdf.get("hub_ratio"), hub_auto)),
+        min_value=0.0,
+        max_value=0.5,
+        step=0.001,
+        format="%.3f",
+        disabled=not editar_intermedio
+    )
+    margen_servicio = st.slider(
+        "Margen de servicio requerido [%]", 0.0, 30.0,
+        float(nvl(datos_pdf.get("sea_margin_pct"), 15.0)), 0.5,
+        disabled=not editar_avanzado,
+        help="En modo básico se usa 15% como margen preliminar típico."
+    )
 
     st.markdown("---")
     st.subheader("⚙️ Material del sistema propulsivo")
@@ -2620,14 +2787,15 @@ with st.sidebar:
     st.subheader("⚡ Cadena de potencias")
     rt_estimado_kn = estimar_resistencia_ittc_kn(
         lwl, manga, calado, velocidad, modo_guia, rho_auto, nu=1.1883e-6,
-        sw_m2=superficie_mojada_con_timon_m2, ajuste_pct=0.0
+        sw_m2=superficie_mojada_con_timon_m2, ajuste_pct=0.0, cb=cb_buque
     )
     rt_modo = st.radio(
         "Modo de resistencia total RT",
         ["Automática preliminar", "Dato conocido / manual"],
-        index=0,
+        index=1 if modo_validacion and datos_pdf.get("rt_kn") else 0,
         horizontal=True,
-        help="Para que la app sea universal, por defecto RT se calcula automáticamente con ITTC-1957 + factor por tipo de buque. Si tienes RT de canal, CFD, Holtrop o ficha técnica, puedes usar el modo manual."
+        disabled=(nivel_datos == "Básico: solo dimensiones principales"),
+        help="En modo básico se calcula automáticamente. En validación puedes introducir RT de Maxsurf, PPP, canal, CFD o ficha técnica."
     )
     resistencia_total_manual_kn = st.number_input(
         "RT conocida/manual [kN]",
@@ -2661,11 +2829,11 @@ with st.sidebar:
         st.latex(r"R_F=\frac{1}{2}\rho V_s^2 S C_F")
         st.latex(r"R_T \approx R_F \cdot K_{forma/residual}")
 
-    transmision_tipo = st.selectbox("Tipo de transmisión", ["Automática según motor recomendado", "Directa / sin caja reductora", "Con caja reductora"] )
+    transmision_tipo = st.selectbox("Tipo de transmisión", ["Automática según motor recomendado", "Directa / sin caja reductora", "Con caja reductora"], disabled=not editar_intermedio )
     transmision_para_eta = "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo
-    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=estimar_eta_s(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
-    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=estimar_eta_g(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f")
-    eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", help="Normalmente 1.000 si no se considera una pérdida adicional.")
+    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=estimar_eta_s(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
+    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=estimar_eta_g(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
+    eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado, help="Normalmente 1.000 si no se considera una pérdida adicional.")
 
     st.markdown("---")
     st.subheader("🛠️ Motor y transmisión")
@@ -2718,9 +2886,33 @@ with st.sidebar:
         "Acero Inoxidable Austenítico Forjado": 520.0
     }
 
-    material_seleccionado = st.selectbox("Material de referencia", list(dict_materiales.keys()))
+    material_seleccionado = st.selectbox("Material de referencia", list(dict_materiales.keys()), disabled=not editar_intermedio)
     sigma_uts = dict_materiales[material_seleccionado]
 
+    # --------------------------------------------------------------------------
+    # Trazabilidad del autocompletado
+    # --------------------------------------------------------------------------
+    def _origen(campo, manual_condicion):
+        if datos_pdf.get(campo) not in [None, "", 0, 0.0]:
+            return "📄 Detectado desde PDF / ficha"
+        return "🟢 Ingresado por usuario" if manual_condicion else "🟡 Estimado por la app"
+
+    datos_estimados_df = pd.DataFrame([
+        {"Parámetro":"Cb", "Valor usado": f"{cb_buque:.3f}", "Origen": _origen("cb", True), "Uso":"Forma del casco y estimadores"},
+        {"Parámetro":"Cp", "Valor usado": f"{cp_buque:.3f}", "Origen": _origen("cp", editar_intermedio), "Uso":"Coeficiente de forma para revisión"},
+        {"Parámetro":"Cm", "Valor usado": f"{cm_buque:.3f}", "Origen": _origen("cm", editar_intermedio), "Uso":"Coeficiente de sección media"},
+        {"Parámetro":"Cwp", "Valor usado": f"{cwp_buque:.3f}", "Origen": _origen("cwp", editar_intermedio), "Uso":"Coeficiente de flotación"},
+        {"Parámetro":"Sw", "Valor usado": f"{superficie_mojada_con_timon_m2:,.1f} m²", "Origen": _origen("sw_m2", editar_intermedio), "Uso":"Resistencia ITTC preliminar"},
+        {"Parámetro":"w", "Valor usado": f"{estela:.3f}", "Origen": _origen("w", editar_avanzado), "Uso":"Velocidad de avance VA"},
+        {"Parámetro":"t", "Valor usado": f"{t_fraction:.3f}", "Origen": _origen("t", editar_avanzado), "Uso":"Empuje requerido"},
+        {"Parámetro":"ηR", "Valor usado": f"{eta_r:.3f}", "Origen": _origen("eta_r", editar_intermedio), "Uso":"Potencia entregada PD"},
+        {"Parámetro":"Hélice", "Valor usado": f"Z={z_val}, D={diam_prop_m:.2f} m, P/D={pd_val:.3f}, Ae/A0={ae_val:.3f}", "Origen": "🟢 Ingresado por usuario" if editar_intermedio else "🟡 Estimado por la app", "Uso":"Wageningen / cavitación"},
+        {"Parámetro":"Eje", "Valor usado": f"d={diametro_eje_mm:.0f} mm", "Origen": "🟢 Ingresado por usuario" if editar_intermedio else "🟡 Estimado por la app", "Uso":"Seguridad, vibración y fatiga"},
+    ])
+    if mostrar_estimaciones:
+        with st.expander("🧠 Datos autocompletados por la app", expanded=False):
+            st.caption("Esta tabla sirve para defender el análisis: muestra qué datos entraron manualmente y cuáles fueron estimados para poder ejecutar el prediseño.")
+            st.dataframe(datos_estimados_df, use_container_width=True, hide_index=True, height=360)
 
 
 # ==============================================================================
