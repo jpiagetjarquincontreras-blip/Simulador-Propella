@@ -653,6 +653,119 @@ def estado_html(texto, tipo="good"):
     st.markdown(f'<div class="{css}">{texto}</div>', unsafe_allow_html=True)
 
 
+def _formula_normativa_por_contexto(titulo):
+    """Devuelve fórmulas, reglas y explicación técnica según la pestaña."""
+    t = str(titulo).lower()
+    if "potencia" in t or "resistencia" in t:
+        return [
+            ("PE = RT · VS", "ITTC – predicción potencia/resistencia", "Convierte la resistencia total del casco en potencia efectiva requerida para vencer el avance."),
+            ("VA = VS(1-w)", "Teoría propulsiva casco–hélice / ITTC", "Corrige la velocidad que realmente recibe la hélice por la estela generada por el casco."),
+            ("PT = PE/ηH ; PD = PE/ηD", "ITTC – coeficientes propulsivos", "Relaciona potencia efectiva, potencia de empuje y potencia entregada a la hélice mediante eficiencias."),
+            ("PS = PD/ηS ; PB = PS/ηG ; MCRreq = PB/0.85", "Criterio de selección de maquinaria", "Incluye pérdidas mecánicas y reserva para que el motor no trabaje permanentemente al 100% del MCR."),
+        ]
+    if "maquinaria" in t or "motor" in t or "transmis" in t:
+        return [
+            ("P85%MCR = 0.85 · MCR", "ISO 3046 + hoja técnica del fabricante", "Permite validar si el motor tiene reserva suficiente para operación continua."),
+            ("i = nmotor / nhélice", "Diseño de transmisión propulsiva", "Define la relación de reducción necesaria entre motor, caja y hélice."),
+            ("PB ≤ 0.85MCR", "Criterio conservador de operación", "Si se cumple, el motor trabaja con margen y no queda forzado en servicio."),
+        ]
+    if "hélice" in t or "hidrodin" in t or "optimización" in t:
+        return [
+            ("J = VA/(nD)", "Wageningen Serie B / ensayos en aguas abiertas", "Número de avance que relaciona velocidad de entrada, rpm y diámetro de hélice."),
+            ("KT = T/(ρn²D⁴)", "Coeficientes no dimensionales de hélice", "Mide la capacidad de producir empuje independientemente de la escala."),
+            ("KQ = Q/(ρn²D⁵)", "Coeficientes no dimensionales de hélice", "Mide el par requerido por la hélice para una condición de operación."),
+            ("ηO = J·KT/(2πKQ)", "Wageningen B / ITTC open water", "Calcula la eficiencia en aguas abiertas y permite elegir el punto óptimo."),
+        ]
+    if "vibración" in t or "torsional" in t or "lateral" in t or "axial" in t:
+        return [
+            ("fexc = orden · RPM/60", "DNV/ABS – análisis de órdenes", "Convierte las órdenes 1P, ZP, 2ZP, etc. en frecuencias excitantes."),
+            ("Separación = |fn - fexc|/fn · 100", "Criterio de margen frente a resonancia", "Indica qué tan lejos está la operación de una frecuencia natural."),
+            ("τ = 16T/(πd³)", "Teoría de torsión de ejes circulares", "Estima el esfuerzo cortante torsional generado por el torque transmitido."),
+        ]
+    if "balanceo" in t:
+        return [
+            ("eperm = 9549·G/n", "ISO 1940-1 / ISO 21940", "Calcula la excentricidad residual permisible según grado de balanceo y rpm."),
+            ("Uperm = m·eperm", "ISO 1940-1", "Transforma la excentricidad permisible en desbalance residual admisible."),
+            ("F = U·ω²", "Dinámica rotativa básica", "Explica por qué un pequeño desbalance aumenta mucho cuando sube la velocidad."),
+        ]
+    if "campbell" in t or "resonancia" in t or "crítica" in t:
+        return [
+            ("fexc = k·RPM/60", "Diagrama de Campbell", "Traza las líneas de excitación por órdenes de giro."),
+            ("RPMcruce = 60·fn/k", "Diagrama de Campbell", "Obtiene la velocidad a la que una excitación coincide con una frecuencia natural."),
+            ("Zona crítica ≈ RPMcruce ± 5%", "Buenas prácticas ABS/DNV", "Define bandas donde se recomienda evitar operación continua por posible resonancia."),
+        ]
+    if "cavitación" in t:
+        return [
+            ("σ = (Patm + ρgh - Pv)/(0.5ρVA²)", "ITTC / número de cavitación", "Evalúa la presión disponible antes de que aparezca cavitación."),
+            ("τc ≈ T/(0.5ρVA²Ap)", "Criterio de Burrill", "Relaciona la carga de pala con el riesgo de cavitación."),
+            ("Ae/A0 ≥ Ae/A0min", "Criterio de Keller", "Verifica si el área expandida de pala es suficiente para repartir la carga."),
+            ("Re = VA·D/ν", "ITTC / similitud hidrodinámica", "Comprueba si el flujo está en régimen turbulento naval representativo."),
+        ]
+    if "eje" in t or "fatiga" in t:
+        return [
+            ("T = 9550·PB/n", "Potencia–torque en ejes", "Convierte la potencia transmitida en torque sobre el eje."),
+            ("τmax = 16T/(πd³)", "Resistencia de materiales", "Calcula el esfuerzo cortante máximo en un eje circular macizo."),
+            ("FS = τadm/τmax", "Criterio de seguridad estática", "Indica el margen entre esfuerzo admisible y esfuerzo calculado."),
+            ("1/FS = σa/Se + σm/Sut", "Goodman modificado", "Evalúa fatiga preliminar combinando esfuerzo alternante y medio."),
+        ]
+    if "trazabilidad" in t or "ficha" in t or "comparación" in t:
+        return [
+            ("Error % = |calculado-real|/real · 100", "Validación de ingeniería", "Mide qué tan cerca queda el prediseño respecto a la ficha técnica del buque."),
+            ("Dato calculado ↔ dato real", "Trazabilidad documental", "Permite defender que los resultados no son arbitrarios y salen de la misma fuente de entrada."),
+        ]
+    if "visual" in t or "integración" in t:
+        return [
+            ("Q = PB/(2πn)", "Relación potencia–torque", "Permite mostrar torque transmitido en el tren propulsivo."),
+            ("T = KTρn²D⁴", "Wageningen / hélice", "Relaciona la geometría de hélice con el empuje estimado."),
+            ("P = 2πnQ", "Dinámica de rotación", "Conecta potencia, rpm y torque en motor, eje y hélice."),
+        ]
+    if "informe" in t or "resumen" in t or "matriz" in t or "cumplimiento" in t or "síntesis" in t:
+        return [
+            ("Resultado → criterio → dictamen", "Formato de revisión técnica", "Cada salida se interpreta contra un límite o rango técnico, no solo se muestra el número."),
+            ("Score global = combinación de cumplimiento", "Criterio académico de integración", "Resume hidrodinámica, cavitación, vibración, motor, eje y balanceo en un dictamen final."),
+        ]
+    return [("Variable calculada = función(datos de entrada)", "Criterio de ingeniería trazable", "La app muestra de dónde sale el resultado y con qué criterio se interpreta.")]
+
+
+def normativa_pestana(titulo, items):
+    """Muestra en cada pestaña las reglas, fórmulas y criterios que respaldan los resultados."""
+    try:
+        filas_reglas = "".join([f"<li><b>{nombre}:</b> {detalle}</li>" for nombre, detalle in items])
+        formulas = _formula_normativa_por_contexto(titulo)
+        filas_formulas = "".join([
+            f"""
+            <tr>
+                <td style='padding:8px 10px; border-bottom:1px solid #e2e8f0; font-family:monospace; color:#4c1d95;'><b>{formula}</b></td>
+                <td style='padding:8px 10px; border-bottom:1px solid #e2e8f0;'>{origen}</td>
+                <td style='padding:8px 10px; border-bottom:1px solid #e2e8f0;'>{explica}</td>
+            </tr>
+            """ for formula, origen, explica in formulas
+        ])
+        html = f"""
+        <div class="section-card" style="border-left:6px solid #4c1d95; padding-top:14px; padding-bottom:14px;">
+            <b>📚 Regla, fórmula y respaldo técnico de esta pestaña</b><br>
+            <span class="small-muted">{titulo}</span>
+            <ul style="margin-top:8px; margin-bottom:12px;">{filas_reglas}</ul>
+            <details>
+                <summary style="cursor:pointer; font-weight:800; color:#4c1d95;">Ver fórmulas, origen y por qué avalan el resultado</summary>
+                <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:13px;">
+                    <thead>
+                        <tr style="background:#f1f5f9;">
+                            <th style="padding:8px 10px; text-align:left;">Fórmula / criterio usado</th>
+                            <th style="padding:8px 10px; text-align:left;">De dónde sale</th>
+                            <th style="padding:8px 10px; text-align:left;">Por qué justifica el resultado</th>
+                        </tr>
+                    </thead>
+                    <tbody>{filas_formulas}</tbody>
+                </table>
+            </details>
+        </div>
+        """
+        st.markdown(html, unsafe_allow_html=True)
+    except Exception:
+        pass
+
+
 def diagnostico_score(score):
     if score >= 90:
         return "APROBADO", "good", "🟢"
@@ -2548,24 +2661,7 @@ with st.sidebar:
     material_seleccionado = st.selectbox("Material de referencia", list(dict_materiales.keys()))
     sigma_uts = dict_materiales[material_seleccionado]
 
-    st.markdown("---")
-    st.subheader("🧪 Comparación opcional con ANSYS")
-    st.caption("Si no tienes un dato, déjalo en 0. La app lo marcará como pendiente y no afectará el dictamen global.")
-    ansys_esfuerzo_mpa = st.number_input(
-        "Esfuerzo máximo ANSYS [MPa]",
-        value=0.0, min_value=0.0, step=1.0, format="%.3f",
-        help="Ingresa el esfuerzo equivalente máximo del eje o pala obtenido en ANSYS. Si no se usa, déjalo en 0."
-    )
-    ansys_desplazamiento_mm = st.number_input(
-        "Desplazamiento máximo ANSYS [mm]",
-        value=0.0, min_value=0.0, step=0.1, format="%.3f",
-        help="Ingresa la deformación/desplazamiento máximo obtenido en ANSYS."
-    )
-    ansys_frecuencia_hz = st.number_input(
-        "Frecuencia natural ANSYS [Hz]",
-        value=0.0, min_value=0.0, step=0.1, format="%.3f",
-        help="Ingresa la frecuencia natural del modo comparable con el eje si tienes análisis modal."
-    )
+
 
 # ==============================================================================
 # CÁLCULOS PRINCIPALES
@@ -2916,7 +3012,7 @@ esfuerzo_real_mpa = safe_div(torque_dinamico_alternante, wt_modulo_torsional) / 
 tau_admisible_mpa = 0.35 * (sigma_uts / 3.0)
 
 # ==============================================================================
-# INTEGRIDAD MECÁNICA DEL EJE: FS, FATIGA Y COMPARACIÓN ANSYS
+# INTEGRIDAD MECÁNICA DEL EJE: FS Y FATIGA
 # ==============================================================================
 # Se separa el esfuerzo medio por torque transmitido y el alternante por fluctuación dinámica.
 # Es un prediseño académico; para diseño final deben usarse reglas completas de clase,
@@ -2948,15 +3044,7 @@ def _estado_fs(fs):
     except Exception:
         return "Sin dato"
 
-def _error_ansys(app, ansys):
-    return error_pct(app, ansys) if ansys and ansys > 0 else None
 
-ansys_comparacion_df = pd.DataFrame([
-    {"Parámetro": "Esfuerzo máximo / equivalente [MPa]", "App": tau_maxima_estimada_mpa, "ANSYS": ansys_esfuerzo_mpa, "Error [%]": _error_ansys(tau_maxima_estimada_mpa, ansys_esfuerzo_mpa)},
-    {"Parámetro": "Desplazamiento lateral estimado [mm]", "App": delta_total * 1000.0, "ANSYS": ansys_desplazamiento_mm, "Error [%]": _error_ansys(delta_total * 1000.0, ansys_desplazamiento_mm)},
-    {"Parámetro": "Frecuencia natural comparable [Hz]", "App": f_natural_hz, "ANSYS": ansys_frecuencia_hz, "Error [%]": _error_ansys(f_natural_hz, ansys_frecuencia_hz)},
-])
-ansys_comparacion_df["Dictamen"] = ansys_comparacion_df["Error [%]"].apply(dictamen_error_porcentual) if "dictamen_error_porcentual" in globals() else ansys_comparacion_df["Error [%]"].apply(lambda x: "Sin dato real" if pd.isna(x) else ("Cumple" if x <= 5 else ("Revisar" if x <= 15 else "No cumple")))
 
 # Criterios lógicos
 torsion_ok = esfuerzo_real_mpa <= tau_admisible_mpa
@@ -3242,7 +3330,6 @@ def construir_tablas_exportacion_completas():
     ], columns=["Criterio", "Resultado", "Referencia", "Estado"])
 
     tablas["15_Zonas_Prohibidas"] = zonas_prohibidas_df.copy()
-    tablas["16_ANSYS_vs_App"] = ansys_comparacion_df.copy()
 
     try:
         opt_df = optimizar_helice_wageningen("Detallada", rpm_helice_objetivo, VA_ms, diam_prop_m).head(30)
@@ -3274,6 +3361,21 @@ def construir_tablas_exportacion_completas():
                 motor_norma_estado = "No cumple"
     except Exception:
         pass
+    tablas["20_Normativa_Por_Pestana"] = pd.DataFrame([
+        ["Dashboard", "ITTC / ISO / ABS-DNV", "Resultado → criterio → dictamen", "Integra indicadores y no solo muestra números aislados."],
+        ["PDF / Comparación", "Ficha técnica / IACS / trazabilidad", "Error % = |calculado-real|/real·100", "Verifica la diferencia entre datos calculados y datos reales del buque."],
+        ["Potencias", "ITTC 7.5-02", "PE=RT·VS ; VA=VS(1-w) ; PD=PE/ηD ; PB=PS/ηG", "Justifica la cadena de potencia desde resistencia hasta motor."],
+        ["Motor / Reductora", "ISO 3046 / ABS-DNV Pt.4 / fabricante", "P85%MCR=0.85MCR ; i=nmotor/nhélice", "Comprueba reserva de potencia y relación de reducción."],
+        ["Hidrodinámica / Optimización", "Wageningen Serie B / MARIN / ITTC", "J=VA/(nD), KT=T/(ρn²D⁴), KQ=Q/(ρn²D⁵), ηO=JKT/(2πKQ)", "Avalan la selección preliminar de hélice y su punto óptimo."],
+        ["Vibración", "DNV Pt.4 Ch.4 / ABS Pt.4 / ISO 20816", "fexc=orden·RPM/60 ; separación=|fn-fexc|/fn·100", "Evalúa si las excitaciones se acercan a frecuencias naturales."],
+        ["Balanceo", "ISO 1940-1 / ISO 21940", "eperm=9549G/n ; U=m·e", "Justifica el desbalance residual permisible."],
+        ["Campbell", "DNV/ABS + buenas prácticas", "RPMcruce=60fn/k ; zona crítica≈RPMcruce±5%", "Define cruces y bandas a evitar por resonancia."],
+        ["Cavitación", "Burrill / Keller / ITTC", "σ=(Patm+ρgh-Pv)/(0.5ρVA²) ; Re=VA·D/ν ; Ae/A0≥mínimo", "Justifica riesgo de cavitación y régimen de flujo."],
+        ["Seguridad del eje", "ABS/DNV + Goodman/Soderberg", "T=9550PB/n ; τ=16T/(πd³) ; FS=τadm/τ", "Evalúa resistencia torsional y fatiga preliminar del eje."],
+        ["Integración visual 3D", "Wageningen / dinámica rotativa", "P=2πnQ ; T=KTρn²D⁴", "Relaciona motor, eje, hélice, torque, rpm y empuje."],
+        ["Informe técnico", "Formato de reporte de ingeniería", "Resultado → interpretación → recomendación", "Explica por qué cada resultado cumple, se revisa o requiere rediseño."],
+    ], columns=["Pestaña", "Norma / regla", "Fórmula o criterio", "Por qué avala el resultado"])
+
     tablas["20_Normativa"] = pd.DataFrame([
         {"Área": "Condición del agua", "Referencia técnica": "ITTC @ 15 °C", "Variable de la app": f"ρ={rho_auto:.1f} kg/m³, Pv={p_vap_auto:.0f} Pa", "Dictamen": "Cumple"},
         {"Área": "Resistencia al avance", "Referencia técnica": "ITTC/Holtrop/ficha técnica", "Variable de la app": f"RT={resistencia_total_kn:,.0f} kN ({rt_fuente})", "Dictamen": "Calculada" if rt_modo == "Automática preliminar" else "Dato manual"},
@@ -3892,6 +3994,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
 
 with tab_dash:
     st.subheader("📊 Dashboard Ejecutivo del Diseño")
+    normativa_pestana("Síntesis de cumplimiento basada en reglas de clase y criterios ITTC/ISO/ABS/DNV.", [("ITTC", "base hidrodinámica, densidad/viscosidad y trazabilidad de ensayos"), ("ISO 484 / ISO 1940", "calidad geométrica de hélice y balanceo rotativo"), ("ABS/DNV", "márgenes preliminares para eje, vibración y operación segura")])
 
     st.markdown("""
     <div class="section-card">
@@ -3939,6 +4042,7 @@ with tab_dash:
 
 with tab_resumen:
     st.subheader("📑 Resumen Ejecutivo del Proyecto")
+    normativa_pestana("Resumen técnico trazable del sistema propulsivo.", [("ITTC 7.5-02", "metodología general de predicción de potencia y extrapolación"), ("Reglas de clase ABS/DNV", "criterios de revisión para propulsión, eje y maquinaria"), ("Ficha técnica del fabricante", "comparación de potencia, rpm, motor y hélice reales")])
 
     st.markdown(f"""
     <div class="section-card">
@@ -4016,6 +4120,7 @@ with tab_resumen:
 
 with tab_pdf_comp:
     st.subheader("📄 Lectura de ficha técnica y comparación con buque real")
+    normativa_pestana("Trazabilidad documental exigida para justificar datos reales.", [("Ficha técnica / plano del buque", "fuente primaria para dimensiones, motor, hélice y velocidad"), ("IACS / sociedad clasificadora", "principio de trazabilidad de datos de diseño"), ("Criterio académico del proyecto", "el profesor puede reproducir los cálculos con los mismos datos")])
     st.markdown("""
     <div class="section-card">
     Esta sección valida el prediseño contra datos reales. Si se carga una ficha técnica, la app extrae valores de referencia y los compara con los resultados calculados. Si no hay PDF, se usan datos manuales opcionales.
@@ -4067,6 +4172,7 @@ with tab_pdf_comp:
 
 with tab_potencias:
     st.subheader("⚡ Cadena completa de potencias")
+    normativa_pestana("Cálculo de resistencia, potencia efectiva y potencia al freno.", [("ITTC 7.5-02-03-01", "procedimiento de predicción de potencia y resistencia"), ("ITTC 7.5-02-03-02", "factores de forma, estela, deducción de empuje y eficiencia propulsiva"), ("Sea Margin", "margen de servicio usado en selección de potencia")])
     st.markdown("""
     <div class="section-card">
     La cadena de potencias se presenta como una memoria interactiva: cada subpestaña explica una etapa, muestra su fórmula, su tabla de cálculo, una gráfica y un dictamen de cumplimiento preliminar.
@@ -4219,6 +4325,7 @@ with tab_potencias:
 
 with tab_motor:
     st.subheader("🛠️ Selección de motor real y transmisión")
+    normativa_pestana("Selección preliminar de maquinaria propulsora.", [("ISO 3046", "condiciones de potencia de motores de combustión interna"), ("Reglas ABS/DNV Pt.4", "maquinaria, transmisión y línea de ejes"), ("Catálogo del fabricante", "MCR, NCR, rpm, consumo y límites reales de operación")])
     with st.expander("📘 Teoría y fórmulas de motor / reductora", expanded=False):
         st.markdown("""
         El motor se selecciona comparando la potencia al freno requerida contra el MCR disponible. Para operación continua se usa como referencia el 85% del MCR. Si el motor gira a más RPM que la hélice, se requiere una caja reductora.
@@ -4320,6 +4427,7 @@ with tab_motor:
 
 with tab_opt:
     st.subheader("⭐ Optimización automática de hélice Wageningen")
+    normativa_pestana("Optimización preliminar de hélice por desempeño hidrodinámico.", [("Wageningen Serie B / MARIN", "curvas KT, KQ y eficiencia en aguas abiertas"), ("ITTC", "uso de coeficientes no dimensionales J, KT, KQ"), ("ISO 484", "calidad geométrica y tolerancias de manufactura de hélices")])
     st.markdown("""
     <div class="section-card">
     Esta herramienta no cambia tus datos automáticamente: prueba combinaciones comerciales de número de palas Z, P/D y Ae/A0, calcula sus curvas Wageningen y genera una propuesta preliminar. Si existe RPM real cargada desde el PDF o entrada manual, la optimización no solo busca eficiencia: también penaliza las configuraciones que se alejan demasiado de la RPM real de servicio.
@@ -4398,6 +4506,7 @@ with tab_opt:
 
 with tab_hidro:
     st.subheader("📈 Hidrodinámica en Aguas Abiertas — Wageningen Serie B")
+    normativa_pestana("Análisis hidrodinámico de propulsor en aguas abiertas.", [("Wageningen Serie B", "base empírica para KT, KQ, J y ηO"), ("ITTC", "definición de coeficientes propulsivos y condiciones de agua"), ("Principios de similitud", "Reynolds, avance y carga de hélice")])
     st.markdown("""
     <div class="section-card">
     Esta sección integra las curvas Wageningen y la matriz numérica de resultados. Se eliminó la pestaña independiente de Resultados porque estos valores pertenecen directamente al análisis hidrodinámico.
@@ -4454,6 +4563,7 @@ with tab_hidro:
 
 with tab_vibracion:
     st.subheader("🧭 Análisis integral de vibración del eje")
+    normativa_pestana("Evaluación preliminar torsional, axial y lateral.", [("DNV Pt.4 Ch.4", "vibraciones torsionales y sistema propulsivo"), ("ABS Marine Vessel Rules Pt.4", "línea de ejes, vibración y maquinaria"), ("ISO 10816 / ISO 20816", "criterios generales de severidad vibratoria en maquinaria rotativa")])
     st.markdown("""
     <div class="section-card">
     Esta pestaña concentra los tres análisis principales de vibración del eje propulsor:
@@ -4725,6 +4835,7 @@ with tab_vibracion:
 
 with tab_balanceo:
     st.subheader("⚖️ Balanceo y Desbalance del Eje")
+    normativa_pestana("Balanceo rotativo de hélice/eje.", [("ISO 1940-1", "grado de calidad de balanceo para rotores"), ("ISO 21940", "vibración mecánica y balanceo de rotores"), ("Reglas de clase", "control de vibración y operación segura de maquinaria")])
 
     st.markdown("""
     <div class="section-card">
@@ -4802,6 +4913,7 @@ with tab_balanceo:
 
 with tab_campbell:
     st.subheader("🗺️ Diagrama de Campbell")
+    normativa_pestana("Separación frente a resonancias y velocidades críticas.", [("DNV Pt.4 Ch.4", "revisión de vibraciones torsionales y órdenes de excitación"), ("ABS Pt.4", "márgenes de operación segura del tren propulsivo"), ("Buenas prácticas de Campbell", "evitar operación continua cerca de cruces críticos")])
     with st.expander("📘 Teoría y fórmulas del Campbell", expanded=False):
         st.markdown("""
         El diagrama de Campbell compara las frecuencias naturales del sistema contra órdenes de excitación generados por el giro del eje y el paso de palas. Una intersección cerca de la RPM de operación indica riesgo de resonancia.
@@ -4880,6 +4992,7 @@ with tab_campbell:
 
 with tab_cav:
     st.subheader("🔍 Cavitación y régimen de flujo")
+    normativa_pestana("Verificación preliminar de cavitación y carga de pala.", [("Burrill", "criterio de carga de pala contra cavitación"), ("Keller", "área expandida mínima Ae/A0"), ("ITTC", "propiedades del agua, presión de vapor y número de cavitación")])
     st.markdown("""
     <div class="section-card">
     La cavitación se organiza por análisis: resumen general, Burrill, Keller, Reynolds/σ y fórmulas. Cada subpestaña incluye dictamen y explicación para evitar depender de una pestaña final de fórmulas.
@@ -5031,16 +5144,17 @@ with tab_cav:
 
 
 # ===============================================================================
-# SEGURIDAD DEL EJE / FATIGA / ANSYS
+# SEGURIDAD DEL EJE / FATIGA
 # ===============================================================================
 
 with tab_eje:
-    st.subheader("🧱 Seguridad mecánica del eje, fatiga y validación ANSYS")
+    st.subheader("🧱 Seguridad mecánica del eje y fatiga")
+    normativa_pestana("Resistencia preliminar del eje y fatiga.", [("ABS Marine Vessel Rules Pt.4", "shafting, materiales y esfuerzos admisibles"), ("DNV Pt.4 Ch.4", "línea de ejes y vibración"), ("Goodman/Soderberg", "criterios clásicos de fatiga para esfuerzo medio + alternante")])
     st.markdown("""
     <div class="section-card">
     Este módulo agrega la parte que normalmente más se cuestiona en una revisión del eje:
-    <b>factor de seguridad</b>, <b>vida a fatiga preliminar</b>, <b>zonas prohibidas de operación</b>
-    y comparación opcional contra resultados de ANSYS. No sustituye una aprobación de clase,
+    <b>factor de seguridad</b>, <b>vida a fatiga preliminar</b> y <b>zonas prohibidas de operación</b>.
+    No sustituye una aprobación de clase,
     pero deja una defensa técnica más completa para presentación y reporte.
     </div>
     """, unsafe_allow_html=True)
@@ -5088,13 +5202,9 @@ with tab_eje:
         st.dataframe(zonas_prohibidas_df.style.map(style_estado, subset=["Riesgo"]), use_container_width=True, height=300)
         st.warning("Evita operación continua dentro de estas bandas. En pruebas o maniobra se pueden cruzar rápidamente, pero no conviene permanecer ahí.")
 
-    st.markdown("### Comparación opcional App ↔ ANSYS")
-    st.dataframe(ansys_comparacion_df.style.map(style_estado, subset=["Dictamen"]), use_container_width=True, height=230)
-    if (ansys_esfuerzo_mpa <= 0 and ansys_desplazamiento_mm <= 0 and ansys_frecuencia_hz <= 0):
-        st.info("Aún no ingresaste resultados de ANSYS. Cuando los tengas, colócalos en la barra lateral para que la app calcule error porcentual automáticamente.")
-
 with tab_normativa:
     st.subheader("📚 Normativa y cumplimiento técnico preliminar")
+    normativa_pestana("Matriz general de cumplimiento.", [("ITTC", "hidrodinámica, potencia y agua estándar"), ("MARIN/Wageningen", "curvas de hélice"), ("ABS/DNV/ISO", "maquinaria, eje, vibración, balanceo y tolerancias")])
 
     st.markdown("""
     <div class="section-card">
@@ -5198,6 +5308,7 @@ with tab_normativa:
 
 with tab_clase:
     st.subheader("📌 Informe técnico del sistema propulsivo")
+    normativa_pestana("Informe final con trazabilidad técnica.", [("Formato de reporte de ingeniería", "resultados, hipótesis, conclusiones y recomendaciones"), ("Reglas de clase", "resumen de cumplimiento por sistema"), ("Ficha técnica", "validación contra datos reales del buque")])
 
     st.markdown("""
     <div class="section-card">
@@ -5296,6 +5407,7 @@ with tab_clase:
 
 with tab_gemelo:
     st.subheader("🧩 Integración visual 3D del sistema propulsivo")
+    normativa_pestana("Representación conceptual del tren propulsivo.", [("ISO 484", "geometría y calidad de hélice"), ("Reglas ABS/DNV", "arreglo de eje, cojinetes, transmisión y propulsor"), ("Buenas prácticas de diseño", "lectura visual de potencia, rpm y torque por componente")])
     st.markdown("""
     <div class="section-card">
     <b>Objetivo técnico:</b> integrar en un solo módulo las visualizaciones 3D del sistema
@@ -5483,6 +5595,7 @@ with tab_gemelo:
 
 with tab_avanzado:
     st.subheader("⚙️ Integridad dinámica del sistema eje–hélice")
+    normativa_pestana("Herramientas didácticas de respuesta dinámica.", [("ISO 20816", "vibración de maquinaria rotativa"), ("DNV/ABS", "revisión de resonancia y vibración del tren propulsivo"), ("Análisis modal clásico", "TVA, Bode, órbitas y transmisibilidad")])
 
     st.markdown("""
     <div class="section-card">
