@@ -5,6 +5,5 @@ matplotlib
 openpyxl
 xlsxwriter
 reportlab
-pypdf
-PyPDF2
 plotly
+pypdf
