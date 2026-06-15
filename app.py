@@ -5148,100 +5148,51 @@ with tab_cav:
 # ===============================================================================
 
 with tab_eje:
-    st.subheader("🧱 Seguridad mecánica del eje")
-    normativa_pestana("Revisión preliminar y didáctica del eje propulsor.", [("ABS / DNV", "reglas de clase para líneas de eje, materiales y márgenes de operación"), ("IACS UR M68", "marco de referencia para vibración torsional en instalaciones propulsoras"), ("Goodman / Soderberg", "criterios clásicos para explicar fatiga por carga variable")])
+    st.subheader("🧱 Seguridad mecánica del eje y fatiga")
+    normativa_pestana("Resistencia preliminar del eje y fatiga.", [("ABS Marine Vessel Rules Pt.4", "shafting, materiales y esfuerzos admisibles"), ("DNV Pt.4 Ch.4", "línea de ejes y vibración"), ("Goodman/Soderberg", "criterios clásicos de fatiga para esfuerzo medio + alternante")])
     st.markdown("""
     <div class="section-card">
-    <b>¿Qué revisa esta pestaña?</b><br>
-    Revisa si el eje tiene suficiente margen para transmitir el torque del motor hacia la hélice.
-    En palabras simples: compara <b>lo que el eje está soportando</b> contra <b>lo que el material puede admitir</b>.
-    <br><br>
-    <b>Lectura rápida:</b> si la barra de esfuerzo real queda lejos del límite admisible y el factor de seguridad es mayor a 1.50,
-    el eje es aceptable como prediseño. Si queda cerca del límite, conviene aumentar diámetro, mejorar material o revisar cargas.
+    Este módulo agrega la parte que normalmente más se cuestiona en una revisión del eje:
+    <b>factor de seguridad</b>, <b>vida a fatiga preliminar</b> y <b>zonas prohibidas de operación</b>.
+    No sustituye una aprobación de clase,
+    pero deja una defensa técnica más completa para presentación y reporte.
     </div>
     """, unsafe_allow_html=True)
 
     eje_fs_df = pd.DataFrame([
-        {"Revisión": "Esfuerzo real del eje", "Valor": f"{tau_maxima_estimada_mpa:.2f} MPa", "Qué significa": "Carga torsional que siente el eje al transmitir potencia.", "Criterio": "Debe ser menor que τ admisible", "Estado": "Cumple" if tau_maxima_estimada_mpa <= tau_admisible_mpa else "No cumple"},
-        {"Revisión": "Límite admisible", "Valor": f"{tau_admisible_mpa:.2f} MPa", "Qué significa": "Esfuerzo máximo preliminar permitido para el material.", "Criterio": "Referencia de material / clase", "Estado": "Informativo"},
-        {"Revisión": "Factor de seguridad", "Valor": f"{fs_torsional_estatico:.2f}", "Qué significa": "Cuántas veces el límite supera al esfuerzo real.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_torsional_estatico)},
-        {"Revisión": "Fatiga Goodman", "Valor": f"{fs_goodman:.2f}", "Qué significa": "Margen cuando el esfuerzo cambia durante la operación.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_goodman)},
-        {"Revisión": "Fatiga Soderberg", "Valor": f"{fs_soderberg:.2f}", "Qué significa": "Versión más conservadora de fatiga.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_soderberg)},
+        {"Criterio": "Factor de seguridad torsional estático", "Resultado": fs_torsional_estatico, "Referencia": "FS ≥ 1.50 prediseño", "Estado": _estado_fs(fs_torsional_estatico), "Lectura": "Compara el esfuerzo máximo estimado contra el límite admisible."},
+        {"Criterio": "Goodman modificado", "Resultado": fs_goodman, "Referencia": "FS ≥ 1.50 recomendado", "Estado": _estado_fs(fs_goodman), "Lectura": "Evalúa fatiga combinando esfuerzo medio y alternante."},
+        {"Criterio": "Soderberg conservador", "Resultado": fs_soderberg, "Referencia": "FS ≥ 1.50 recomendado", "Estado": _estado_fs(fs_soderberg), "Lectura": "Criterio más conservador al usar fluencia aproximada en corte."},
+        {"Criterio": "Esfuerzo medio", "Resultado": tau_media_mpa, "Referencia": "MPa", "Estado": "Informativo", "Lectura": "Esfuerzo por torque nominal transmitido."},
+        {"Criterio": "Esfuerzo alternante", "Resultado": tau_alternante_mpa, "Referencia": "MPa", "Estado": "Informativo", "Lectura": "Fluctuación dinámica usada para fatiga."},
+        {"Criterio": "Esfuerzo máximo estimado", "Resultado": tau_maxima_estimada_mpa, "Referencia": "MPa", "Estado": "Informativo", "Lectura": "Suma preliminar de componente media y alternante."},
     ])
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Esfuerzo real", f"{tau_maxima_estimada_mpa:.2f} MPa")
-    c2.metric("Límite admisible", f"{tau_admisible_mpa:.2f} MPa")
-    c3.metric("Factor de seguridad", f"{fs_torsional_estatico:.2f}")
-    c4.metric("Goodman", f"{fs_goodman:.2f}")
+    c1.metric("FS torsional", f"{fs_torsional_estatico:.2f}")
+    c2.metric("FS Goodman", f"{fs_goodman:.2f}")
+    c3.metric("FS Soderberg", f"{fs_soderberg:.2f}")
+    c4.metric("τ máx estimada", f"{tau_maxima_estimada_mpa:.2f} MPa")
 
     if fs_eje_ok and fatiga_ok:
-        estado_html("✅ Lectura simple: el eje trabaja con margen aceptable. El esfuerzo real queda por debajo del límite admisible y la fatiga preliminar no indica condición crítica.", "good")
+        estado_html("✅ El eje presenta un margen preliminar aceptable en resistencia y fatiga.", "good")
     elif fs_torsional_estatico >= 1.0 and fs_goodman >= 1.0:
-        estado_html("⚠️ Lectura simple: el eje todavía tiene margen, pero no es cómodo. Para mejorarlo se puede aumentar el diámetro, seleccionar un acero más resistente o reducir cargas dinámicas.", "warn")
+        estado_html("⚠️ El eje no falla de forma inmediata, pero el margen es bajo; conviene revisar diámetro, material o cargas.", "warn")
     else:
-        estado_html("❌ Lectura simple: el eje queda demasiado cerca o por encima del límite. El prediseño debe revisarse antes de aceptarlo.", "bad")
+        estado_html("❌ El eje requiere rediseño preliminar por seguridad/fatiga.", "bad")
 
-    st.markdown("### 📊 Gráfica fácil de interpretación")
-    if go is not None:
-        fig_eje = go.Figure()
-        fig_eje.add_trace(go.Bar(
-            x=["Esfuerzo real", "Límite admisible"],
-            y=[tau_maxima_estimada_mpa, tau_admisible_mpa],
-            text=[f"{tau_maxima_estimada_mpa:.2f} MPa", f"{tau_admisible_mpa:.2f} MPa"],
-            textposition="outside",
-            marker=dict(color=["#059669" if tau_maxima_estimada_mpa <= tau_admisible_mpa else "#dc2626", "#2563eb"]),
-            hovertemplate="<b>%{x}</b><br>%{y:.2f} MPa<extra></extra>"
-        ))
-        fig_eje.add_hline(y=tau_admisible_mpa, line_dash="dash", line_color="#dc2626", annotation_text="Límite admisible")
-        fig_eje.add_annotation(
-            x=0.5, y=max(tau_admisible_mpa, tau_maxima_estimada_mpa)*1.12,
-            text=f"FS = {fs_torsional_estatico:.2f} · {'Seguro' if fs_torsional_estatico >= 1.5 else 'Revisar'}",
-            showarrow=False, bgcolor="rgba(255,255,255,.92)", bordercolor="#e2e8f0"
-        )
-        fig_eje.update_layout(
-            title="Comparación del esfuerzo del eje contra el límite admisible",
-            yaxis_title="Esfuerzo cortante [MPa]",
-            template="plotly_white", height=430,
-            margin=dict(l=60, r=40, t=80, b=60),
-            font=dict(color="#0f172a")
-        )
-        st.plotly_chart(fig_eje, use_container_width=True, config=_plotly_config())
-    else:
-        fig_eje, ax = plt.subplots(figsize=(8.8, 4.2))
-        ax.bar(["Esfuerzo real", "Límite admisible"], [tau_maxima_estimada_mpa, tau_admisible_mpa])
-        ax.axhline(tau_admisible_mpa, linestyle="--", linewidth=1.5)
-        ax.set_ylabel("MPa")
-        ax.set_title("Esfuerzo real vs límite admisible del eje")
-        ax.grid(True, axis="y", linestyle=":", alpha=.45)
-        st.pyplot(fig_eje)
+    st.markdown("### Tabla de seguridad y fatiga")
+    st.dataframe(eje_fs_df.style.map(style_estado, subset=["Estado"]), use_container_width=True, height=310)
 
-    st.markdown("### 🧾 Tabla compacta de lectura")
-    st.dataframe(eje_fs_df.style.map(style_estado, subset=["Estado"]), use_container_width=True, height=260)
-
-    with st.expander("🧮 Fórmulas y explicación para defenderlo", expanded=False):
+    with st.expander("🧮 Fórmulas agregadas para seguridad y fatiga", expanded=False):
+        st.latex(r"FS = \frac{\tau_{adm}}{\tau_{media}+\tau_{alt}}")
+        st.latex(r"FS_{Goodman}=\frac{1}{\frac{\tau_a}{S_e}+\frac{\tau_m}{S_{su}}}")
+        st.latex(r"FS_{Soderberg}=\frac{1}{\frac{\tau_a}{S_e}+\frac{\tau_m}{S_{sy}}}")
         st.markdown("""
-        **1. Torque transmitido por el eje**  
-        El motor entrega potencia y el eje la transmite como torque hacia la hélice.
-        """)
-        st.latex(r"T=rac{9550\,PB}{n}")
-        st.markdown("""
-        **2. Esfuerzo cortante por torsión**  
-        Mientras menor sea el diámetro del eje, mayor será el esfuerzo. Por eso el diámetro es tan importante.
-        """)
-        st.latex(r"	au=rac{16T}{\pi d^3}")
-        st.markdown("""
-        **3. Factor de seguridad**  
-        Si `FS = 2`, significa que el límite admisible es aproximadamente el doble del esfuerzo real.
-        """)
-        st.latex(r"FS=rac{	au_{adm}}{	au_{real}}")
-        st.markdown("""
-        **4. Fatiga**  
-        La fatiga revisa que el eje no solo soporte una carga una vez, sino muchas vueltas durante operación.
-        Goodman y Soderberg se usan como criterios preliminares para carga variable.
-
-        **Cómo defenderlo en presentación:**  
-        > “Esta revisión no reemplaza una aprobación de ABS o DNV, pero permite demostrar que el torque calculado no genera un esfuerzo mayor al admisible del eje. Además, se revisa un margen preliminar por fatiga para justificar que el eje no trabaja al límite.”
+        Para esta aplicación se usa una estimación académica:
+        `Se ≈ 0.18·σUTS`, `Ssu ≈ 0.67·σUTS` y `Ssy ≈ 0.58·σY`.
+        En diseño real deben incluirse concentradores de esfuerzo, chaveteros, cambios de sección,
+        corrosión, acabado superficial y reglas de clase.
         """)
 
     st.markdown("### Zonas prohibidas o de precaución por Campbell")
