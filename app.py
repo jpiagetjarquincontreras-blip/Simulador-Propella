@@ -5,6 +5,7 @@ import math
 import re
 import tempfile
 import os
+import gc
 from io import BytesIO
 import matplotlib.pyplot as plt
 
@@ -486,26 +487,26 @@ def _limpiar_trazas_plotly(fig, titulo_base="Gráfica"):
     return fig
 
 def _render_matplotlib_interactivo(fig=None, *args, **kwargs):
+    """Render ligero para Streamlit Cloud.
+    Mantiene TODAS las gráficas y secciones, pero evita convertir cada
+    figura Matplotlib a Plotly porque esa conversión consume mucha RAM.
+    Después de mostrar cada figura, la cierra y limpia memoria.
+    """
     if fig is None:
         fig = plt.gcf()
-    use_container_width = kwargs.pop("use_container_width", True)
-    if HAS_PLOTLY:
+    try:
+        result = _original_st_pyplot(fig, *args, **kwargs)
+    finally:
         try:
-            import plotly.tools as tls
-            pfig = tls.mpl_to_plotly(fig)
-            alto = max(430, min(680, int(fig.get_size_inches()[1] * 105)))
-            pfig.update_layout(height=alto)
-            pfig = _limpiar_trazas_plotly(pfig)
-            st.plotly_chart(pfig, use_container_width=use_container_width, config={
-                "displaylogo": False, "scrollZoom": True,
-                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-                "toImageButtonOptions": {"format": "png", "scale": 2}
-            })
             plt.close(fig)
-            return
+            plt.close('all')
         except Exception:
             pass
-    return _original_st_pyplot(fig, *args, **kwargs)
+        try:
+            gc.collect()
+        except Exception:
+            pass
+    return result
 
 st.pyplot = _render_matplotlib_interactivo
 
@@ -514,7 +515,7 @@ def plotly_campbell_profesional(rpm_operacion, f_lat, f_tors, f_axial, z, max_rp
         return None
     rpm_operacion = float(max(rpm_operacion, 0.0))
     max_rpm = float(max_rpm or max(rpm_operacion*2.2, 180.0))
-    rpm = np.linspace(0, max_rpm, 520)
+    rpm = np.linspace(0, max_rpm, 260)
     fig = go.Figure()
     modos = [("Frecuencia natural lateral", f_lat, "#2563eb", "dash"),("Frecuencia natural torsional", f_tors, "#7c3aed", "dot"),("Frecuencia natural axial", f_axial, "#0891b2", "dashdot")]
     for nombre, fn, color, dash in modos:
@@ -541,7 +542,7 @@ def plotly_orbita_animada(x_orb, y_orb, amp_x, amp_y, fase_deg, orbit_estado):
         return None
     frames = []
     n = len(x_orb)
-    step = max(1, n//80)
+    step = max(1, n//35)
     for k in range(0, n, step):
         frames.append(go.Frame(data=[go.Scatter(x=x_orb[:k+1], y=y_orb[:k+1], mode="lines", line=dict(color="#2563eb", width=4), name="Trayectoria orbital"), go.Scatter(x=[x_orb[k]], y=[y_orb[k]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], name=str(k)))
     fig = go.Figure(data=[go.Scatter(x=x_orb, y=y_orb, mode="lines", line=dict(color="#2563eb", width=3), name="Trayectoria orbital", hovertemplate="X=%{x:.2f} µm<br>Y=%{y:.2f} µm<extra></extra>"), go.Scatter(x=[0], y=[0], mode="markers", marker=dict(size=13, color="#0f172a", symbol="cross"), name="Centro nominal"), go.Scatter(x=[x_orb[0]], y=[y_orb[0]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], frames=frames)
@@ -607,7 +608,7 @@ def plotly_burrill_prof(sigma_actual, tau_actual, tau_adm_actual):
         return None
     sigma_actual = float(sigma_actual); tau_actual = float(tau_actual); tau_adm_actual = float(tau_adm_actual)
     xmax = max(1.2, sigma_actual*1.18)
-    sig = np.linspace(0.05, xmax, 260)
+    sig = np.linspace(0.05, xmax, 160)
     tau_adm = 0.22 + 0.18*sig
     cumple = tau_actual <= tau_adm_actual
     margen = tau_adm_actual - tau_actual
@@ -836,7 +837,7 @@ def diagnostico_score(score):
 
 def fig_to_bytes(fig):
     buffer = BytesIO()
-    fig.savefig(buffer, format="png", dpi=160, bbox_inches="tight")
+    fig.savefig(buffer, format="png", dpi=120, bbox_inches="tight")
     buffer.seek(0)
     return buffer
 
@@ -1041,7 +1042,7 @@ def crear_figura_mapa_eficiencias(eff_df):
 
 def crear_figura_burrill(sigma_actual, tau_actual, tau_adm_actual):
     max_sigma = max(1.2, sigma_actual * 1.15)
-    sig = np.linspace(0.05, max_sigma, 220)
+    sig = np.linspace(0.05, max_sigma, 140)
     tau_adm = 0.22 + 0.18 * sig
     fig, ax = plt.subplots(figsize=(8.2, 4.8))
     ax.plot(sig, tau_adm, linewidth=2.6, label="Límite preliminar admisible")
@@ -1096,7 +1097,7 @@ def crear_figura_keller(ae_min, ae_actual):
 
 def crear_figura_campbell(rpm_operacion, f_lat, f_tors, f_axial, z):
     max_rpm = max(rpm_operacion * 2.0, 120)
-    rpm_x = np.linspace(0, max_rpm, 400)
+    rpm_x = np.linspace(0, max_rpm, 220)
     fig, ax = plt.subplots(figsize=(9, 4.8))
     ax.axhline(y=f_lat, linestyle="--", linewidth=2, label=f"Lateral {f_lat:.2f} Hz")
     ax.axhline(y=f_tors, linestyle="-.", linewidth=2, label=f"Torsional {f_tors:.2f} Hz")
@@ -1117,7 +1118,7 @@ def insertar_figura_excel(writer, fig, sheet_name, cell="A1"):
         from openpyxl.drawing.image import Image as XLImage
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
         tmp.close()
-        fig.savefig(tmp.name, format="png", dpi=150, bbox_inches="tight")
+        fig.savefig(tmp.name, format="png", dpi=110, bbox_inches="tight")
         ws = writer.book.create_sheet(sheet_name)
         img = XLImage(tmp.name)
         img.anchor = cell
@@ -3642,7 +3643,7 @@ def insertar_figura_excel_con_texto(writer, fig, sheet_name, descripcion=""):
         from openpyxl.drawing.image import Image as XLImage
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
         tmp.close()
-        fig.savefig(tmp.name, format="png", dpi=170, bbox_inches="tight")
+        fig.savefig(tmp.name, format="png", dpi=110, bbox_inches="tight")
         ws = writer.book.create_sheet(_safe_sheet_name(sheet_name))
         ws["A1"] = "Descripción técnica"
         ws["A1"].font = ws["A1"].font.copy(bold=True)
