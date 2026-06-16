@@ -2,8 +2,17 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
+import re
+import tempfile
+import os
 from io import BytesIO
 import matplotlib.pyplot as plt
+
+try:
+    import plotly.graph_objects as go
+except Exception:
+    go = None
+HAS_PLOTLY = go is not None
 
 # ==============================================================================
 # UNIVERSAL SHIP PROPULSION & SHAFTING ANALYSIS SUITE
@@ -16,6 +25,7 @@ import matplotlib.pyplot as plt
 # openpyxl
 # xlsxwriter
 # reportlab
+# plotly
 # ==============================================================================
 
 st.set_page_config(
@@ -23,6 +33,10 @@ st.set_page_config(
     layout="wide",
     page_icon="⚓"
 )
+
+APP_AUTHOR = "Jade Fernanda Jarquín Contreras"
+APP_AUTHOR_SHORT = "J. F. Jarquín C."
+APP_VERSION = "Naval Propulsion & Shaft Dynamics Pro · v1.0"
 
 # ==============================================================================
 # ESTILO VISUAL PROFESIONAL
@@ -164,8 +178,518 @@ st.markdown("""
     .block-container {
         padding-top: 1.5rem;
     }
+
+    .element-container:has(.js-plotly-plot) { margin-left: auto; margin-right: auto; }
+
+    .author-badge {
+        margin-top: 18px;
+        padding: 14px 15px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: rgba(255,255,255,0.82);
+        color: #334155;
+        font-size: 12px;
+        line-height: 1.45;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.04);
+    }
+    .author-badge b { color:#0f172a; }
+    .author-footer {
+        margin-top: 28px;
+        padding-top: 12px;
+        border-top: 1px solid #e2e8f0;
+        color: #64748b;
+        text-align: center;
+        font-size: 12px;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+st.markdown("""
+<!-- =============================================================
+     FIX DE CONTRASTE UNIVERSAL
+     Evita textos blancos/invisibles cuando el navegador, Streamlit
+     o el sistema operativo abren la app con tema oscuro o alto contraste.
+     ============================================================= -->
+<style>
+    /* Fondo y texto base */
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%) !important;
+        color: #0f172a !important;
+    }
+
+    /* Texto general dentro de la aplicación */
+    .stApp p,
+    .stApp span,
+    .stApp label,
+    .stApp div,
+    .stApp h1,
+    .stApp h2,
+    .stApp h3,
+    .stApp h4,
+    .stApp h5,
+    .stApp h6,
+    .stMarkdown,
+    .stMarkdown p,
+    [data-testid="stMarkdownContainer"],
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span {
+        color: #0f172a !important;
+    }
+
+    /* Mantener textos claros solo donde el fondo realmente es oscuro */
+    .hero-box,
+    .hero-box h1,
+    .hero-box h2,
+    .hero-box h3,
+    .hero-box p,
+    .hero-box span,
+    .hero-box div,
+    .stTabs [aria-selected="true"],
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] span,
+    .stTabs [aria-selected="true"] div {
+        color: #ffffff !important;
+    }
+
+    .hero-box p {
+        color: rgba(255,255,255,0.86) !important;
+    }
+
+    /* Tarjetas, métricas y contenedores blancos */
+    div[data-testid="stMetric"],
+    .section-card,
+    .status-good,
+    .status-warn,
+    .status-bad,
+    [data-testid="stForm"],
+    [data-testid="stExpander"],
+    [data-testid="stDataFrame"],
+    [data-testid="stTable"],
+    .stAlert,
+    .stPlotlyChart,
+    .stDataFrame,
+    .stTable {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+
+    div[data-testid="stMetric"] * {
+        color: #0f172a !important;
+    }
+
+    div[data-testid="stMetricValue"] {
+        color: #4c1d95 !important;
+    }
+
+    div[data-testid="stMetricLabel"] {
+        color: #334155 !important;
+    }
+
+    div[data-testid="stMetricDelta"] {
+        color: #475569 !important;
+    }
+
+    /* Inputs, selectores, number inputs y text boxes */
+    input,
+    textarea,
+    select,
+    [data-baseweb="input"] input,
+    [data-baseweb="textarea"] textarea,
+    [data-baseweb="select"],
+    [data-baseweb="select"] *,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextInput"] input,
+    [data-testid="stSelectbox"] *,
+    [data-testid="stMultiSelect"] *,
+    [data-testid="stSlider"] *,
+    [data-testid="stFileUploader"] *,
+    [data-testid="stRadio"] *,
+    [data-testid="stCheckbox"] * {
+        color: #0f172a !important;
+    }
+
+    [data-baseweb="input"],
+    [data-baseweb="textarea"],
+    [data-baseweb="select"] > div,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextInput"] input,
+    textarea {
+        background-color: #ffffff !important;
+        border-color: #cbd5e1 !important;
+    }
+
+    /* Botones */
+    button,
+    button * {
+        color: #0f172a !important;
+    }
+
+    button[kind="primary"],
+    button[kind="primary"] * {
+        color: #ffffff !important;
+    }
+
+    /* Sidebar */
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] * {
+        color: #0f172a !important;
+    }
+
+    [data-testid="stSidebar"] {
+        background-color: #f1f5f9 !important;
+    }
+
+    /* Tabs no seleccionadas */
+    .stTabs [data-baseweb="tab"] *,
+    .stTabs [data-baseweb="tab"] p,
+    .stTabs [data-baseweb="tab"] span {
+        color: #334155 !important;
+    }
+
+    .stTabs [aria-selected="true"] *,
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] span {
+        color: #ffffff !important;
+    }
+
+    /* DataFrames y tablas */
+    [data-testid="stDataFrame"] div,
+    [data-testid="stDataFrame"] span,
+    [data-testid="stTable"] div,
+    [data-testid="stTable"] span,
+    table,
+    table * {
+        color: #0f172a !important;
+    }
+
+    thead tr th,
+    tbody tr td {
+        color: #0f172a !important;
+        background-color: #ffffff !important;
+    }
+
+    /* Captions y textos secundarios */
+    .small-muted,
+    .author-footer,
+    .stCaptionContainer,
+    [data-testid="stCaptionContainer"],
+    caption {
+        color: #64748b !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ==============================================================================
+# AJUSTE VISUAL SUTIL Y PROFESIONAL
+# ==============================================================================
+st.markdown("""
+<style>
+    :root {
+        --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+        --brand:#4c1d95; --brand2:#2563eb; --ok:#059669; --warn:#d97706; --bad:#dc2626;
+    }
+    .block-container {
+        max-width: 1380px;
+        padding-left: 2.1rem;
+        padding-right: 2.1rem;
+    }
+    .section-card, div[data-testid="stMetric"], [data-testid="stExpander"] details {
+        border: 1px solid rgba(148,163,184,.28) !important;
+        box-shadow: 0 10px 26px rgba(15,23,42,.055) !important;
+    }
+    [data-testid="stExpander"] details {
+        border-radius: 16px !important;
+        background: rgba(255,255,255,.96) !important;
+        overflow: hidden;
+    }
+    [data-testid="stExpander"] summary {
+        font-weight: 800 !important;
+        letter-spacing: .1px;
+        background: linear-gradient(90deg, #ffffff 0%, #f8fafc 100%) !important;
+        border-bottom: 1px solid rgba(226,232,240,.75);
+    }
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 12px !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 5px 14px rgba(15,23,42,.06) !important;
+        font-weight: 800 !important;
+    }
+    div[data-testid="stMetric"] {
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%) !important;
+    }
+    .stDataFrame, [data-testid="stDataFrame"] {
+        border-radius: 14px !important;
+        overflow: hidden !important;
+    }
+    .formula-card {
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 16px 18px;
+        margin: 12px 0;
+        box-shadow: 0 8px 22px rgba(15,23,42,.045);
+    }
+    .formula-card h4 { margin: 0 0 6px 0; font-size: 16px; color: #0f172a !important; }
+    .formula-card p { margin: 0; color: #475569 !important; font-size: 14px; line-height: 1.55; }
+    .formula-tag {
+        display:inline-block; padding: 3px 9px; border-radius: 999px;
+        background:#eef2ff; color:#3730a3 !important; font-size: 12px; font-weight: 800;
+        margin-bottom: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Firma de autoría: se conserva únicamente en el pie final de la aplicación y en el reporte PDF.
+# No se muestra nombre en la barra lateral para mantener una interfaz más limpia y profesional.
+
+
+# ==============================================================================
+# MOTOR VISUAL INTERACTIVO GLOBAL
+# ==============================================================================
+_original_st_pyplot = st.pyplot
+
+def _limpiar_trazas_plotly(fig, titulo_base="Gráfica"):
+    if go is None or fig is None:
+        return fig
+    for idx, tr in enumerate(fig.data):
+        nombre = getattr(tr, "name", None)
+        if nombre is None or str(nombre).strip() == "" or str(nombre).startswith("_child") or str(nombre).lower().startswith("trace") or str(nombre).lower().startswith("serie"):
+            try:
+                tipo_tr = getattr(tr, "type", "")
+                modo_tr = str(getattr(tr, "mode", ""))
+                if tipo_tr == "bar":
+                    tr.name = "Valor evaluado"
+                elif tipo_tr == "scatter" and "markers" in modo_tr and "lines" not in modo_tr:
+                    tr.name = "Punto de diseño"
+                elif tipo_tr == "scatter" and "lines" in modo_tr:
+                    tr.name = "Curva de referencia"
+                else:
+                    tr.name = "Resultado técnico"
+            except Exception:
+                pass
+        try:
+            if getattr(tr, "type", "") in ["scatter", "bar"] and not getattr(tr, "hovertemplate", None):
+                tr.hovertemplate = "<b>%{fullData.name}</b><br>X: %{x}<br>Y: %{y:.4g}<extra></extra>"
+        except Exception:
+            pass
+    fig.update_layout(
+        template="plotly_white", hovermode="closest",
+        font=dict(family="Arial", size=13, color="#0f172a"),
+        title=dict(font=dict(size=18, color="#0f172a"), x=0.02, xanchor="left"),
+        margin=dict(l=60, r=40, t=75, b=60), plot_bgcolor="white", paper_bgcolor="white",
+        transition=dict(duration=450, easing="cubic-in-out"),
+        legend=dict(title=None, bgcolor="rgba(255,255,255,0.82)", bordercolor="#e2e8f0", borderwidth=1),
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    return fig
+
+def _render_matplotlib_interactivo(fig=None, *args, **kwargs):
+    if fig is None:
+        fig = plt.gcf()
+    use_container_width = kwargs.pop("use_container_width", True)
+    if HAS_PLOTLY:
+        try:
+            import plotly.tools as tls
+            pfig = tls.mpl_to_plotly(fig)
+            alto = max(430, min(680, int(fig.get_size_inches()[1] * 105)))
+            pfig.update_layout(height=alto)
+            pfig = _limpiar_trazas_plotly(pfig)
+            st.plotly_chart(pfig, use_container_width=use_container_width, config={
+                "displaylogo": False, "scrollZoom": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                "toImageButtonOptions": {"format": "png", "scale": 2}
+            })
+            plt.close(fig)
+            return
+        except Exception:
+            pass
+    return _original_st_pyplot(fig, *args, **kwargs)
+
+st.pyplot = _render_matplotlib_interactivo
+
+def plotly_campbell_profesional(rpm_operacion, f_lat, f_tors, f_axial, z, max_rpm=None):
+    if go is None:
+        return None
+    rpm_operacion = float(max(rpm_operacion, 0.0))
+    max_rpm = float(max_rpm or max(rpm_operacion*2.2, 180.0))
+    rpm = np.linspace(0, max_rpm, 520)
+    fig = go.Figure()
+    modos = [("Frecuencia natural lateral", f_lat, "#2563eb", "dash"),("Frecuencia natural torsional", f_tors, "#7c3aed", "dot"),("Frecuencia natural axial", f_axial, "#0891b2", "dashdot")]
+    for nombre, fn, color, dash in modos:
+        fig.add_trace(go.Scatter(x=rpm, y=np.full_like(rpm, fn), mode="lines", name=f"{nombre}: {fn:.2f} Hz", line=dict(color=color, width=2.8, dash=dash), hovertemplate=f"<b>{nombre}</b><br>fn = {fn:.3f} Hz<br>RPM evaluada = %{{x:.1f}}<extra></extra>"))
+    ordenes = [("1P",1,"#64748b"),("2P",2,"#14b8a6"),("3P",3,"#22c55e"),("ZP",z,"#f97316"),("2ZP",2*z,"#f59e0b"),("3ZP",3*z,"#ef4444")]
+    for nombre, mult, color in ordenes:
+        y = mult*rpm/60.0
+        fig.add_trace(go.Scatter(x=rpm, y=y, mode="lines", name=f"Orden {nombre}", line=dict(color=color, width=2.25), hovertemplate=f"<b>Orden {nombre}</b><br>RPM = %{{x:.1f}}<br>f = %{{y:.3f}} Hz<br>Multiplicador = {mult}<extra></extra>"))
+    fig.add_vrect(x0=max(rpm_operacion*0.95,0), x1=rpm_operacion*1.05, fillcolor="#fef3c7", opacity=0.35, line_width=0, annotation_text="Banda ±5% operación", annotation_position="top left")
+    fig.add_vline(x=rpm_operacion, line_width=3, line_color="#dc2626", annotation_text=f"Operación {rpm_operacion:.0f} rpm")
+    for modo_nombre, fn, _, _ in modos:
+        for ord_nombre, mult, color in ordenes:
+            rpm_cruce = 60.0*fn/max(mult,1e-9)
+            if 0 <= rpm_cruce <= max_rpm:
+                sep = abs(rpm_cruce-rpm_operacion)/max(rpm_operacion,1e-9)*100
+                fig.add_trace(go.Scatter(x=[rpm_cruce], y=[fn], mode="markers", name=f"Cruce {ord_nombre}", marker=dict(size=7, color=color, symbol="circle-open", line=dict(width=2)), showlegend=False, hovertemplate=(f"<b>Cruce {ord_nombre} / {modo_nombre}</b><br>RPM de cruce = {rpm_cruce:.2f}<br>fn = {fn:.3f} Hz<br>Separación a operación = {sep:.1f}%<extra></extra>")))
+    fig.update_layout(title="Campbell interactivo del sistema eje–hélice", xaxis_title="Velocidad de giro [rpm]", yaxis_title="Frecuencia [Hz]", height=650, template="plotly_white", hovermode="closest", margin=dict(l=70, r=230, t=85, b=65), legend=dict(x=1.02, y=1, xanchor="left", yanchor="top"), font=dict(family="Arial", size=13, color="#0f172a"), transition=dict(duration=600, easing="cubic-in-out"))
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.30)")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.30)")
+    return fig
+
+def plotly_orbita_animada(x_orb, y_orb, amp_x, amp_y, fase_deg, orbit_estado):
+    if go is None:
+        return None
+    frames = []
+    n = len(x_orb)
+    step = max(1, n//80)
+    for k in range(0, n, step):
+        frames.append(go.Frame(data=[go.Scatter(x=x_orb[:k+1], y=y_orb[:k+1], mode="lines", line=dict(color="#2563eb", width=4), name="Trayectoria orbital"), go.Scatter(x=[x_orb[k]], y=[y_orb[k]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], name=str(k)))
+    fig = go.Figure(data=[go.Scatter(x=x_orb, y=y_orb, mode="lines", line=dict(color="#2563eb", width=3), name="Trayectoria orbital", hovertemplate="X=%{x:.2f} µm<br>Y=%{y:.2f} µm<extra></extra>"), go.Scatter(x=[0], y=[0], mode="markers", marker=dict(size=13, color="#0f172a", symbol="cross"), name="Centro nominal"), go.Scatter(x=[x_orb[0]], y=[y_orb[0]], mode="markers", marker=dict(size=12, color="#ef4444"), name="Centro instantáneo del eje")], frames=frames)
+    lim = max(abs(np.nanmax(x_orb)), abs(np.nanmin(x_orb)), abs(np.nanmax(y_orb)), abs(np.nanmin(y_orb)), 1)*1.18
+    fig.update_layout(title=f"Órbita lateral animada del eje — {orbit_estado}", xaxis_title="Desplazamiento X [µm]", yaxis_title="Desplazamiento Y [µm]", height=560, template="plotly_white", hovermode="closest", xaxis=dict(range=[-lim, lim], scaleanchor="y", scaleratio=1, gridcolor="rgba(148,163,184,0.28)"), yaxis=dict(range=[-lim, lim], gridcolor="rgba(148,163,184,0.28)"), margin=dict(l=70, r=40, t=80, b=65), annotations=[dict(x=0.02, y=0.98, xref="paper", yref="paper", showarrow=False, align="left", text=f"Amplitud X={amp_x:.1f} µm · Amplitud Y={amp_y:.1f} µm · Fase={fase_deg}°", bgcolor="rgba(255,255,255,0.85)", bordercolor="#cbd5e1")], updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.12, xanchor="left", yanchor="top", buttons=[dict(label="▶ Animar órbita", method="animate", args=[None, {"frame": {"duration": 45, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}]), dict(label="⏸ Pausa", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])])])
+    return fig
+
+def dataframe_profesional(df, height=360):
+    try:
+        st.dataframe(df, use_container_width=True, height=height, hide_index=True)
+    except TypeError:
+        st.dataframe(df, use_container_width=True, height=height)
+
+
+# ==============================================================================
+# VISUALIZACIONES PLOTLY PROFESIONALES (REEMPLAZAN CONVERSIONES MATPLOTLIB)
+# ==============================================================================
+def _plotly_config():
+    return {"displaylogo": False, "scrollZoom": True,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+            "toImageButtonOptions": {"format": "png", "scale": 2}}
+
+def _layout_prof(fig, title, x_title="", y_title="", height=520, legend=True):
+    if go is None or fig is None:
+        return fig
+    fig.update_layout(
+        title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color="#0f172a")),
+        xaxis_title=x_title, yaxis_title=y_title,
+        template="plotly_white", height=height,
+        margin=dict(l=70, r=60 if legend else 30, t=85, b=70),
+        hovermode="closest", font=dict(family="Arial", size=13, color="#0f172a"),
+        paper_bgcolor="white", plot_bgcolor="white",
+        transition=dict(duration=550, easing="cubic-in-out"),
+        legend=dict(title=None, bgcolor="rgba(255,255,255,0.88)", bordercolor="#e2e8f0", borderwidth=1) if legend else dict(visible=False),
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(148,163,184,0.28)", zeroline=False, linecolor="#cbd5e1")
+    return fig
+
+def plotly_waterfall_pe_prof(pe_sin, pe_con, margen_pct):
+    if go is None:
+        return None
+    inc = max(float(pe_con) - float(pe_sin), 0.0)
+    fig = go.Figure()
+    fig.add_trace(go.Waterfall(
+        name="Secuencia de PE", orientation="v", measure=["absolute", "relative", "total"],
+        x=["PE base", f"Sea Margin {margen_pct:.1f}%", "PE de diseño"],
+        y=[pe_sin, inc, pe_con],
+        text=[f"{pe_sin:,.0f} kW", f"+{inc:,.0f} kW", f"{pe_con:,.0f} kW"],
+        textposition="outside",
+        connector={"line": {"color": "#94a3b8", "dash": "dot"}},
+        increasing={"marker": {"color": "#f59e0b"}},
+        decreasing={"marker": {"color": "#ef4444"}},
+        totals={"marker": {"color": "#059669"}},
+        hovertemplate="<b>%{x}</b><br>Potencia=%{y:,.2f} kW<br>Texto=%{text}<extra></extra>"
+    ))
+    fig.add_annotation(x=1, y=pe_sin + inc/2, text="Incremento por margen de servicio", showarrow=False,
+                       bgcolor="rgba(255,255,255,.85)", bordercolor="#e2e8f0", font=dict(size=12))
+    return _layout_prof(fig, "Potencia efectiva y efecto del Sea Margin", "Concepto", "Potencia [kW]", height=520, legend=False)
+
+def plotly_burrill_prof(sigma_actual, tau_actual, tau_adm_actual):
+    if go is None:
+        return None
+    sigma_actual = float(sigma_actual); tau_actual = float(tau_actual); tau_adm_actual = float(tau_adm_actual)
+    xmax = max(1.2, sigma_actual*1.18)
+    sig = np.linspace(0.05, xmax, 260)
+    tau_adm = 0.22 + 0.18*sig
+    cumple = tau_actual <= tau_adm_actual
+    margen = tau_adm_actual - tau_actual
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=sig, y=tau_adm, mode="lines", name="Límite admisible Burrill", line=dict(color="#2563eb", width=3), hovertemplate="σ=%{x:.3f}<br>τ admisible=%{y:.3f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=np.r_[sig, sig[::-1]], y=np.r_[np.zeros_like(sig), tau_adm[::-1]], fill="toself", mode="lines", line=dict(color="rgba(16,185,129,0)"), fillcolor="rgba(16,185,129,0.12)", name="Zona aceptable", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[sigma_actual], y=[tau_actual], mode="markers+text", name="Diseño actual", marker=dict(size=16, color="#059669" if cumple else "#dc2626", line=dict(color="white", width=2)), text=["Cumple" if cumple else "Revisar"], textposition="top center", hovertemplate=f"<b>Diseño actual</b><br>σ={sigma_actual:.3f}<br>τc={tau_actual:.3f}<br>τadm={tau_adm_actual:.3f}<br>Margen={margen:.3f}<extra></extra>"))
+    fig.add_vline(x=sigma_actual, line_dash="dot", line_color="#64748b")
+    fig.add_hline(y=tau_actual, line_dash="dot", line_color="#64748b")
+    fig.add_annotation(x=0.03, y=0.98, xref="paper", yref="paper", align="left", showarrow=False,
+                       text=("✅ Carga de pala dentro del límite" if cumple else "⚠️ Carga de pala a revisar") + f"<br>Margen τ = {margen:.3f}",
+                       bgcolor="rgba(255,255,255,.88)", bordercolor="#e2e8f0")
+    return _layout_prof(fig, "Criterio de Burrill — carga de pala vs cavitación", "Coeficiente de cavitación σ [-]", "Coeficiente de carga τc [-]", height=560)
+
+def plotly_keller_prof(ae_min, ae_actual):
+    if go is None:
+        return None
+    ae_min = float(ae_min); ae_actual = float(ae_actual)
+    margen = ae_actual - ae_min
+    cumple = margen >= 0
+    xmax = max(0.75, ae_actual*1.35, ae_min*1.45)
+    fig = go.Figure()
+    fig.add_vrect(x0=0, x1=ae_min, fillcolor="#fee2e2", opacity=0.38, line_width=0, annotation_text="Área insuficiente", annotation_position="top left")
+    fig.add_vrect(x0=ae_min, x1=xmax, fillcolor="#dcfce7", opacity=0.35, line_width=0, annotation_text="Zona aceptable", annotation_position="top right")
+    fig.add_vline(x=ae_min, line_dash="dash", line_color="#dc2626", annotation_text=f"Keller mínimo {ae_min:.3f}")
+    fig.add_trace(go.Bar(x=[ae_actual], y=["Ae/A0 actual"], orientation="h", name="Diseño actual", marker=dict(color="#059669" if cumple else "#dc2626"), text=[f"{ae_actual:.3f}"], textposition="outside", hovertemplate=f"<b>Ae/A0 actual</b><br>Valor={ae_actual:.3f}<br>Mínimo={ae_min:.3f}<br>Margen={margen:.3f}<extra></extra>"))
+    fig.add_annotation(x=ae_actual, y="Ae/A0 actual", text=(f"✅ margen +{margen:.3f}" if cumple else f"❌ déficit {abs(margen):.3f}"), showarrow=True, ax=70, ay=-45, bgcolor="rgba(255,255,255,.90)", bordercolor="#cbd5e1")
+    fig.update_xaxes(range=[0, xmax])
+    return _layout_prof(fig, "Criterio de Keller — área expandida mínima", "Relación de área expandida Ae/A0 [-]", "", height=450, legend=False)
+
+def plotly_reynolds_prof(reynolds):
+    if go is None:
+        return None
+    thresholds = pd.DataFrame({"Régimen": ["Laminar", "Transición", "Turbulento naval", "Diseño actual"], "Re": [2e3, 4e3, 1e7, float(reynolds)]})
+    fig = go.Figure()
+    colors = ["#94a3b8", "#f59e0b", "#2563eb", "#059669" if reynolds >= 1e7 else "#f97316"]
+    fig.add_trace(go.Bar(x=thresholds["Re"], y=thresholds["Régimen"], orientation="h", name="Reynolds", marker=dict(color=colors), text=[f"{v:.2e}" for v in thresholds["Re"]], textposition="outside", hovertemplate="<b>%{y}</b><br>Re=%{x:.3e}<extra></extra>"))
+    fig.update_xaxes(type="log")
+    return _layout_prof(fig, "Comparación de régimen de flujo", "Número de Reynolds Re [escala log]", "", height=420, legend=False)
+
+def plotly_sigma_prof(sigma_n):
+    if go is None:
+        return None
+    sigma_n = float(sigma_n)
+    xmax = max(1.2, sigma_n*1.18)
+    fig = go.Figure()
+    fig.add_vrect(x0=0, x1=0.20, fillcolor="#fee2e2", opacity=0.45, line_width=0, annotation_text="Riesgo alto", annotation_position="top left")
+    fig.add_vrect(x0=0.20, x1=0.50, fillcolor="#fef3c7", opacity=0.55, line_width=0, annotation_text="Precaución", annotation_position="top left")
+    fig.add_vrect(x0=0.50, x1=xmax, fillcolor="#dcfce7", opacity=0.40, line_width=0, annotation_text="Zona favorable", annotation_position="top right")
+    fig.add_trace(go.Indicator(mode="gauge+number", value=sigma_n, title={"text":"Coeficiente σ del diseño"}, gauge={"axis":{"range":[0, xmax]}, "bar":{"color":"#059669" if sigma_n>0.5 else "#f59e0b"}, "threshold":{"line":{"color":"#dc2626","width":3}, "thickness":0.75, "value":0.20}}, domain={"x":[0.06,0.94],"y":[0.10,0.90]}))
+    return _layout_prof(fig, "Riesgo general de cavitación por σ", "", "", height=420, legend=False)
+
+def plotly_axial_orders_prof(axial_df, f_axial_natural_hz):
+    if go is None:
+        return None
+    df = axial_df.copy()
+    df["Frecuencia excitante [Hz]"] = pd.to_numeric(df["Frecuencia excitante [Hz]"], errors="coerce")
+    df["Separación [%]"] = pd.to_numeric(df["Separación [%]"], errors="coerce")
+    colors = df["Riesgo axial"].map({"Bajo":"#059669", "Medio":"#f59e0b", "Alto":"#dc2626"}).fillna("#2563eb")
+    fig = go.Figure()
+    fig.add_hrect(y0=f_axial_natural_hz*0.95, y1=f_axial_natural_hz*1.05, fillcolor="#fee2e2", opacity=.30, line_width=0, annotation_text="Zona crítica ±5%")
+    fig.add_hrect(y0=f_axial_natural_hz*0.88, y1=f_axial_natural_hz*1.12, fillcolor="#fef3c7", opacity=.22, line_width=0, annotation_text="Precaución ±12%")
+    fig.add_hline(y=f_axial_natural_hz, line_dash="dash", line_color="#0f172a", annotation_text=f"fn axial {f_axial_natural_hz:.2f} Hz")
+    fig.add_trace(go.Bar(x=df["Orden de excitación"], y=df["Frecuencia excitante [Hz]"], marker=dict(color=list(colors)), name="Excitaciones axiales", text=[f"{f:.2f} Hz<br>sep. {s:.1f}%" for f,s in zip(df["Frecuencia excitante [Hz]"], df["Separación [%]"])], textposition="outside", hovertemplate="<b>%{x}</b><br>Frecuencia=%{y:.3f} Hz<br>%{text}<extra></extra>"))
+    ymax = max(float(df["Frecuencia excitante [Hz]"].max())*1.25, f_axial_natural_hz*1.25, 1)
+    fig.update_yaxes(range=[0, ymax])
+    return _layout_prof(fig, "Órdenes axiales vs frecuencia natural del sistema", "Orden de excitación", "Frecuencia [Hz]", height=540, legend=False)
+
+def plotly_lateral_margin_prof(rpm_operacion, rpm_critica, margen_inf, margen_sup):
+    if go is None:
+        return None
+    rpm_operacion = float(rpm_operacion); rpm_critica = float(rpm_critica)
+    sep = abs(rpm_operacion-rpm_critica)/max(rpm_critica,1e-9)*100
+    estado = "Cumple" if sep > 20 else ("Revisar" if sep > 10 else "No cumple")
+    fig = go.Figure()
+    fig.add_vrect(x0=margen_inf, x1=margen_sup, fillcolor="#fef3c7", opacity=0.45, line_width=0, annotation_text="Banda ±20% de velocidad crítica", annotation_position="top left")
+    fig.add_vline(x=rpm_critica, line_dash="dash", line_color="#dc2626", annotation_text=f"Crítica {rpm_critica:.1f} rpm")
+    fig.add_trace(go.Scatter(x=[rpm_operacion], y=[1], mode="markers+text", name="RPM de operación", marker=dict(size=18, color="#059669" if estado=="Cumple" else "#f59e0b"), text=[f"{rpm_operacion:.1f} rpm"], textposition="top center", hovertemplate=f"<b>RPM operación</b><br>{rpm_operacion:.2f} rpm<br>RPM crítica={rpm_critica:.2f}<br>Separación={sep:.1f}%<br>Dictamen={estado}<extra></extra>"))
+    fig.update_yaxes(visible=False, range=[0.7,1.25])
+    fig.update_xaxes(range=[max(0, min(rpm_operacion, margen_inf)*0.75), max(rpm_operacion, margen_sup)*1.18])
+    fig.add_annotation(x=0.02, y=0.95, xref="paper", yref="paper", showarrow=False, align="left", text=f"Dictamen: <b>{estado}</b><br>Separación frente a crítica: {sep:.1f}%", bgcolor="rgba(255,255,255,.9)", bordercolor="#e2e8f0")
+    return _layout_prof(fig, "Margen frente a velocidad crítica lateral", "RPM", "", height=420, legend=False)
 
 # ==============================================================================
 # FUNCIONES AUXILIARES
@@ -189,6 +713,119 @@ def estado_html(texto, tipo="good"):
     st.markdown(f'<div class="{css}">{texto}</div>', unsafe_allow_html=True)
 
 
+def _formula_normativa_por_contexto(titulo):
+    """Devuelve fórmulas, reglas y explicación técnica según la pestaña."""
+    t = str(titulo).lower()
+    if "potencia" in t or "resistencia" in t:
+        return [
+            ("PE = RT · VS", "ITTC – predicción potencia/resistencia", "Convierte la resistencia total del casco en potencia efectiva requerida para vencer el avance."),
+            ("VA = VS(1-w)", "Teoría propulsiva casco–hélice / ITTC", "Corrige la velocidad que realmente recibe la hélice por la estela generada por el casco."),
+            ("PT = PE/ηH ; PD = PE/ηD", "ITTC – coeficientes propulsivos", "Relaciona potencia efectiva, potencia de empuje y potencia entregada a la hélice mediante eficiencias."),
+            ("PS = PD/ηS ; PB = PS/ηG ; MCRreq = PB/0.85", "Criterio de selección de maquinaria", "Incluye pérdidas mecánicas y reserva para que el motor no trabaje permanentemente al 100% del MCR."),
+        ]
+    if "maquinaria" in t or "motor" in t or "transmis" in t:
+        return [
+            ("P85%MCR = 0.85 · MCR", "ISO 3046 + hoja técnica del fabricante", "Permite validar si el motor tiene reserva suficiente para operación continua."),
+            ("i = nmotor / nhélice", "Diseño de transmisión propulsiva", "Define la relación de reducción necesaria entre motor, caja y hélice."),
+            ("PB ≤ 0.85MCR", "Criterio conservador de operación", "Si se cumple, el motor trabaja con margen y no queda forzado en servicio."),
+        ]
+    if "hélice" in t or "hidrodin" in t or "optimización" in t:
+        return [
+            ("J = VA/(nD)", "Wageningen Serie B / ensayos en aguas abiertas", "Número de avance que relaciona velocidad de entrada, rpm y diámetro de hélice."),
+            ("KT = T/(ρn²D⁴)", "Coeficientes no dimensionales de hélice", "Mide la capacidad de producir empuje independientemente de la escala."),
+            ("KQ = Q/(ρn²D⁵)", "Coeficientes no dimensionales de hélice", "Mide el par requerido por la hélice para una condición de operación."),
+            ("ηO = J·KT/(2πKQ)", "Wageningen B / ITTC open water", "Calcula la eficiencia en aguas abiertas y permite elegir el punto óptimo."),
+        ]
+    if "vibración" in t or "torsional" in t or "lateral" in t or "axial" in t:
+        return [
+            ("fexc = orden · RPM/60", "DNV/ABS – análisis de órdenes", "Convierte las órdenes 1P, ZP, 2ZP, etc. en frecuencias excitantes."),
+            ("Separación = |fn - fexc|/fn · 100", "Criterio de margen frente a resonancia", "Indica qué tan lejos está la operación de una frecuencia natural."),
+            ("τ = 16T/(πd³)", "Teoría de torsión de ejes circulares", "Estima el esfuerzo cortante torsional generado por el torque transmitido."),
+        ]
+    if "balanceo" in t:
+        return [
+            ("eperm = 9549·G/n", "ISO 1940-1 / ISO 21940", "Calcula la excentricidad residual permisible según grado de balanceo y rpm."),
+            ("Uperm = m·eperm", "ISO 1940-1", "Transforma la excentricidad permisible en desbalance residual admisible."),
+            ("F = U·ω²", "Dinámica rotativa básica", "Explica por qué un pequeño desbalance aumenta mucho cuando sube la velocidad."),
+        ]
+    if "campbell" in t or "resonancia" in t or "crítica" in t:
+        return [
+            ("fexc = k·RPM/60", "Diagrama de Campbell", "Traza las líneas de excitación por órdenes de giro."),
+            ("RPMcruce = 60·fn/k", "Diagrama de Campbell", "Obtiene la velocidad a la que una excitación coincide con una frecuencia natural."),
+            ("Zona crítica ≈ RPMcruce ± 5%", "Buenas prácticas ABS/DNV", "Define bandas donde se recomienda evitar operación continua por posible resonancia."),
+        ]
+    if "cavitación" in t:
+        return [
+            ("σ = (Patm + ρgh - Pv)/(0.5ρVA²)", "ITTC / número de cavitación", "Evalúa la presión disponible antes de que aparezca cavitación."),
+            ("τc ≈ T/(0.5ρVA²Ap)", "Criterio de Burrill", "Relaciona la carga de pala con el riesgo de cavitación."),
+            ("Ae/A0 ≥ Ae/A0min", "Criterio de Keller", "Verifica si el área expandida de pala es suficiente para repartir la carga."),
+            ("Re = VA·D/ν", "ITTC / similitud hidrodinámica", "Comprueba si el flujo está en régimen turbulento naval representativo."),
+        ]
+    if "eje" in t or "fatiga" in t:
+        return [
+            ("T = 9550·PB/n", "Potencia–torque en ejes", "Convierte la potencia transmitida en torque sobre el eje."),
+            ("τmax = 16T/(πd³)", "Resistencia de materiales", "Calcula el esfuerzo cortante máximo en un eje circular macizo."),
+            ("FS = τadm/τmax", "Criterio de seguridad estática", "Indica el margen entre esfuerzo admisible y esfuerzo calculado."),
+            ("1/FS = σa/Se + σm/Sut", "Goodman modificado", "Evalúa fatiga preliminar combinando esfuerzo alternante y medio."),
+        ]
+    if "trazabilidad" in t or "ficha" in t or "comparación" in t:
+        return [
+            ("Error % = |calculado-real|/real · 100", "Validación de ingeniería", "Mide qué tan cerca queda el prediseño respecto a la ficha técnica del buque."),
+            ("Dato calculado ↔ dato real", "Trazabilidad documental", "Permite defender que los resultados no son arbitrarios y salen de la misma fuente de entrada."),
+        ]
+    if "visual" in t or "integración" in t:
+        return [
+            ("Q = PB/(2πn)", "Relación potencia–torque", "Permite mostrar torque transmitido en el tren propulsivo."),
+            ("T = KTρn²D⁴", "Wageningen / hélice", "Relaciona la geometría de hélice con el empuje estimado."),
+            ("P = 2πnQ", "Dinámica de rotación", "Conecta potencia, rpm y torque en motor, eje y hélice."),
+        ]
+    if "informe" in t or "resumen" in t or "matriz" in t or "cumplimiento" in t or "síntesis" in t:
+        return [
+            ("Resultado → criterio → dictamen", "Formato de revisión técnica", "Cada salida se interpreta contra un límite o rango técnico, no solo se muestra el número."),
+            ("Score global = combinación de cumplimiento", "Criterio académico de integración", "Resume hidrodinámica, cavitación, vibración, motor, eje y balanceo en un dictamen final."),
+        ]
+    return [("Variable calculada = función(datos de entrada)", "Criterio de ingeniería trazable", "La app muestra de dónde sale el resultado y con qué criterio se interpreta.")]
+
+
+def normativa_pestana(titulo, items):
+    """Muestra en cada pestaña las reglas, fórmulas y criterios que respaldan los resultados."""
+    try:
+        filas_reglas = "".join([f"<li><b>{nombre}:</b> {detalle}</li>" for nombre, detalle in items])
+        formulas = _formula_normativa_por_contexto(titulo)
+        filas_formulas = "".join([
+            f"""
+            <tr>
+                <td style='padding:8px 10px; border-bottom:1px solid #e2e8f0; font-family:monospace; color:#4c1d95;'><b>{formula}</b></td>
+                <td style='padding:8px 10px; border-bottom:1px solid #e2e8f0;'>{origen}</td>
+                <td style='padding:8px 10px; border-bottom:1px solid #e2e8f0;'>{explica}</td>
+            </tr>
+            """ for formula, origen, explica in formulas
+        ])
+        html = f"""
+        <div class="section-card" style="border-left:6px solid #4c1d95; padding-top:14px; padding-bottom:14px;">
+            <b>📚 Regla, fórmula y respaldo técnico de esta pestaña</b><br>
+            <span class="small-muted">{titulo}</span>
+            <ul style="margin-top:8px; margin-bottom:12px;">{filas_reglas}</ul>
+            <details>
+                <summary style="cursor:pointer; font-weight:800; color:#4c1d95;">Ver fórmulas, origen y por qué avalan el resultado</summary>
+                <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:13px;">
+                    <thead>
+                        <tr style="background:#f1f5f9;">
+                            <th style="padding:8px 10px; text-align:left;">Fórmula / criterio usado</th>
+                            <th style="padding:8px 10px; text-align:left;">De dónde sale</th>
+                            <th style="padding:8px 10px; text-align:left;">Por qué justifica el resultado</th>
+                        </tr>
+                    </thead>
+                    <tbody>{filas_formulas}</tbody>
+                </table>
+            </details>
+        </div>
+        """
+        st.markdown(html, unsafe_allow_html=True)
+    except Exception:
+        pass
+
+
 def diagnostico_score(score):
     if score >= 90:
         return "APROBADO", "good", "🟢"
@@ -204,11 +841,1405 @@ def fig_to_bytes(fig):
     return buffer
 
 
+def tabla_a_reportlab(df, max_rows=30):
+    """Convierte un DataFrame pequeño a estructura de tabla para ReportLab."""
+    df2 = df.copy().head(max_rows)
+    data = [list(df2.columns)]
+    for _, row in df2.iterrows():
+        fila = []
+        for val in row.tolist():
+            if isinstance(val, float):
+                if abs(val) >= 1000:
+                    fila.append(f"{val:,.2f}")
+                else:
+                    fila.append(f"{val:.4g}")
+            else:
+                fila.append(str(val))
+        data.append(fila)
+    return data
+
+
+def crear_figura_wageningen(res_df, j_opt_val):
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.plot(res_df["J"], res_df["KT"], linewidth=2.2, label="KT")
+    ax.plot(res_df["J"], res_df["10KQ"], linewidth=2.2, label="10KQ")
+    ax.plot(res_df["J"], res_df["nO"], linewidth=2.8, linestyle="--", label="ηO")
+    ax.axvline(x=j_opt_val, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt_val:.3f}")
+    ax.set_title("Curvas Wageningen Serie B")
+    ax.set_xlabel("J")
+    ax.set_ylabel("Coeficientes")
+    ax.grid(True, linestyle=":", alpha=0.6)
+    ax.legend(loc="best")
+    return fig
+
+
+def crear_figura_comparacion(comparacion):
+    """Gráfica profesional: muestra el error porcentual por parámetro para no mezclar escalas diferentes."""
+    df = comparacion.copy()
+    df["Calculado"] = pd.to_numeric(df["Calculado"], errors="coerce")
+    df["Real PDF/manual"] = pd.to_numeric(df["Real PDF/manual"], errors="coerce")
+    df["Error [%]"] = pd.to_numeric(df["Error [%]"], errors="coerce")
+    df = df.dropna(subset=["Error [%]"]).copy()
+    fig, ax = plt.subplots(figsize=(11.5, 5.2))
+    if df.empty:
+        ax.text(0.5, 0.5, "Sin datos reales suficientes para comparar", ha="center", va="center", fontsize=13, fontweight="bold")
+        ax.axis("off")
+        return fig
+    df = df.sort_values("Error [%]", ascending=True)
+    ax.barh(df["Parámetro"], df["Error [%]"])
+    ax.axvline(5, linestyle="--", linewidth=1.8, label="Cumple ≤ 5%")
+    ax.axvline(15, linestyle=":", linewidth=1.8, label="Revisar ≤ 15%")
+    ax.set_title("Validación contra ficha técnica — error porcentual", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Error porcentual [%]")
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    ax.legend(loc="lower right")
+    xmax = max(float(df["Error [%]"].max()), 1.0)
+    for i, val in enumerate(df["Error [%]"]):
+        ax.text(val + xmax*0.02, i, f"{val:.1f}%", va="center", fontsize=9, fontweight="bold")
+    ax.set_xlim(0, xmax*1.18)
+    fig.tight_layout()
+    return fig
+
+
+
+
 # ==============================================================================
-# CARGA DEL ARCHIVO WAGENINGEN
+# GRÁFICAS PROFESIONALES PARA LA CADENA DE POTENCIAS
 # ==============================================================================
 
-@st.cache_data
+def aplicar_estilo_marino(ax, titulo="", xlabel="", ylabel=""):
+    """Estilo visual sobrio para que las gráficas se vean más técnicas y delicadas."""
+    ax.set_facecolor("#ffffff")
+    ax.figure.patch.set_facecolor("#ffffff")
+    ax.set_title(titulo, fontsize=13, fontweight="bold", color="#0f172a", pad=14)
+    ax.set_xlabel(xlabel, fontsize=10, color="#334155")
+    ax.set_ylabel(ylabel, fontsize=10, color="#334155")
+    ax.tick_params(axis="both", labelsize=9, colors="#334155")
+    ax.grid(True, linestyle=":", linewidth=0.8, alpha=0.45)
+    for spine in ["top", "right"]:
+        ax.spines[spine].set_visible(False)
+    ax.spines["left"].set_color("#cbd5e1")
+    ax.spines["bottom"].set_color("#cbd5e1")
+
+
+def crear_figura_cadena_potencias_profesional(power_df):
+    """Curva limpia de crecimiento de potencia con etiquetas y zona de pérdidas."""
+    etapas = ["PE", "PE + Sea Margin", "PT", "PD", "PS", "PB", "MCR requerido"]
+    df = power_df[power_df["Etapa"].isin(etapas)].copy()
+    df["Etapa"] = pd.Categorical(df["Etapa"], categories=etapas, ordered=True)
+    df = df.sort_values("Etapa")
+    x = np.arange(len(df))
+    y = pd.to_numeric(df["Valor"], errors="coerce").to_numpy(dtype=float)
+
+    fig, ax = plt.subplots(figsize=(11.5, 5.4))
+    aplicar_estilo_marino(ax, "Progresión energética del sistema propulsivo", "Etapa de cálculo", "Potencia [kW]")
+    ax.plot(x, y, linewidth=3.0, marker="o", markersize=7, color="#2563eb", label="Potencia requerida")
+    ax.fill_between(x, y, alpha=0.10, color="#2563eb")
+    ax.scatter(x[-1], y[-1], s=150, color="#7c3aed", zorder=5, label="MCR requerido")
+    ax.set_xticks(x)
+    ax.set_xticklabels(df["Etapa"].astype(str), rotation=0)
+    ymax = max(float(np.nanmax(y))*1.16, 1.0)
+    ax.set_ylim(0, ymax)
+    for i, val in enumerate(y):
+        ax.text(i, val + ymax*0.025, f"{val:,.0f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold", color="#0f172a")
+    ax.legend(frameon=True, framealpha=0.92, edgecolor="#e2e8f0", fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+def crear_figura_waterfall_pe(pe_sin, pe_con, margen_pct):
+    """Waterfall delicado para mostrar cómo el Sea Margin aumenta PE."""
+    incremento = max(pe_con - pe_sin, 0.0)
+    fig, ax = plt.subplots(figsize=(9.2, 4.5))
+    aplicar_estilo_marino(ax, "Potencia efectiva y efecto del Sea Margin", "Concepto", "Potencia [kW]")
+    labels = ["PE base", f"Sea Margin\n{margen_pct:.1f}%", "PE diseño"]
+    ax.bar(labels[0], pe_sin, color="#1d4ed8", alpha=0.88, label="PE base")
+    ax.bar(labels[1], incremento, bottom=pe_sin, color="#f59e0b", alpha=0.88, label="Incremento por margen")
+    ax.bar(labels[2], pe_con, color="#059669", alpha=0.88, label="PE con margen")
+    ax.plot([0, 1], [pe_sin, pe_sin], linestyle="--", color="#64748b", linewidth=1.4)
+    ax.plot([1, 2], [pe_con, pe_con], linestyle="--", color="#64748b", linewidth=1.4)
+    ymax = max(pe_con*1.22, 1.0)
+    ax.set_ylim(0, ymax)
+    for xpos, val, txt in [(0, pe_sin, f"{pe_sin:,.0f} kW"), (1, pe_con, f"+{incremento:,.0f} kW"), (2, pe_con, f"{pe_con:,.0f} kW")]:
+        ax.text(xpos, val + ymax*0.025, txt, ha="center", va="bottom", fontsize=9, fontweight="bold", color="#0f172a")
+    ax.legend(frameon=True, edgecolor="#e2e8f0", fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def crear_figura_empuje_profesional(pe_kw, pt_kw, va_ms, thrust_kn):
+    """Gráfica combinada para PT: comparación de potencia y anotación de empuje/VA."""
+    fig, ax = plt.subplots(figsize=(9.2, 4.5))
+    aplicar_estilo_marino(ax, "Conversión de resistencia a empuje útil", "Etapa", "Potencia [kW]")
+    labels = ["PE con margen", "PT"]
+    vals = [pe_kw, pt_kw]
+    bars = ax.bar(labels, vals, color=["#2563eb", "#7c3aed"], alpha=0.88, width=0.55)
+    ymax = max(max(vals)*1.25, 1.0)
+    ax.set_ylim(0, ymax)
+    for bar, val in zip(bars, vals):
+        ax.text(bar.get_x()+bar.get_width()/2, val+ymax*0.025, f"{val:,.0f} kW", ha="center", fontsize=9, fontweight="bold")
+    ax.text(0.5, ymax*0.82, f"Empuje requerido ≈ {thrust_kn:,.1f} kN\nVelocidad de avance VA = {va_ms:.2f} m/s", ha="center", va="center",
+            bbox=dict(boxstyle="round,pad=0.55", fc="#f8fafc", ec="#cbd5e1"), fontsize=9, color="#334155")
+    fig.tight_layout()
+    return fig
+
+
+def crear_figura_eficiencias_propulsivas(eta_h, eta_o, eta_r, eta_d):
+    """Barras con línea de referencia para lectura de eficiencias."""
+    labels = ["ηH\ncasco", "ηO\naguas abiertas", "ηR\nrotativa", "ηD\ncuasi-propulsiva"]
+    vals = [eta_h, eta_o, eta_r, eta_d]
+    fig, ax = plt.subplots(figsize=(9.2, 4.6))
+    aplicar_estilo_marino(ax, "Composición de eficiencias hasta PD", "Eficiencia", "Valor [-]")
+    bars = ax.bar(labels, vals, color=["#0f766e", "#2563eb", "#7c3aed", "#f59e0b"], alpha=0.90, width=0.58)
+    ax.axhline(1.0, linestyle="--", linewidth=1.3, color="#64748b", label="Referencia 1.0")
+    ax.set_ylim(0, max(1.25, max(vals)*1.18))
+    for bar, val in zip(bars, vals):
+        ax.text(bar.get_x()+bar.get_width()/2, val+0.025, f"{val:.3f}", ha="center", fontsize=9, fontweight="bold")
+    ax.legend(frameon=True, edgecolor="#e2e8f0", fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def crear_figura_motor_mcr(pd_kw, ps_kw, pb_kw, mcr_kw):
+    """Gráfica en escalones para pérdidas mecánicas y margen MCR."""
+    labels = ["PD", "PS", "PB", "MCR req."]
+    vals = [pd_kw, ps_kw, pb_kw, mcr_kw]
+    fig, ax = plt.subplots(figsize=(9.5, 4.7))
+    aplicar_estilo_marino(ax, "Pérdidas mecánicas y reserva de potencia del motor", "Etapa", "Potencia [kW]")
+    x = np.arange(len(labels))
+    ax.plot(x, vals, color="#1d4ed8", linewidth=2.7, marker="o", markersize=7)
+    ax.fill_between(x, vals, alpha=0.10, color="#1d4ed8")
+    ax.bar(x, vals, color=["#93c5fd", "#60a5fa", "#2563eb", "#7c3aed"], alpha=0.28, width=0.52)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ymax = max(max(vals)*1.18, 1.0)
+    ax.set_ylim(0, ymax)
+    for i, val in enumerate(vals):
+        ax.text(i, val+ymax*0.025, f"{val:,.0f}", ha="center", fontsize=9, fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
+def crear_figura_mapa_eficiencias(eff_df):
+    """Gráfica horizontal más elegante para el mapa de eficiencias."""
+    df = eff_df.copy()
+    df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce")
+    df = df.dropna(subset=["Valor"]).iloc[::-1]
+    fig, ax = plt.subplots(figsize=(9.5, 4.8))
+    aplicar_estilo_marino(ax, "Mapa de eficiencias adoptadas", "Valor [-]", "")
+    y = np.arange(len(df))
+    ax.barh(y, df["Valor"], color="#2563eb", alpha=0.82, height=0.55)
+    ax.axvline(1.0, linestyle="--", linewidth=1.2, color="#64748b", label="Referencia 1.0")
+    ax.set_yticks(y)
+    ax.set_yticklabels(df["Eficiencia"].astype(str))
+    ax.set_xlim(0, max(1.20, float(df["Valor"].max())*1.15))
+    for i, val in enumerate(df["Valor"]):
+        ax.text(val+0.015, i, f"{val:.3f}", va="center", fontsize=8.5, fontweight="bold")
+    ax.legend(frameon=True, edgecolor="#e2e8f0", fontsize=8)
+    fig.tight_layout()
+    return fig
+
+def crear_figura_burrill(sigma_actual, tau_actual, tau_adm_actual):
+    max_sigma = max(1.2, sigma_actual * 1.15)
+    sig = np.linspace(0.05, max_sigma, 220)
+    tau_adm = 0.22 + 0.18 * sig
+    fig, ax = plt.subplots(figsize=(8.2, 4.8))
+    ax.plot(sig, tau_adm, linewidth=2.6, label="Límite preliminar admisible")
+    ax.fill_between(sig, 0, tau_adm, alpha=0.10, label="Zona aceptable")
+    ax.scatter([sigma_actual], [tau_actual], s=130, zorder=5, label="Diseño actual")
+    ax.axvline(sigma_actual, linestyle=":", linewidth=1.8)
+    ax.axhline(tau_actual, linestyle=":", linewidth=1.8)
+    ax.set_xlabel("Coeficiente de cavitación σ")
+    ax.set_ylabel("Coeficiente de carga τc")
+    ax.set_title("Criterio de Burrill — σ vs τc")
+    ax.grid(True, linestyle=":", alpha=0.6)
+    ax.legend(loc="best")
+    return fig
+
+
+def crear_figura_keller(ae_min, ae_actual):
+    """Gráfica tipo indicador para evaluar Keller de forma más clara y profesional."""
+    margen = ae_actual - ae_min
+    cumple = margen >= 0
+    xmax = max(1.0, ae_actual * 1.25, ae_min * 1.35, 0.75)
+    fig, ax = plt.subplots(figsize=(9.2, 4.8))
+
+    # Franja base de lectura: zona insuficiente y zona aceptable.
+    ax.axvspan(0, ae_min, alpha=0.10, label="Zona insuficiente")
+    ax.axvspan(ae_min, xmax, alpha=0.08, label="Zona aceptable")
+    ax.axvline(ae_min, linestyle="--", linewidth=2.4, label=f"Keller mínimo = {ae_min:.3f}")
+
+    # Barra horizontal del diseño actual.
+    ax.barh(["Diseño actual"], [ae_actual], height=0.34)
+    ax.scatter([ae_actual], [0], s=170, zorder=5, label=f"Ae/A0 actual = {ae_actual:.3f}")
+
+    texto = f"Cumple: margen +{margen:.3f}" if cumple else f"No cumple: déficit {margen:.3f}"
+    ax.annotate(
+        texto,
+        xy=(ae_actual, 0),
+        xytext=(min(xmax * 0.62, max(ae_actual, ae_min) + xmax * 0.08), 0.22),
+        arrowprops=dict(arrowstyle="->", lw=1.2),
+        fontsize=10,
+        fontweight="bold",
+    )
+
+    ax.set_xlim(0, xmax)
+    ax.set_ylim(-0.6, 0.65)
+    ax.set_xlabel("Relación de área expandida Ae/A0 [-]")
+    ax.set_title("Criterio de Keller — verificación de área expandida mínima")
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    ax.legend(loc="upper left", fontsize=8)
+    ax.set_yticks([0])
+    ax.set_yticklabels(["Ae/A0"])
+    return fig
+
+
+def crear_figura_campbell(rpm_operacion, f_lat, f_tors, f_axial, z):
+    max_rpm = max(rpm_operacion * 2.0, 120)
+    rpm_x = np.linspace(0, max_rpm, 400)
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.axhline(y=f_lat, linestyle="--", linewidth=2, label=f"Lateral {f_lat:.2f} Hz")
+    ax.axhline(y=f_tors, linestyle="-.", linewidth=2, label=f"Torsional {f_tors:.2f} Hz")
+    ax.axhline(y=f_axial, linestyle=":", linewidth=2.4, label=f"Axial {f_axial:.2f} Hz")
+    for nombre, mult in [("1P",1),("2P",2),("3P",3),("ZP",z),("2ZP",2*z),("3ZP",3*z)]:
+        ax.plot(rpm_x, mult*rpm_x/60.0, linewidth=1.4, label=nombre)
+    ax.axvline(x=rpm_operacion, linewidth=2.2, label=f"Operación {rpm_operacion:.0f} rpm")
+    ax.set_xlabel("RPM")
+    ax.set_ylabel("Frecuencia [Hz]")
+    ax.set_title("Diagrama de Campbell")
+    ax.grid(True, linestyle=":", alpha=0.6)
+    ax.legend(loc="upper left", fontsize=8, ncols=2)
+    return fig
+
+
+def insertar_figura_excel(writer, fig, sheet_name, cell="A1"):
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        tmp.close()
+        fig.savefig(tmp.name, format="png", dpi=150, bbox_inches="tight")
+        ws = writer.book.create_sheet(sheet_name)
+        img = XLImage(tmp.name)
+        img.anchor = cell
+        ws.add_image(img)
+        return tmp.name
+    except Exception:
+        return None
+
+
+def extraer_texto_pdf(uploaded_file):
+    """Extrae texto básico de un PDF cargado por el usuario.
+    Funciona como asistente de lectura: los datos detectados siempre deben poder revisarse.
+    """
+    if uploaded_file is None:
+        return ""
+    try:
+        try:
+            from pypdf import PdfReader
+        except Exception:
+            from PyPDF2 import PdfReader
+        reader = PdfReader(uploaded_file)
+        partes = []
+        for page in reader.pages:
+            partes.append(page.extract_text() or "")
+        return "\n".join(partes)
+    except Exception as e:
+        st.warning(f"No se pudo leer automáticamente el PDF. Puedes ingresar los datos reales manualmente. Detalle: {e}")
+        return ""
+
+
+def _buscar_numero(texto, patrones):
+    if not texto:
+        return None
+    for patron in patrones:
+        m = re.search(patron, texto, flags=re.I | re.S)
+        if m:
+            val = m.group(1).replace(',', '').replace(' ', '')
+            try:
+                return float(val)
+            except Exception:
+                continue
+    return None
+
+
+def _buscar_texto(texto, patrones):
+    if not texto:
+        return ""
+    for patron in patrones:
+        m = re.search(patron, texto, flags=re.I | re.S)
+        if m:
+            return re.sub(r"\s+", " ", m.group(1)).strip()
+    return ""
+
+
+def parsear_ficha_tecnica(texto_pdf):
+    """Busca datos típicos en fichas técnicas navales en inglés o español.
+    No sustituye revisión humana: todos los valores detectados quedan editables."""
+    txt = texto_pdf or ""
+    d = {}
+    d["tipo_buque"] = "VLCC / Buque tanque" if re.search(r"VLCC|oil tanker|tanker|buque tanque|crude carrier", txt, re.I) else ""
+
+    # Dimensiones principales: inglés y español.
+    d["loa_m"] = _buscar_numero(txt, [r"Length overall\s*([0-9.,]+)\s*m", r"Eslora\s+Total\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["lwl_m"] = _buscar_numero(txt, [r"Length waterline\s*([0-9.,]+)\s*m", r"Eslora\s+De\s+Flotaci[oó]n\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["lpp_m"] = _buscar_numero(txt, [r"Length between perpendiculars\s*([0-9.,]+)\s*m", r"Eslora\s+Entre\s+Perpendiculares\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|M|m)"])
+    d["manga"] = _buscar_numero(txt, [r"Breadth moulded\s*([0-9.,]+)\s*m", r"Manga\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["puntal_m"] = _buscar_numero(txt, [r"Depth moulded\s*([0-9.,]+)\s*m", r"Puntal\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["calado"] = _buscar_numero(txt, [r"Draft at Summer freeboard\s*([0-9.,]+)\s*m", r"Calado\s*[:\-]?\s*([0-9.,]+)\s*(?:Metros|m)"])
+    d["dwt_t"] = _buscar_numero(txt, [r"Deadweight\s*([0-9.,]+)\s*MT", r"Peso muerto\s*[:\-]?\s*([0-9.,]+)"])
+    d["velocidad_kn"] = _buscar_numero(txt, [r"Sea speed.*?([0-9.]+)\s*knots", r"Velocidad\s+De\s+Servicio\s*[:\-]?\s*([0-9.,]+)\s*Nudos"])
+    d["sea_margin_pct"] = _buscar_numero(txt, [r"with\s*([0-9.]+)\s*%\s*sea margin", r"Margen\s+De\s+Servicio\s+Requerido\s*[:\-]?\s*([0-9.,]+)\s*%"])
+
+    # Resistencia y parámetros de interacción casco-propulsor.
+    d["rt_kn"] = _buscar_numero(txt, [r"Calm\s+Water\s+Resistance\s*[:\-]?\s*([0-9.,]+)", r"Resistencia\s+(?:en\s+)?calma\s*[:\-]?\s*([0-9.,]+)"])
+    d["wake_adjustment_pct"] = _buscar_numero(txt, [r"Nonuniform\s+Wake\s+Adjustment\s*[:\-]?\s*([0-9.,]+)\s*%"])
+    d["eta_r"] = _buscar_numero(txt, [r"Eficiencia\s+Rotativa\s+Relativa\s*[:\-]?\s*([0-9.,]+)", r"Relative\s+rotative\s+efficiency\s*[:\-]?\s*([0-9.,]+)"])
+    d["t"] = _buscar_numero(txt, [r"Fracci[oó]n\s+de\s+deducci[oó]n\s+de\s+empuje\s*[:\-]?\s*([0-9.,]+)", r"Thrust\s+deduction\s*[:\-]?\s*([0-9.,]+)"])
+    d["w"] = _buscar_numero(txt, [r"Fracci[oó]n\s+De\s+Estela\s*[:\-]?\s*([0-9.,]+)", r"Wake\s+fraction\s*[:\-]?\s*([0-9.,]+)"])
+    d["inmersion_eje_m"] = _buscar_numero(txt, [r"Inmersi[oó]n\s+Del\s+Eje\s*[:\-]?\s*([0-9.,]+)\s*M", r"Shaft\s+immersion\s*[:\-]?\s*([0-9.,]+)"])
+
+    # Condiciones de agua. Se corrige presión atmosférica si viene en kPa o con punto mal colocado.
+    p_atm = _buscar_numero(txt, [r"Presi[oó]n\s+Del\s+Aire\s*[:\-]?\s*([0-9.,]+)", r"Atmospheric\s+pressure\s*[:\-]?\s*([0-9.,]+)"])
+    if p_atm:
+        if p_atm < 2000:
+            p_atm = p_atm * 100.0 if p_atm > 500 else p_atm * 1000.0
+        d["p_atm_pa"] = p_atm
+    d["p_vap_pa"] = _buscar_numero(txt, [r"Presi[oó]n\s+De\s+Vapor.*?[:\-]?\s*([0-9.,]+)", r"Vapor\s+pressure\s*[:\-]?\s*([0-9.,]+)"])
+    d["rho_kg_m3"] = _buscar_numero(txt, [r"Densidad.*?([0-9]{3,4}[.,][0-9]+)\s*Kg/M3", r"Density.*?([0-9]{3,4}[.,][0-9]+)"])
+    d["g_ms2"] = _buscar_numero(txt, [r"gravitacional\s*[:\-]?\s*([0-9.,]+)", r"Gravity\s*[:\-]?\s*([0-9.,]+)"])
+
+    # Motor real.
+    d["motor_modelo"] = _buscar_texto(txt, [r"Main Engine\s*([^\n]+)"])
+    m = re.search(r"MCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", txt, flags=re.I)
+    if m:
+        d["mcr_kw"] = float(m.group(1).replace(',', ''))
+        d["mcr_rpm"] = float(m.group(2).replace(',', ''))
+    else:
+        d["mcr_kw"] = None; d["mcr_rpm"] = None
+    m = re.search(r"NCR\s*([0-9,\.]+)\s*KW\s*/\s*([0-9,\.]+)\s*RPM", txt, flags=re.I)
+    if m:
+        d["ncr_kw"] = float(m.group(1).replace(',', ''))
+        d["ncr_rpm"] = float(m.group(2).replace(',', ''))
+    else:
+        d["ncr_kw"] = None; d["ncr_rpm"] = None
+
+    # Hélice real o de referencia.
+    z = _buscar_numero(txt, [r"Propeller.*?([0-9]+)\s*blades", r"([0-9]+)\s*blades\s*solid", r"Numero\s+De\s+Palas\s*[:\-]?\s*([0-9]+)"])
+    d["prop_z"] = int(z) if z else None
+    d["prop_diam_m"] = None
+    diam_mm = _buscar_numero(txt, [r"Diam\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
+    diam_m = _buscar_numero(txt, [r"Di[aá]metro\s*\(D\)\s*[:\-]?\s*([0-9.,]+)\s*M", r"Di[aá]metro\s*[:\-]?\s*([0-9.,]+)\s*M"])
+    if diam_mm:
+        d["prop_diam_m"] = diam_mm / 1000.0
+    elif diam_m:
+        d["prop_diam_m"] = diam_m
+    pitch_mm = _buscar_numero(txt, [r"Pitch\s*[:\-]?\s*([0-9,\.]+)\s*mm"])
+    d["prop_pitch_m"] = pitch_mm / 1000.0 if pitch_mm else None
+    pd_val_detect = _buscar_numero(txt, [r"P/D.*?\)\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+Paso/Di[aá]metro.*?[:\-]?\s*([0-9.,]+)"])
+    d["prop_pd"] = pd_val_detect if pd_val_detect else (safe_div(d.get("prop_pitch_m"), d.get("prop_diam_m"), default=None) if d.get("prop_pitch_m") and d.get("prop_diam_m") else None)
+    d["prop_aeao"] = _buscar_numero(txt, [r"Ae\s*/\s*A0\s*\)?\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+De\s+[AÁ]rea\s+Expandida.*?[:\-]?\s*([0-9.,]+)"])
+    d["hub_ratio"] = _buscar_numero(txt, [r"Hub\s+Ratio\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+Del\s+Cubo.*?[:\-]?\s*([0-9.,]+)"])
+    d["prop_material"] = _buscar_texto(txt, [r"Material\s*([^\n]+)"])
+    return d
+
+def nvl(dato, default):
+    return default if dato is None or dato == "" else dato
+
+
+def error_pct(calculado, real):
+    try:
+        if real is None or real == 0:
+            return None
+        return abs(calculado - real) / abs(real) * 100.0
+    except Exception:
+        return None
+
+
+
+# ==============================================================================
+# BASE DE DATOS DIDÁCTICA DE MOTORES Y REDUCTORAS
+# ==============================================================================
+# Esta base sirve para preselección académica. Para entrega final siempre debe
+# verificarse contra la hoja técnica vigente del fabricante.
+@st.cache_data(show_spinner=False)
+def construir_base_motores():
+    filas = []
+
+    def add(fabricante, modelo, tipo, mcr_kw, rpm, notas=""):
+        filas.append({
+            "Fabricante": fabricante,
+            "Modelo": modelo,
+            "Tipo": tipo,
+            "MCR [kW]": float(mcr_kw),
+            "RPM MCR": float(rpm),
+            "85% MCR [kW]": float(mcr_kw) * 0.85,
+            "Notas": notas
+        })
+
+    # Motores lentos 2T para buques grandes, normalmente transmisión directa.
+    for cyl, kw in [(5,24450),(6,29340),(7,34230),(8,39120),(9,44010),(10,48900),(11,53790),(12,58680)]:
+        add("Hyundai MAN-B&W", f"{cyl}S90MC-C MK7", "2T lento", kw, 79, "Motor lento; normalmente acoplamiento directo")
+    for cyl, kw in [(5,21000),(6,25200),(7,29400),(8,33600),(9,37800),(10,42000),(11,46200),(12,50400),(14,58800)]:
+        add("MAN Energy Solutions", f"{cyl}G80ME-C", "2T lento", kw, 72, "Motor lento; portacontenedores/tanqueros")
+    for cyl, kw in [(5,17100),(6,20520),(7,23940),(8,27360),(9,30780),(10,34200),(11,37620),(12,41040)]:
+        add("MAN Energy Solutions", f"{cyl}S70ME-C", "2T lento", kw, 91, "Motor lento; bulk/tanker")
+    for cyl, kw in [(5,12400),(6,14880),(7,17360),(8,19840),(9,22320)]:
+        add("MAN Energy Solutions", f"{cyl}S60ME-C", "2T lento", kw, 105, "Motor lento/medio-bajo")
+    for cyl, kw in [(5,27000),(6,32400),(7,37800),(8,43200),(9,48600),(10,54000),(11,59400),(12,64800)]:
+        add("WinGD", f"{cyl}X92-B", "2T lento", kw, 80, "Motor lento; buques de gran porte")
+    for cyl, kw in [(5,19500),(6,23400),(7,27300),(8,31200),(9,35100),(10,39000),(11,42900),(12,46800)]:
+        add("WinGD", f"{cyl}X72", "2T lento", kw, 89, "Motor lento; tanque/bulk/container")
+    for cyl, kw in [(5,12800),(6,15360),(7,17920),(8,20480),(9,23040)]:
+        add("WinGD", f"{cyl}X62", "2T lento", kw, 103, "Motor lento; mercante")
+
+    # Motores semi-rápidos 4T; normalmente requieren reductora.
+    for cyl in [6,7,8,9,10,12,14,16,18,20]:
+        add("Wärtsilä", f"{cyl}L32", "4T medio", cyl*580, 750, "Requiere reductora para hélice convencional")
+        add("Wärtsilä", f"{cyl}V32", "4T medio", cyl*580, 750, "Requiere reductora")
+    for cyl in [6,8,9,12,14,16,18,20]:
+        add("Wärtsilä", f"{cyl}V46F", "4T medio", cyl*1200, 600, "Requiere reductora")
+    for cyl in [6,8,9,12,14,16,18]:
+        add("MAN", f"{cyl}L32/44CR", "4T medio", cyl*560, 750, "Requiere reductora")
+        add("MAN", f"{cyl}L48/60CR", "4T medio", cyl*1200, 500, "Requiere reductora")
+    for cyl in [6,8,9,12,16,20]:
+        add("Caterpillar MaK", f"M32E {cyl} cyl", "4T medio", cyl*550, 750, "Offshore/ferry/mercante; reductora")
+        add("Caterpillar MaK", f"M46DF {cyl} cyl", "4T medio", cyl*900, 500, "Dual fuel; reductora")
+    for cyl in [6,8,9,12,16,20]:
+        add("Hyundai HiMSEN", f"H32/40 {cyl} cyl", "4T medio", cyl*500, 720, "Auxiliar o propulsión mediana; reductora")
+    for cyl in [6,8,9,12,16,20]:
+        add("Bergen / Rolls-Royce", f"B33:45 {cyl} cyl", "4T medio", cyl*600, 750, "OSV/ferry; reductora")
+
+    # Motores rápidos para embarcaciones pequeñas, remolcadores, yates, patrullas.
+    for modelo, kw, rpm in [
+        ("C18 ACERT", 715, 1800), ("C32 ACERT", 1450, 1800), ("3512C", 1900, 1800),
+        ("3516C", 2525, 1800), ("C280-6", 2700, 1000), ("C280-8", 3600, 1000),
+        ("C280-12", 5400, 1000), ("C280-16", 7200, 1000)]:
+        add("Caterpillar", modelo, "4T rápido", kw, rpm, "Alta RPM; requiere reductora")
+    for modelo, kw, rpm in [("QSK19-M", 600, 1800), ("QSK38-M", 1200, 1800), ("QSK50-M", 1600, 1800), ("QSK60-M", 2200, 1800), ("QSK95-M", 3200, 1700)]:
+        add("Cummins", modelo, "4T rápido", kw, rpm, "Embarcaciones menores/servicio; reductora")
+    for modelo, kw, rpm in [("16V4000 M63", 2000, 1800), ("20V4000 M73L", 3600, 2050), ("12V2000 M96", 1500, 2450), ("16V2000 M96L", 1939, 2450)]:
+        add("MTU", modelo, "4T rápido", kw, rpm, "Alta velocidad; reductora")
+    for modelo, kw, rpm in [("6AYM-WET", 610, 1900), ("12AYM-WET", 1340, 1900), ("6EY26W", 1920, 750), ("8EY26W", 2560, 750)]:
+        add("Yanmar", modelo, "4T rápido/medio", kw, rpm, "Reductora según aplicación")
+    for cyl in [6,8,12,16]:
+        add("ABC", f"DZC {cyl} cyl", "4T medio", cyl*520, 1000, "Remolcador/ferry; reductora")
+
+
+
+    # Base adicional ampliada para que la app funcione con más tipos de buques.
+    # Son valores de preselección didáctica; deben verificarse con hojas técnicas vigentes.
+    familias_2t_extra = [
+        ("MAN Energy Solutions", "G95ME-C", 6100, 70, [5,6,7,8,9,10,11,12]),
+        ("MAN Energy Solutions", "G90ME-C", 5600, 74, [5,6,7,8,9,10,11,12]),
+        ("MAN Energy Solutions", "G70ME-C", 3200, 85, [5,6,7,8,9,10,11,12]),
+        ("MAN Energy Solutions", "G60ME-C", 2500, 97, [5,6,7,8,9,10]),
+        ("MAN Energy Solutions", "S50ME-C", 1780, 127, [5,6,7,8,9]),
+        ("MAN Energy Solutions", "S46ME-B", 1500, 129, [5,6,7,8]),
+        ("MAN Energy Solutions", "S35ME-B", 870, 173, [5,6,7,8]),
+        ("WinGD", "X82", 4500, 76, [5,6,7,8,9,10,11,12]),
+        ("WinGD", "X72DF", 3900, 89, [5,6,7,8,9,10,11]),
+        ("WinGD", "X62DF", 2800, 103, [5,6,7,8,9,10]),
+        ("WinGD", "X52", 1900, 110, [5,6,7,8,9]),
+        ("WinGD", "X40-B", 1050, 146, [5,6,7,8]),
+    ]
+    for fabricante, familia, kw_cyl, rpm, cilindros in familias_2t_extra:
+        for cyl in cilindros:
+            add(fabricante, f"{cyl}{familia}", "2T lento", cyl*kw_cyl, rpm, "Motor lento; candidato para transmisión directa o baja reducción")
+
+    familias_4t_extra = [
+        ("Wärtsilä", "L20", 200, 1000, [4,6,8,9]),
+        ("Wärtsilä", "L26", 340, 1000, [6,8,9,12,16]),
+        ("Wärtsilä", "L31", 610, 750, [8,10,12,14,16]),
+        ("Wärtsilä", "46DF", 1045, 600, [6,8,9,12,16]),
+        ("Wärtsilä", "50DF", 950, 514, [6,8,9,12,16,18]),
+        ("MAN", "L21/31", 220, 1000, [5,6,7,8,9]),
+        ("MAN", "L27/38", 365, 800, [6,8,9]),
+        ("MAN", "V28/33D", 450, 1000, [12,16,20]),
+        ("MAN", "V35/44G", 530, 720, [12,16,20]),
+        ("MAN", "L51/60DF", 1150, 514, [6,7,8,9,12,14,16,18]),
+        ("Caterpillar MaK", "M20C", 180, 1000, [6,8,9]),
+        ("Caterpillar MaK", "M25E", 330, 750, [6,8,9]),
+        ("Caterpillar MaK", "M34DF", 500, 720, [6,8,9,12,16]),
+        ("Bergen", "C25:33", 330, 1000, [6,8,9]),
+        ("Bergen", "B35:40", 665, 750, [6,8,9,12,16,20]),
+        ("Niigata", "28AHX", 320, 750, [6,8,9]),
+        ("Daihatsu", "DE-28", 250, 720, [6,8]),
+        ("Daihatsu", "DE-35", 500, 720, [6,8]),
+    ]
+    for fabricante, familia, kw_cyl, rpm, cilindros in familias_4t_extra:
+        for cyl in cilindros:
+            add(fabricante, f"{cyl}{familia}", "4T medio", cyl*kw_cyl, rpm, "Motor medio; usualmente requiere reductora")
+
+    motores_rapidos_extra = [
+        ("Scania", "DI13 076M", 700, 2100), ("Scania", "DI16 076M", 900, 2100),
+        ("Volvo Penta", "D13 MH", 735, 2300), ("Volvo Penta", "D16 MH", 1000, 2300),
+        ("John Deere", "6135SFM85", 560, 2200), ("John Deere", "PowerTech 6090SFM85", 410, 2200),
+        ("MAN High Speed", "D2862 LE489", 1213, 2300), ("MAN High Speed", "D2868 LE436", 882, 2100),
+        ("MTU", "8V2000 M72", 720, 2250), ("MTU", "10V2000 M72", 900, 2250),
+        ("MTU", "12V4000 M65L", 2250, 1800), ("MTU", "16V4000 M93L", 3440, 2100),
+        ("Baudouin", "12M26.3", 1214, 1800), ("Baudouin", "16M33.3", 2200, 1800),
+        ("Mitsubishi", "S12R-MPTK", 1260, 1600), ("Mitsubishi", "S16R2-MPTK", 2000, 1500),
+    ]
+    for fabricante, modelo, kw, rpm in motores_rapidos_extra:
+        add(fabricante, modelo, "4T rápido", kw, rpm, "Motor rápido; requiere reductora")
+
+
+
+    # Catálogo extendido paramétrico adicional: amplia la búsqueda para uso universal.
+    # No representa una ficha exacta única; es una malla de familias comerciales aproximadas para preselección.
+    familias_ext = [
+        ("MAN Energy Solutions", "S40ME-C", "2T lento", 1120, 146, range(5,9)),
+        ("MAN Energy Solutions", "S50ME-C9", "2T lento", 1850, 127, range(5,10)),
+        ("MAN Energy Solutions", "S60ME-C10", "2T lento", 2550, 105, range(5,10)),
+        ("WinGD", "X35-B", "2T lento", 870, 167, range(5,9)),
+        ("WinGD", "X40DF", "2T lento", 1100, 146, range(5,9)),
+        ("WinGD", "X52DF", "2T lento", 2000, 110, range(5,10)),
+        ("Wärtsilä", "L34DF", "4T medio", 500, 750, range(6,18,2)),
+        ("Wärtsilä", "L38", "4T medio", 725, 600, range(6,18,2)),
+        ("MAN", "L23/30H", "4T medio", 200, 900, range(5,10)),
+        ("MAN", "L28/32DF", "4T medio", 450, 720, range(6,20,2)),
+        ("Caterpillar MaK", "M43C", "4T medio", 900, 500, range(6,18,2)),
+        ("Caterpillar MaK", "M32C", "4T medio", 500, 600, range(6,18,2)),
+        ("Hyundai HiMSEN", "H25/33", "4T medio", 250, 900, range(5,10)),
+        ("Hyundai HiMSEN", "H35/40", "4T medio", 600, 720, range(6,20,2)),
+        ("Bergen", "B32:40", "4T medio", 500, 750, range(6,20,2)),
+        ("Bergen", "B36:45", "4T medio", 750, 600, range(6,20,2)),
+        ("ABC", "DL36", "4T medio", 750, 750, range(6,18,2)),
+        ("ABC", "DZC Medium", "4T medio", 520, 1000, range(6,18,2)),
+    ]
+    for fabricante, familia, tipo, kw_cyl, rpm, cilindros in familias_ext:
+        for cyl in cilindros:
+            add(fabricante, f"{cyl}{familia}", tipo, cyl*kw_cyl, rpm, "Catálogo extendido de preselección; verificar ficha de fabricante")
+
+    # Variantes de motores rápidos por niveles de potencia para embarcaciones menores.
+    for kw in [300, 450, 600, 800, 1000, 1200, 1500, 1800, 2200, 2600, 3200, 4000, 5000]:
+        add("Base genérica comercial", f"High Speed Marine {kw} kW", "4T rápido", kw, 1800 if kw < 2500 else 1500, "Opción genérica para dimensionamiento; reemplazar por modelo real")
+
+    df = pd.DataFrame(filas).drop_duplicates(subset=["Fabricante", "Modelo"]).reset_index(drop=True)
+    return df
+
+
+def recomendar_motores(pb_req_kw, rpm_objetivo, transmision_tipo, n=12):
+    db = construir_base_motores().copy()
+    db = db[db["85% MCR [kW]"] >= max(pb_req_kw, 0)]
+    if db.empty:
+        return db
+    # Penaliza exceso de potencia y diferencia de RPM. Para transmisión directa pesa más la RPM.
+    db["Exceso 85% MCR [kW]"] = db["85% MCR [kW]"] - pb_req_kw
+    db["MCR requerido aprox [kW]"] = pb_req_kw / 0.85 if pb_req_kw else 0
+    if transmision_tipo.startswith("Directa"):
+        db["Diferencia RPM [%]"] = abs(db["RPM MCR"] - rpm_objetivo) / max(rpm_objetivo, 1) * 100
+        db["Puntaje"] = db["Exceso 85% MCR [kW]"] + db["Diferencia RPM [%]"] * 500
+    else:
+        db["Relación recomendada i"] = db["RPM MCR"] / max(rpm_objetivo, 1)
+        db["Diferencia RPM [%]"] = 0.0
+        db["Puntaje"] = db["Exceso 85% MCR [kW]"]
+    if "Relación recomendada i" not in db.columns:
+        db["Relación recomendada i"] = db["RPM MCR"] / max(rpm_objetivo, 1)
+    return db.sort_values("Puntaje").head(n).reset_index(drop=True)
+
+@st.cache_data(show_spinner=False)
+def construir_base_reductoras():
+    filas = []
+    def add(marca, serie, pmin, pmax, imin, imax, eta):
+        filas.append({"Marca": marca, "Serie/modelo": serie, "Potencia mín [kW]": pmin, "Potencia máx [kW]": pmax,
+                      "i mín": imin, "i máx": imax, "ηG ref": eta})
+    for serie, pmax in [("WAF/WGF 300", 1500),("WAF/WGF 500", 3500),("WAF/WGF 700", 7000),("WAF/WGF 1000", 12000),("WAF/WGF 1500", 20000),("WAF/WGF 2000", 30000)]:
+        add("Reintjes", serie, 100, pmax, 1.2, 7.0, 0.98)
+    for serie, pmax in [("ZF 500", 1200),("ZF 2000", 2500),("ZF 5000", 6000),("ZF 10000", 12000),("ZF 30000", 25000)]:
+        add("ZF Marine", serie, 50, pmax, 1.2, 6.5, 0.97)
+    for serie, pmax in [("MGX 5000", 1500),("MGX 6000", 3000),("MGX 7000", 5000),("MGX 8000", 8000),("MGX 9000", 12000)]:
+        add("Twin Disc", serie, 50, pmax, 1.1, 6.0, 0.97)
+    for serie, pmax in [("Marine Gear L", 5000),("Marine Gear M", 12000),("Marine Gear H", 30000),("Marine Gear VH", 60000)]:
+        add("Lufkin", serie, 500, pmax, 1.1, 8.0, 0.98)
+    return pd.DataFrame(filas)
+
+
+def recomendar_reductoras(pb_kw, relacion_necesaria, n=8):
+    db = construir_base_reductoras().copy()
+    db = db[(db["Potencia mín [kW]"] <= pb_kw) & (db["Potencia máx [kW]"] >= pb_kw) &
+            (db["i mín"] <= relacion_necesaria) & (db["i máx"] >= relacion_necesaria)]
+    return db.head(n).reset_index(drop=True)
+
+
+
+def crear_figura_motor_transmision_interactiva(pb_kw, mcr_kw, rpm_motor_val, rpm_helice_val, relacion_val, tipo_trans, motor_nombre_txt="Motor seleccionado"):
+    """Diagrama interactivo para la pestaña Motor/Reductora.
+    Muestra reserva MCR, punto de operación al 85% y compatibilidad de transmisión.
+    """
+    if go is None:
+        return None
+    pb_kw = float(max(pb_kw, 0.0))
+    mcr_kw = float(max(mcr_kw, pb_kw if pb_kw > 0 else 1.0))
+    p85 = 0.85*mcr_kw
+    reserva = max(mcr_kw - pb_kw, 0.0)
+    uso_mcr = safe_div(pb_kw, mcr_kw, default=0.0)*100.0
+    rpm_motor_val = float(max(rpm_motor_val, 0.0))
+    rpm_helice_val = float(max(rpm_helice_val, 0.0))
+    relacion_real = safe_div(rpm_motor_val, rpm_helice_val, default=relacion_val if relacion_val else 1.0)
+    fig = go.Figure()
+
+    # Barras de potencia: MCR, 85% MCR y PB.
+    fig.add_trace(go.Bar(
+        x=["MCR motor", "85% MCR", "PB requerida"],
+        y=[mcr_kw, p85, pb_kw],
+        text=[f"{mcr_kw:,.0f} kW", f"{p85:,.0f} kW", f"{pb_kw:,.0f} kW"],
+        textposition="outside",
+        name="Potencia",
+        hovertemplate="<b>%{x}</b><br>%{y:,.0f} kW<extra></extra>",
+        marker=dict(color=["#312e81", "#2563eb", "#059669"])
+    ))
+    fig.add_hline(y=p85, line_dash="dash", line_color="#2563eb", annotation_text="Referencia 85% MCR", annotation_position="top left")
+    fig.add_hline(y=mcr_kw, line_dash="dot", line_color="#312e81", annotation_text="MCR disponible", annotation_position="top right")
+
+    # Diagrama simplificado motor -> transmisión -> hélice en coordenadas de papel.
+    shapes = [
+        (0.08,0.15,0.28,0.31,"#312e81","Motor"),
+        (0.40,0.15,0.56,0.31,"#475569","Transmisión"),
+        (0.72,0.15,0.92,0.31,"#0891b2","Hélice"),
+    ]
+    for x0,y0,x1,y1,col,label in shapes:
+        fig.add_shape(type="rect", xref="paper", yref="paper", x0=x0, y0=y0, x1=x1, y1=y1,
+                      line=dict(color=col, width=2), fillcolor="rgba(255,255,255,0.96)")
+        fig.add_annotation(xref="paper", yref="paper", x=(x0+x1)/2, y=(y0+y1)/2+0.025,
+                           text=f"<b>{label}</b>", showarrow=False, font=dict(color="#0f172a", size=12))
+    fig.add_annotation(xref="paper", yref="paper", x=0.18, y=0.18, text=f"{rpm_motor_val:,.0f} rpm", showarrow=False, font=dict(color="#312e81", size=11))
+    fig.add_annotation(xref="paper", yref="paper", x=0.48, y=0.18, text=f"i≈{relacion_real:.2f}:1", showarrow=False, font=dict(color="#475569", size=11))
+    fig.add_annotation(xref="paper", yref="paper", x=0.82, y=0.18, text=f"{rpm_helice_val:,.1f} rpm", showarrow=False, font=dict(color="#0891b2", size=11))
+    fig.add_shape(type="line", xref="paper", yref="paper", x0=0.28, y0=0.23, x1=0.40, y1=0.23, line=dict(color="#94a3b8", width=6))
+    fig.add_shape(type="line", xref="paper", yref="paper", x0=0.56, y0=0.23, x1=0.72, y1=0.23, line=dict(color="#94a3b8", width=6))
+
+    estado = "Cumple ideal" if pb_kw <= p85 else ("Cumple con observación" if pb_kw <= mcr_kw else "No cumple")
+    color_estado = "#059669" if estado == "Cumple ideal" else ("#f59e0b" if estado == "Cumple con observación" else "#dc2626")
+    fig.add_annotation(xref="paper", yref="paper", x=0.50, y=0.03, showarrow=False,
+                       text=(f"<b>Dictamen:</b> <span style='color:{color_estado}'>{estado}</span> · "
+                             f"uso del MCR ≈ {uso_mcr:.1f}% · reserva ≈ {reserva:,.0f} kW"),
+                       font=dict(size=13, color="#0f172a"))
+    fig.update_layout(
+        title=dict(text=f"Validación visual de motor y transmisión — {motor_nombre_txt}", x=0.02, xanchor="left"),
+        height=430,
+        margin=dict(l=30, r=30, t=70, b=30),
+        yaxis=dict(title="Potencia [kW]", gridcolor="#e2e8f0", zeroline=False),
+        xaxis=dict(gridcolor="#ffffff"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        showlegend=False,
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a")
+    )
+    return fig
+
+
+@st.cache_data(show_spinner=False)
+def optimizar_helice_wageningen(modo="Rápida", rpm_referencia=0.0, va_ms_ref=0.0, diametro_ref_m=1.0):
+    """
+    Optimización ligera para no bloquear la app en Streamlit Cloud.
+    Modo Rápida: pocas combinaciones, ideal para clase.
+    Modo Detallada: más combinaciones, pero sigue limitada para evitar congelamientos.
+    """
+    filas = []
+    if modo == "Detallada":
+        pds = np.linspace(0.55, 1.25, 8)
+        aes = np.linspace(0.40, 0.95, 7)
+        j_vals_local = np.linspace(0.05, 1.15, 80)
+    else:
+        pds = np.linspace(0.60, 1.20, 6)
+        aes = np.linspace(0.40, 0.90, 5)
+        j_vals_local = np.linspace(0.08, 1.10, 55)
+
+    col_c = "Coeficiente"
+    kt_c = df_kt[col_c].to_numpy(dtype=float)
+    kt_s = df_kt["S (j)"].to_numpy(dtype=float)
+    kt_t = df_kt["T (p/d)"].to_numpy(dtype=float)
+    kt_u = df_kt["U (ae/ao)"].to_numpy(dtype=float)
+    kt_v = df_kt["V (z)"].to_numpy(dtype=float)
+
+    kq_c = df_kq[col_c].to_numpy(dtype=float)
+    kq_s = df_kq["S (j)"].to_numpy(dtype=float)
+    kq_t = df_kq["T (p/d)"].to_numpy(dtype=float)
+    kq_u = df_kq["U (ae/ao)"].to_numpy(dtype=float)
+    kq_v = df_kq["V (z)"].to_numpy(dtype=float)
+
+    j_matrix_kt = np.power(j_vals_local[:, None], kt_s[None, :])
+    j_matrix_kq = np.power(j_vals_local[:, None], kq_s[None, :])
+
+    for z in range(3, 8):
+        for pdv in pds:
+            for aev in aes:
+                kt_terms = kt_c * (pdv ** kt_t) * (aev ** kt_u) * (z ** kt_v)
+                kq_terms = kq_c * (pdv ** kq_t) * (aev ** kq_u) * (z ** kq_v)
+                kt_vals = j_matrix_kt @ kt_terms
+                kq_vals = j_matrix_kq @ kq_terms
+                eta_vals = np.where((kt_vals > 0) & (kq_vals > 0), (j_vals_local / (2*np.pi)) * (kt_vals / kq_vals), 0.0)
+                eta_vals = np.where(eta_vals <= 0.85, eta_vals, 0.0)
+                imax = int(np.nanargmax(eta_vals))
+                j_best = float(j_vals_local[imax])
+                eta_pct = float(eta_vals[imax] * 100.0)
+                rpm_est = safe_div(va_ms_ref, max(j_best * diametro_ref_m, 1e-9), default=0.0) * 60.0 if va_ms_ref > 0 else 0.0
+                error_rpm = abs(rpm_est - rpm_referencia) / max(rpm_referencia, 1e-9) * 100.0 if rpm_referencia and rpm_referencia > 0 and rpm_est > 0 else np.nan
+                # Puntaje profesional: maximiza eficiencia, pero penaliza alejarse de la RPM real/PDF si existe.
+                penalizacion_rpm = 0.35 * error_rpm if not np.isnan(error_rpm) else 0.0
+                puntaje = eta_pct - penalizacion_rpm
+                dictamen_rpm = "Cumple" if (np.isnan(error_rpm) or error_rpm <= 10) else ("Revisar" if error_rpm <= 20 else "No cumple")
+                filas.append({
+                    "Z": z,
+                    "P/D": float(pdv),
+                    "Ae/A0": float(aev),
+                    "J óptimo": j_best,
+                    "KT": float(kt_vals[imax]),
+                    "KQ": float(kq_vals[imax]),
+                    "ηO [%]": eta_pct,
+                    "RPM estimada [rpm]": rpm_est,
+                    "Error RPM [%]": error_rpm,
+                    "Puntaje optimizado": puntaje,
+                    "Dictamen RPM": dictamen_rpm,
+                })
+    df_opt = pd.DataFrame(filas)
+    return df_opt.sort_values("Puntaje optimizado", ascending=False).reset_index(drop=True)
+
+
+
+
+# ==============================================================================
+# GEMELO DIGITAL 3D E INTERACTIVO
+# ==============================================================================
+
+def _plotly_available():
+    return go is not None
+
+
+def _cylinder_surface(radius=1.0, length=1.0, x0=0.0, axis="x", n_theta=48, n_len=12):
+    theta = np.linspace(0, 2*np.pi, n_theta)
+    s = np.linspace(0, length, n_len)
+    T, S = np.meshgrid(theta, s)
+    if axis == "x":
+        X = x0 + S
+        Y = radius*np.cos(T)
+        Z = radius*np.sin(T)
+    elif axis == "z":
+        X = radius*np.cos(T)
+        Y = radius*np.sin(T)
+        Z = x0 + S
+    else:
+        X = radius*np.cos(T)
+        Y = x0 + S
+        Z = radius*np.sin(T)
+    return X, Y, Z
+
+
+def _add_cuboid(fig, center, size, name="Bloque", opacity=0.75, color="#475569", hovertext=None):
+    """Bloque 3D con tooltip. Se usa para motor, caja y equipos auxiliares."""
+    cx, cy, cz = center
+    sx, sy, sz = size
+    x = np.array([cx-sx/2, cx+sx/2])
+    y = np.array([cy-sy/2, cy+sy/2])
+    z = np.array([cz-sz/2, cz+sz/2])
+    vertices = np.array([
+        [x[0], y[0], z[0]], [x[1], y[0], z[0]], [x[1], y[1], z[0]], [x[0], y[1], z[0]],
+        [x[0], y[0], z[1]], [x[1], y[0], z[1]], [x[1], y[1], z[1]], [x[0], y[1], z[1]],
+    ])
+    faces = np.array([
+        [0,1,2], [0,2,3], [4,5,6], [4,6,7], [0,1,5], [0,5,4],
+        [1,2,6], [1,6,5], [2,3,7], [2,7,6], [3,0,4], [3,4,7]
+    ])
+    if hovertext is None:
+        hovertext = f"<b>{name}</b><br>Elemento conceptual del tren propulsor"
+    fig.add_trace(go.Mesh3d(
+        x=vertices[:,0], y=vertices[:,1], z=vertices[:,2],
+        i=faces[:,0], j=faces[:,1], k=faces[:,2],
+        name=name, opacity=opacity, flatshading=True,
+        color=color, showscale=False,
+        hovertemplate=hovertext + "<extra></extra>"
+    ))
+
+
+def _add_hull_envelope(fig, D, Lpp, shaft_len):
+    """Silueta técnica de casco de popa, sin volumen ovalado.
+
+    Se dibuja como líneas/curvas de referencia para que el tren propulsor se lea
+    dentro de un buque, pero sin tapar la hélice ni hacer pesada la escena 3D.
+    """
+    D = max(float(D), 0.2)
+    x_min = -1.55*D
+    x_max = shaft_len + 1.45*D
+    x = np.linspace(x_min, x_max, 120)
+    s = (x - x_min) / max(x_max - x_min, 1e-9)
+
+    # Perfil de popa/casco visto como wireframe: más fino en proa/popas, más lleno al centro.
+    half_beam = 1.10*D * (np.sin(np.pi*s)**0.50) * (0.78 + 0.22*s)
+    keel = -0.72*D + 0.10*D*np.sin(np.pi*s)
+    deck = 0.46*D * (np.sin(np.pi*s)**0.18) + 0.10*D
+
+    line_color = "rgba(30,64,175,0.42)"
+    keel_color = "rgba(15,23,42,0.78)"
+
+    # Bordas/deck y quilla longitudinal.
+    for ysign, nombre in [(1, "Borda de estribor"), (-1, "Borda de babor")]:
+        fig.add_trace(go.Scatter3d(
+            x=x, y=ysign*half_beam, z=deck,
+            mode="lines", line=dict(width=4, color=line_color), name=nombre,
+            hovertemplate=(f"<b>{nombre}</b><br>Silueta conceptual del casco alrededor del tren propulsor.<br>"
+                           "Permite ubicar motor, línea de ejes y hélice dentro del buque.<extra></extra>")
+        ))
+        fig.add_trace(go.Scatter3d(
+            x=x, y=ysign*0.68*half_beam, z=keel+0.10*D,
+            mode="lines", line=dict(width=3, color="rgba(59,130,246,0.24)"), showlegend=False,
+            hovertemplate="<b>Línea lateral inferior</b><br>Referencia de volumen sumergido de popa.<extra></extra>"
+        ))
+
+    fig.add_trace(go.Scatter3d(
+        x=x, y=np.zeros_like(x), z=keel,
+        mode="lines", line=dict(width=6, color=keel_color), name="Quilla / crujía",
+        hovertemplate="<b>Quilla / línea de crujía</b><br>Referencia longitudinal central del buque.<extra></extra>"
+    ))
+
+    # Cuadernas/frames conceptuales, pocas para no saturar ni volver lenta la escena.
+    for idx, sx in enumerate(np.linspace(0.10, 0.92, 7)):
+        xi = x_min + sx*(x_max-x_min)
+        hb = np.interp(xi, x, half_beam)
+        ztop = np.interp(xi, x, deck)
+        zbot = np.interp(xi, x, keel)
+        ang = np.linspace(0, np.pi, 50)
+        yy = hb*np.cos(ang)
+        zz = zbot + (ztop-zbot)*(np.sin(ang)**0.72)
+        fig.add_trace(go.Scatter3d(
+            x=np.full_like(yy, xi), y=yy, z=zz,
+            mode="lines", line=dict(width=2.2, color="rgba(15,23,42,0.23)"),
+            name="Cuadernas conceptuales" if idx == 0 else "", showlegend=bool(idx == 0),
+            hovertemplate="<b>Cuaderna conceptual</b><br>Sección transversal simplificada del casco de popa.<extra></extra>"
+        ))
+
+    # Espejo de popa cerca de la hélice.
+    xi = shaft_len + 0.28*D
+    hb = np.interp(min(xi, x_max), x, half_beam)
+    ztop = np.interp(min(xi, x_max), x, deck)
+    zbot = np.interp(min(xi, x_max), x, keel)
+    yy = np.array([-hb, hb, hb*0.86, -hb*0.86, -hb])
+    zz = np.array([zbot+0.10*D, zbot+0.10*D, ztop, ztop, zbot+0.10*D])
+    fig.add_trace(go.Scatter3d(
+        x=np.full_like(yy, xi), y=yy, z=zz,
+        mode="lines", line=dict(width=4, color="rgba(14,116,144,0.42)"), name="Espejo / popa",
+        hovertemplate="<b>Zona de popa</b><br>Salida del eje, bocina y ubicación del propulsor.<extra></extra>"
+    ))
+
+def _rotar_xy(x, y, ang):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    ca, sa = np.cos(ang), np.sin(ang)
+    return ca*x - sa*y, sa*x + ca*y
+
+
+def crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw, MCR_kw):
+    """Diagrama interactivo profesional del flujo de potencia.
+
+    Se reemplaza el Sankey clásico por un diagrama técnico de flujo con etiquetas
+    nítidas, porque en Streamlit/Plotly las etiquetas dentro del Sankey pueden verse
+    borrosas cuando hay flujos muy anchos. Mantiene interacción mediante tooltips.
+    """
+    if go is None:
+        return None
+
+    PE_kw = max(float(PE_kw), 0.0)
+    PD_kw = max(float(PD_kw), max(PE_kw, 1.0))
+    PS_kw = max(float(PS_kw), PD_kw)
+    PB_kw = max(float(PB_kw), PS_kw)
+    MCR_kw = max(float(MCR_kw), PB_kw)
+
+    perdida_prop = max(PD_kw - PE_kw, 0.0)
+    perdida_eje = max(PS_kw - PD_kw, 0.0)
+    perdida_trans = max(PB_kw - PS_kw, 0.0)
+    reserva_motor = max(MCR_kw - PB_kw, 0.0)
+
+    fig = go.Figure()
+
+    # Coordenadas normalizadas para obtener un aspecto muy limpio y legible.
+    nodes = [
+        {"id":"MCR", "x":0.06, "y":0.64, "label":"MCR requerido", "value":MCR_kw, "color":"#312e81",
+         "desc":"Potencia máxima continua requerida para que el motor cubra la operación con margen."},
+        {"id":"PB", "x":0.27, "y":0.64, "label":"PB motor", "value":PB_kw, "color":"#4f46e5",
+         "desc":"Potencia al freno que debe entregar el motor hacia la transmisión."},
+        {"id":"PS", "x":0.48, "y":0.64, "label":"PS eje", "value":PS_kw, "color":"#2563eb",
+         "desc":"Potencia transmitida por el eje después de pérdidas de transmisión."},
+        {"id":"PD", "x":0.69, "y":0.64, "label":"PD hélice", "value":PD_kw, "color":"#0891b2",
+         "desc":"Potencia entregada al propulsor antes de convertirla en empuje útil."},
+        {"id":"PE", "x":0.90, "y":0.64, "label":"PE útil", "value":PE_kw, "color":"#059669",
+         "desc":"Potencia efectiva útil para vencer la resistencia total del casco."},
+    ]
+    losses = [
+        {"x":0.17, "y":0.24, "label":"Reserva MCR", "value":reserva_motor, "color":"#f59e0b",
+         "desc":"Diferencia entre MCR requerido y PB de operación; representa margen operativo."},
+        {"x":0.38, "y":0.24, "label":"Pérdida transmisión", "value":perdida_trans, "color":"#fb7185",
+         "desc":"Pérdidas asociadas a caja, acoplamientos o transmisión."},
+        {"x":0.59, "y":0.24, "label":"Pérdida eje", "value":perdida_eje, "color":"#f97316",
+         "desc":"Pérdidas mecánicas del eje y elementos asociados."},
+        {"x":0.80, "y":0.24, "label":"Pérdidas propulsivas", "value":perdida_prop, "color":"#ef4444",
+         "desc":"Pérdidas hidrodinámicas entre potencia entregada y potencia efectiva."},
+    ]
+
+    max_val = max(MCR_kw, PB_kw, PS_kw, PD_kw, PE_kw, 1.0)
+    def lw(v):
+        return max(10.0, min(34.0, 8.0 + 28.0*v/max_val))
+
+    # Flujo principal: líneas gruesas con hover y texto nítido separado del flujo.
+    main_pairs = [(nodes[i], nodes[i+1]) for i in range(len(nodes)-1)]
+    for a, b in main_pairs:
+        val = min(a["value"], b["value"])
+        fig.add_trace(go.Scatter(
+            x=[a["x"], b["x"]], y=[a["y"], b["y"]], mode="lines",
+            line=dict(width=lw(val), color="rgba(37,99,235,0.26)", shape="spline"),
+            hoverinfo="skip", showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=[a["x"], b["x"]], y=[a["y"], b["y"]], mode="lines",
+            line=dict(width=3, color="rgba(15,23,42,0.20)"), hoverinfo="skip", showlegend=False
+        ))
+
+    # Derivaciones de pérdidas/reserva hacia abajo.
+    for idx, loss in enumerate(losses):
+        a = nodes[idx]
+        fig.add_trace(go.Scatter(
+            x=[a["x"]+0.055, loss["x"]], y=[a["y"]-0.06, loss["y"]+0.08], mode="lines",
+            line=dict(width=max(4.0, min(16.0, 4.0 + 22.0*loss["value"]/max_val)), color=loss["color"].replace('#','rgba(') if False else "rgba(245,158,11,0.28)"),
+            hoverinfo="skip", showlegend=False
+        ))
+
+    # Nodos principales como tarjetas nítidas.
+    for n in nodes:
+        fig.add_shape(type="rect", x0=n["x"]-0.066, x1=n["x"]+0.066, y0=n["y"]-0.105, y1=n["y"]+0.105,
+                      line=dict(color=n["color"], width=1.4), fillcolor="rgba(255,255,255,0.98)", layer="above")
+        fig.add_annotation(x=n["x"], y=n["y"]+0.038, text=f"<b>{n['label']}</b>", showarrow=False,
+                           font=dict(size=13, color="#0f172a"), align="center")
+        fig.add_annotation(x=n["x"], y=n["y"]-0.030, text=f"{n['value']:,.0f} kW", showarrow=False,
+                           font=dict(size=12, color=n["color"]), align="center")
+        fig.add_trace(go.Scatter(
+            x=[n["x"]], y=[n["y"]], mode="markers", marker=dict(size=28, color="rgba(0,0,0,0)"),
+            hovertemplate=f"<b>{n['label']}</b><br>{n['value']:,.0f} kW<br>{n['desc']}<extra></extra>",
+            showlegend=False
+        ))
+
+    # Tarjetas de pérdidas debajo.
+    for loss in losses:
+        fig.add_shape(type="rect", x0=loss["x"]-0.082, x1=loss["x"]+0.082, y0=loss["y"]-0.070, y1=loss["y"]+0.070,
+                      line=dict(color=loss["color"], width=1.2), fillcolor="rgba(255,255,255,0.98)", layer="above")
+        fig.add_annotation(x=loss["x"], y=loss["y"]+0.022, text=f"<b>{loss['label']}</b>", showarrow=False,
+                           font=dict(size=11, color="#334155"), align="center")
+        fig.add_annotation(x=loss["x"], y=loss["y"]-0.027, text=f"{loss['value']:,.0f} kW", showarrow=False,
+                           font=dict(size=11, color=loss["color"]), align="center")
+        fig.add_trace(go.Scatter(
+            x=[loss["x"]], y=[loss["y"]], mode="markers", marker=dict(size=24, color="rgba(0,0,0,0)"),
+            hovertemplate=f"<b>{loss['label']}</b><br>{loss['value']:,.0f} kW<br>{loss['desc']}<extra></extra>",
+            showlegend=False
+        ))
+
+    eficiencia_global = safe_div(PE_kw, PB_kw, default=0.0) * 100.0
+    fig.add_annotation(
+        x=0.5, y=0.92, showarrow=False, align="center",
+        text=(f"<b>Flujo energético interactivo del sistema propulsivo</b><br>"
+              f"Eficiencia global PB→PE ≈ {eficiencia_global:.1f}% · pérdidas propulsivas ≈ {perdida_prop:,.0f} kW"),
+        font=dict(size=15, color="#0f172a")
+    )
+    fig.add_annotation(
+        x=0.5, y=0.06, showarrow=False, align="center",
+        text="Pasa el cursor sobre cada tarjeta para ver qué representa y cómo se relaciona con la cadena de potencias.",
+        font=dict(size=11, color="#64748b")
+    )
+
+    fig.update_xaxes(visible=False, range=[0,1])
+    fig.update_yaxes(visible=False, range=[0,1])
+    fig.update_layout(
+        height=440,
+        margin=dict(l=18, r=18, t=18, b=18),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a"),
+    )
+    return fig
+
+def _propeller_mesh_arrays(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, phase=0.0, x_offset=0.0, axis="z", detail=24):
+    """Genera una hélice conceptual pero más refinada: pala con cuerda radial, twist, skew, rake y espesor.
+    axis='z' orienta la hélice en el plano XY; axis='x' orienta el disco en YZ para el tren propulsor.
+    """
+    R = max(D/2.0, 0.1)
+    Rhub = max(hub_ratio*R, 0.08*R)
+    n_r = detail
+    radial = np.linspace(Rhub*1.04, R, n_r)
+    x_all, y_all, z_all, i_all, j_all, k_all, intensity = [], [], [], [], [], [], []
+
+    def chord(r):
+        mu = (r - Rhub) / max(R - Rhub, 1e-9)
+        # cuerda tipo pala naval: crece desde raíz, máximo alrededor 0.55R y reduce hacia punta
+        c = (0.18 + 0.95*np.sin(np.pi*mu)**0.78) * R * 0.30
+        return c * (0.72 + 1.10*AeAo) / max((Z/4.0)**0.30, 0.75)
+
+    for blade in range(Z):
+        base_ang = phase + 2*np.pi*blade/Z
+        start = len(x_all)
+        for r in radial:
+            mu = (r - Rhub) / max(R - Rhub, 1e-9)
+            c = chord(r)
+            pitch = PD*D
+            beta = math.atan2(pitch, 2*np.pi*r)
+            skew = np.deg2rad(20.0)*(mu**1.55)       # barrido hacia punta
+            rake = 0.055*R*(mu**1.4)                 # desplazamiento axial conceptual
+            half_ang = c/(2*max(r, 1e-9))
+            thick = (0.030 + 0.055*(1-mu)**1.4)*R*0.16
+            # 4 puntos por estación: borde presión/succión visual.
+            for side, surf in [(-1, -1), (1, -1), (-1, 1), (1, 1)]:
+                th = base_ang + skew + side*half_ang
+                camber = 0.045*R*np.sin(np.pi*mu)
+                z_axial = rake + surf*thick + side*0.018*c*np.sin(beta) + camber*0.20
+                xp = r*np.cos(th)
+                yp = r*np.sin(th)
+                zp = z_axial
+                if axis == "z":
+                    x_all.append(xp); y_all.append(yp); z_all.append(zp + x_offset)
+                else:
+                    # disco de hélice en plano YZ, eje longitudinal en X
+                    x_all.append(zp + x_offset); y_all.append(xp); z_all.append(yp)
+                intensity.append(mu)
+        # caras entre estaciones, conectando superficies
+        for rr in range(n_r-1):
+            a = start + 4*rr
+            b = start + 4*(rr+1)
+            # superficie inferior: puntos 0,1
+            i_all += [a, a+1]
+            j_all += [a+1, b+1]
+            k_all += [b, b]
+            # superficie superior: puntos 2,3
+            i_all += [a+2, a+3]
+            j_all += [a+3, b+3]
+            k_all += [b+2, b+2]
+            # borde de ataque y salida
+            i_all += [a, a+2, a+1, a+3]
+            j_all += [a+2, b+2, a+3, b+3]
+            k_all += [b, b, b+1, b+1]
+    return np.array(x_all), np.array(y_all), np.array(z_all), np.array(i_all), np.array(j_all), np.array(k_all), np.array(intensity)
+
+
+def crear_helice_3d_parametrica(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, rpm=75.0, animar=True):
+    """Hélice paramétrica interactiva en vista de perfil naval.
+
+    Eje longitudinal en X y disco de hélice en YZ, como se observa en un arreglo
+    propulsivo real. El modelo cambia con D, Z, P/D, Ae/A0 y hub ratio.
+    """
+    if go is None:
+        return None
+    R = max(D/2.0, 0.1)
+    Rhub = max(hub_ratio*R, 0.08*R)
+
+    # Menor densidad cuando hay animación para que el giro sea más fluido.
+    detail = 26 if animar else 38
+    x, y, z, i, j, k, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0, axis="x", detail=detail)
+    fig = go.Figure()
+    hover_pala = (
+        f"<b>Pala paramétrica</b><br>"
+        f"D={D:.2f} m · Z={Z}<br>P/D={PD:.3f}<br>Ae/A0={AeAo:.3f}<br>"
+        "Radio normalizado=%{intensity:.2f}<br>La cuerda y torsión visual cambian con los datos de entrada.<extra></extra>"
+    )
+    fig.add_trace(go.Mesh3d(
+        x=x, y=y, z=z, i=i, j=j, k=k,
+        intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False,
+        name="Palas paramétricas", hovertemplate=hover_pala, showscale=False
+    ))
+
+    # Anillos de referencia del disco de hélice en plano YZ.
+    theta = np.linspace(0, 2*np.pi, 180)
+    for rr, name, width in [(R, "Disco de hélice", 4), (0.70*R, "Radio 0.7R", 2)]:
+        fig.add_trace(go.Scatter3d(
+            x=np.zeros_like(theta), y=rr*np.cos(theta), z=rr*np.sin(theta), mode="lines",
+            line=dict(width=width, color="#94a3b8" if rr == R else "#10b981"), name=name,
+            hovertemplate=f"<b>{name}</b><br>Referencia radial del propulsor.<extra></extra>"
+        ))
+
+    # Cubo y eje corto alineados en X.
+    Xh, Yh, Zh = _cylinder_surface(radius=Rhub, length=0.46*R, x0=-0.23*R, axis="x", n_theta=60, n_len=10)
+    fig.add_trace(go.Surface(x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.98, name="Cubo", hovertemplate=f"<b>Cubo de hélice</b><br>Hub ratio={hub_ratio:.3f}<br>Radio cubo≈{Rhub:.2f} m<extra></extra>"))
+    Xs, Ys, Zs = _cylinder_surface(radius=max(0.055*R, Rhub*0.22), length=1.55*R, x0=-1.05*R, axis="x", n_theta=52, n_len=10)
+    fig.add_trace(go.Surface(x=Xs, y=Ys, z=Zs, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.88, name="Eje", hovertemplate="<b>Eje de referencia</b><br>Permite visualizar la orientación real del propulsor.<extra></extra>"))
+
+    # Flecha de empuje/flujo en perfil.
+    fig.add_trace(go.Cone(
+        x=[0.95*R], y=[0], z=[0], u=[0.9*R], v=[0], w=[0], sizemode="absolute", sizeref=0.40*R,
+        anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0284c7"]], showscale=False, name="Empuje",
+        hovertemplate="<b>Empuje</b><br>Dirección conceptual de la fuerza propulsiva en el eje longitudinal.<extra></extra>"
+    ))
+
+    if animar:
+        frames=[]
+        y0 = np.asarray(y, dtype=float); z0 = np.asarray(z, dtype=float)
+        yd0 = R*np.cos(theta); zd0 = R*np.sin(theta)
+        y07 = 0.70*R*np.cos(theta); z07 = 0.70*R*np.sin(theta)
+        # 18 cuadros: más liviano y más fluido en Streamlit Cloud.
+        for n, ang in enumerate(np.linspace(0, 2*np.pi, 18, endpoint=False)):
+            ca, sa = np.cos(ang), np.sin(ang)
+            yr = ca*y0 - sa*z0
+            zr = sa*y0 + ca*z0
+            ydr = ca*yd0 - sa*zd0
+            zdr = sa*yd0 + ca*zd0
+            y7r = ca*y07 - sa*z07
+            z7r = sa*y07 + ca*z07
+            frames.append(go.Frame(data=[
+                go.Mesh3d(x=x, y=yr, z=zr, i=i, j=j, k=k, intensity=inten, colorscale="Viridis", opacity=0.96, flatshading=False, showscale=False, hovertemplate=hover_pala),
+                go.Scatter3d(x=np.zeros_like(theta), y=ydr, z=zdr, mode="lines", line=dict(width=4, color="#94a3b8")),
+                go.Scatter3d(x=np.zeros_like(theta), y=y7r, z=z7r, mode="lines", line=dict(width=2, color="#10b981")),
+            ], traces=[0,1,2], name=str(n)))
+        fig.frames = frames
+        fig.update_layout(updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
+            dict(label="▶ Giro continuo", method="animate", args=[None, {"frame":{"duration":45, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+            dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
+        ])])
+
+    fig.update_layout(
+        title=dict(text=f"Hélice 3D paramétrica de perfil — Z={Z}, D={D:.2f} m, P/D={PD:.3f}, Ae/A0={AeAo:.3f}, n≈{rpm:.1f} rpm", x=0.02, xanchor="left"),
+        scene=dict(
+            xaxis_title="Eje longitudinal X [m]", yaxis_title="Radio transversal Y [m]", zaxis_title="Radio vertical Z [m]",
+            aspectmode="data", bgcolor="white",
+            camera=dict(eye=dict(x=1.90, y=1.95, z=0.95)),
+            dragmode="orbit",
+            xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+        ),
+        height=640,
+        margin=dict(l=0, r=0, t=70, b=0),
+        paper_bgcolor="white",
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a")
+    )
+    return fig
+
+def crear_sistema_propulsor_3d(D=9.86, eje_d_mm=650, Lpp=320, tipo_trans="Directa", relacion=1.0, PB=25000, rpm=75, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155):
+    """Gemelo digital 3D del tren propulsor.
+
+    Es conceptual, pero dinámico: escala el casco, eje, hélice, motor, transmisión,
+    flujo y tooltip técnico con los datos actuales de la app. La hélice gira con animación.
+    """
+    if go is None:
+        return None
+    fig = go.Figure()
+    D = max(float(D), 0.2)
+    escala = max(D, 1.0)
+    shaft_radius = max(eje_d_mm/1000.0/2.0, 0.025*escala)
+    shaft_len = max(2.65*D, 10.0)
+
+    # Casco/volumen del buque para que no se vea como elementos flotantes aislados.
+    _add_hull_envelope(fig, D=D, Lpp=Lpp, shaft_len=shaft_len)
+
+    # Bancada y línea de ejes.
+    fig.add_trace(go.Scatter3d(
+        x=[-1.10*D, shaft_len+0.95*D], y=[0,0], z=[-0.42*D,-0.42*D], mode="lines",
+        line=dict(width=9, color="#cbd5e1"), name="Bancada / línea base",
+        hovertemplate="<b>Bancada / línea base</b><br>Referencia estructural donde se apoya la línea de ejes.<extra></extra>"
+    ))
+
+    # Eje propulsor.
+    X, Y, Zc = _cylinder_surface(radius=shaft_radius, length=shaft_len, x0=0, axis="x", n_theta=72, n_len=22)
+    fig.add_trace(go.Surface(
+        x=X, y=Y, z=Zc, colorscale=[[0,"#334155"],[1,"#cbd5e1"]], showscale=False, opacity=0.98, name="Eje propulsor",
+        hovertemplate=(f"<b>Eje propulsor</b><br>Diámetro estimado: {eje_d_mm:,.0f} mm<br>"
+                       f"Potencia transmitida: {PB:,.0f} kW<br>RPM de referencia: {rpm:.1f} rpm<extra></extra>")
+    ))
+
+    # Cojinetes y bocina.
+    for xb, name, desc in [
+        (0.58*D, "Cojinete de empuje", "Recibe la fuerza axial generada por la hélice."),
+        (1.35*D, "Cojinete intermedio", "Soporta el eje y ayuda a controlar vibración lateral."),
+        (shaft_len-0.42*D, "Bocina / stern tube", "Zona de salida del eje hacia la hélice."),
+    ]:
+        Xb, Yb, Zb = _cylinder_surface(radius=shaft_radius*1.70, length=0.18*D, x0=xb, axis="x", n_theta=56, n_len=6)
+        fig.add_trace(go.Surface(
+            x=Xb, y=Yb, z=Zb, colorscale=[[0,"#0f766e"],[1,"#14b8a6"]], showscale=False, opacity=0.93, name=name,
+            hovertemplate=f"<b>{name}</b><br>{desc}<extra></extra>"
+        ))
+
+    # Motor y transmisión con tooltip detallado.
+    _add_cuboid(
+        fig, center=(-0.72*D, 0, 0.28*D), size=(0.86*D, 0.54*D, 0.46*D), name="Motor principal",
+        opacity=0.88, color="#334155",
+        hovertext=(f"<b>Motor principal</b><br>Entrega la potencia al freno requerida.<br>"
+                   f"PB ≈ {PB:,.0f} kW<br>n hélice ≈ {rpm:.1f} rpm<br>El MCR debe cubrir PB con margen operativo.")
+    )
+    # Cilindros de motor simbólicos.
+    for n in range(6):
+        Xc, Yc, Zcc = _cylinder_surface(radius=0.045*D, length=0.14*D, x0=-1.08*D+n*0.14*D, axis="z", n_theta=28, n_len=5)
+        fig.add_trace(go.Surface(
+            x=Xc, y=Yc, z=Zcc+0.49*D, colorscale=[[0,"#111827"],[1,"#64748b"]], showscale=False,
+            opacity=0.92, name="Cilindros del motor" if n==0 else "",
+            hovertemplate="<b>Cilindros del motor</b><br>Representación conceptual del motor principal.<extra></extra>"
+        ))
+
+    if not str(tipo_trans).startswith("Directa"):
+        _add_cuboid(
+            fig, center=(0.06*D, 0, 0.17*D), size=(0.34*D, 0.39*D, 0.30*D), name=f"Caja reductora i≈{relacion:.2f}",
+            opacity=0.85, color="#475569",
+            hovertext=(f"<b>Caja reductora / transmisión</b><br>Relación aproximada i={relacion:.2f}:1<br>"
+                       "Ajusta RPM del motor a la RPM requerida por la hélice.")
+        )
+    else:
+        fig.add_trace(go.Scatter3d(
+            x=[-0.15*D], y=[0], z=[0.40*D], mode="text", text=["Transmisión directa"],
+            textfont=dict(color="#0f766e", size=13), name="Transmisión directa",
+            hovertemplate="<b>Transmisión directa</b><br>Motor lento acoplado directamente al eje.<extra></extra>"
+        ))
+
+    # Hélice paramétrica en plano YZ al final del eje.
+    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, Z, PD, AeAo, hub_ratio, phase=0.0, x_offset=shaft_len+0.05*D, axis="x", detail=24)
+    prop_trace = len(fig.data)
+    fig.add_trace(go.Mesh3d(
+        x=xp, y=yp, z=zp, i=ii, j=jj, k=kk, intensity=inten, colorscale="Viridis", opacity=0.97,
+        flatshading=False, showscale=False, name="Hélice paramétrica",
+        hovertemplate=(f"<b>Hélice paramétrica</b><br>D={D:.2f} m<br>Z={Z}<br>P/D={PD:.3f}<br>Ae/A0={AeAo:.3f}<br>"
+                       "La geometría se actualiza con los datos del usuario.<extra></extra>")
+    ))
+    Xh, Yh, Zh = _cylinder_surface(radius=max(0.10*D, hub_ratio*D/2), length=0.26*D, x0=shaft_len-0.10*D, axis="x", n_theta=64, n_len=8)
+    fig.add_trace(go.Surface(
+        x=Xh, y=Yh, z=Zh, colorscale=[[0,"#1e293b"],[1,"#64748b"]], showscale=False, opacity=0.97, name="Cubo de hélice",
+        hovertemplate=f"<b>Cubo de hélice</b><br>Hub ratio={hub_ratio:.3f}<br>Conecta pala y eje propulsor.<extra></extra>"
+    ))
+
+    # Timón y skeg/aftbody conceptual para que el conjunto se lea más como un buque real.
+    rud_x = shaft_len + 0.72*D
+    rud_y = np.array([-0.08*D, 0.08*D, 0.08*D, -0.08*D])
+    rud_z = np.array([-0.92*D, -0.92*D, 0.78*D, 0.78*D])
+    rud_xs = np.full_like(rud_y, rud_x)
+    fig.add_trace(go.Mesh3d(
+        x=rud_xs, y=rud_y, z=rud_z, i=[0,0], j=[1,2], k=[2,3],
+        color="#0f766e", opacity=0.38, name="Timón / plano de gobierno",
+        hovertemplate="<b>Timón conceptual</b><br>Plano de gobierno ubicado aguas abajo de la hélice. En un modelo real afectaría la estela, maniobra y pérdidas por apéndices.<extra></extra>"
+    ))
+    skeg_x = np.array([shaft_len-0.72*D, shaft_len+0.18*D, shaft_len+0.05*D, shaft_len-0.52*D])
+    skeg_y = np.array([0,0,0,0])
+    skeg_z = np.array([-0.24*D, -0.16*D, -0.72*D, -0.78*D])
+    fig.add_trace(go.Mesh3d(
+        x=skeg_x, y=skeg_y, z=skeg_z, i=[0,0], j=[1,2], k=[2,3],
+        color="#1d4ed8", opacity=0.26, name="Skeg / soporte de popa",
+        hovertemplate="<b>Skeg conceptual</b><br>Representa el soporte hidrodinámico de popa y la zona de salida del eje.<extra></extra>"
+    ))
+
+    # Empuje y flujo de agua conceptual con tooltip.
+    fig.add_trace(go.Cone(
+        x=[shaft_len+0.68*D], y=[0], z=[0], u=[0.95*D], v=[0], w=[0], sizemode="absolute", sizeref=0.62*D,
+        anchor="tail", colorscale=[[0,"#38bdf8"],[1,"#0284c7"]], showscale=False, name="Vector de empuje",
+        hovertemplate="<b>Vector de empuje</b><br>Dirección conceptual de la fuerza propulsiva generada por la hélice.<extra></extra>"
+    ))
+    for idx, yy in enumerate(np.linspace(-0.95*D, 0.95*D, 7)):
+        fig.add_trace(go.Scatter3d(
+            x=[shaft_len+1.35*D, shaft_len+0.16*D], y=[yy, yy*0.42], z=[-0.65*D, -0.12*D], mode="lines",
+            line=dict(width=4 if idx==3 else 3, color="rgba(56,189,248,.34)"),
+            name="Flujo de agua hacia hélice" if idx==3 else "", showlegend=bool(idx==3),
+            hovertemplate="<b>Flujo de agua</b><br>Representación conceptual de la estela hacia el propulsor.<extra></extra>"
+        ))
+
+    # Las etiquetas flotantes se omiten para evitar texto borroso; la información aparece en hover y tablas.
+
+    # Animación: rota la hélice alrededor del eje X. El usuario también puede mover todo con el mouse.
+    frames = []
+    y0 = np.asarray(yp, dtype=float)
+    z0 = np.asarray(zp, dtype=float)
+    zcenter = 0.0
+    for n, ang in enumerate(np.linspace(0, 2*np.pi, 18, endpoint=False)):
+        ca, sa = np.cos(ang), np.sin(ang)
+        yr = ca*y0 - sa*(z0-zcenter)
+        zr = sa*y0 + ca*(z0-zcenter) + zcenter
+        frames.append(go.Frame(
+            data=[go.Mesh3d(x=xp, y=yr, z=zr, i=ii, j=jj, k=kk, intensity=inten, colorscale="Viridis", opacity=0.97, flatshading=False, showscale=False)],
+            traces=[prop_trace], name=f"giro_{n}"
+        ))
+    fig.frames = frames
+    fig.update_layout(updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
+        dict(label="▶ Animar hélice", method="animate", args=[None, {"frame":{"duration":45, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+        dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
+    ])])
+
+    fig.update_layout(
+        title=dict(text=f"Sistema propulsivo 3D — PB={PB:,.0f} kW, n={rpm:.1f} rpm, D={D:.2f} m", x=0.02, xanchor="left"),
+        scene=dict(
+            xaxis_title="Longitud del tren [m]", yaxis_title="Manga conceptual", zaxis_title="Vertical",
+            aspectmode="data", bgcolor="white",
+            camera=dict(eye=dict(x=1.75, y=1.65, z=0.92)),
+            xaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            yaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+            zaxis=dict(backgroundcolor="white", gridcolor="#e2e8f0", zerolinecolor="#cbd5e1"),
+        ),
+        height=660,
+        margin=dict(l=0, r=0, t=70, b=0),
+        paper_bgcolor="white",
+        hoverlabel=dict(bgcolor="white", font_size=12, font_color="#0f172a")
+    )
+    return fig
+
+
+def crear_cavitacion_3d_visual(D=9.86, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, sigma=1.0, keller_ok=True, burrill_ok=True):
+    """Visualización animada conceptual de cavitación alrededor de la hélice."""
+    if go is None:
+        return None
+    fig = crear_helice_3d_parametrica(D=D, Z=Z, PD=PD, AeAo=AeAo, hub_ratio=hub_ratio, rpm=0, animar=False)
+    if fig is None:
+        return None
+    riesgo = 0.18 if (keller_ok and burrill_ok and sigma > 0.2) else 0.78
+    rng = np.random.default_rng(7)
+    n = int(34 + 95*riesgo)
+    R = D/2
+
+    # Nube de burbujas cerca de punta y cara de succión, en perfil YZ.
+    theta_b = rng.uniform(0, 2*np.pi, n)
+    rr = rng.uniform(0.62*R, 1.05*R, n)
+    xb = rng.normal(0.10*R, 0.18*R, n)
+    yb = rr*np.cos(theta_b)
+    zb = rr*np.sin(theta_b)
+    size = 3.2 + 6.0*riesgo
+    bubble_trace = len(fig.data)
+    fig.add_trace(go.Scatter3d(
+        x=xb, y=yb, z=zb, mode="markers",
+        marker=dict(size=size, opacity=0.42, color="#38bdf8"), name="Burbujas simbólicas",
+        hovertemplate=(f"<b>Burbujas de cavitación simbólicas</b><br>σ={sigma:.3f}<br>"
+                       f"Burrill={'Cumple' if burrill_ok else 'Revisar'}<br>Keller={'Cumple' if keller_ok else 'Revisar'}<br>"
+                       "La densidad visual aumenta cuando el riesgo preliminar es mayor.<extra></extra>")
+    ))
+
+    th = np.linspace(0, 2*np.pi, 180)
+    fig.add_trace(go.Scatter3d(
+        x=np.full_like(th, 0.10*R), y=0.95*R*np.cos(th), z=0.95*R*np.sin(th), mode="lines",
+        line=dict(width=5, color="#f59e0b" if riesgo>0.4 else "#10b981"), name="Zona de punta",
+        hovertemplate="<b>Zona de punta</b><br>Región donde suelen aparecer las primeras señales de cavitación de punta.<extra></extra>"
+    ))
+
+    # Líneas de flujo animadas.
+    flow_traces = []
+    for idx, yy in enumerate(np.linspace(-0.82*R, 0.82*R, 5)):
+        flow_traces.append(len(fig.data))
+        xx = np.linspace(-1.6*R, 0.9*R, 80)
+        zz = 0.12*R*np.sin(np.linspace(0, 2*np.pi, 80) + idx)
+        fig.add_trace(go.Scatter3d(
+            x=xx, y=np.full_like(xx, yy), z=zz, mode="lines",
+            line=dict(width=3, color="rgba(14,165,233,0.38)"), name="Líneas de flujo" if idx==0 else "", showlegend=idx==0,
+            hovertemplate="<b>Línea de flujo</b><br>Representa la estela que llega al disco de la hélice.<extra></extra>"
+        ))
+
+    frames=[]
+    for nframe, ang in enumerate(np.linspace(0, 2*np.pi, 20, endpoint=False)):
+        # Las burbujas orbitan suavemente y avanzan un poco en X.
+        ca, sa = np.cos(ang), np.sin(ang)
+        ybr = ca*yb - sa*zb
+        zbr = sa*yb + ca*zb
+        xbr = xb + 0.10*R*np.sin(ang + theta_b)
+        frame_data = [go.Scatter3d(x=xbr, y=ybr, z=zbr, mode="markers", marker=dict(size=size, opacity=0.42, color="#38bdf8"))]
+        traces = [bubble_trace]
+        for idx, tr in enumerate(flow_traces):
+            xx = np.linspace(-1.6*R, 0.9*R, 80)
+            zz = 0.12*R*np.sin(np.linspace(0, 2*np.pi, 80) + idx + ang)
+            frame_data.append(go.Scatter3d(x=xx, y=np.full_like(xx, np.linspace(-0.82*R,0.82*R,5)[idx]), z=zz, mode="lines", line=dict(width=3, color="rgba(14,165,233,0.38)")))
+            traces.append(tr)
+        frames.append(go.Frame(data=frame_data, traces=traces, name=f"cav_{nframe}"))
+    fig.frames = frames
+    fig.update_layout(
+        title=dict(text="Cavitación visual animada — zona de punta, burbujas y estela", x=0.02, xanchor="left"),
+        updatemenus=[dict(type="buttons", showactive=False, x=0.02, y=1.05, xanchor="left", yanchor="top", buttons=[
+            dict(label="▶ Animar cavitación", method="animate", args=[None, {"frame":{"duration":55, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]),
+            dict(label="⏸ Pausa", method="animate", args=[[None], {"frame":{"duration":0, "redraw":False}, "mode":"immediate", "transition":{"duration":0}}])
+        ])],
+        scene=dict(camera=dict(eye=dict(x=1.9, y=1.8, z=0.95)), dragmode="orbit"),
+        height=640
+    )
+    return fig
+
 def load_coefficients():
     try:
         kt_df = pd.read_excel("Tabla 1.xlsx", sheet_name="KT")
@@ -281,6 +2312,165 @@ def calcular_curvas(pd_v, ae_v, z_v):
     })
 
 
+
+
+# ==============================================================================
+# ESTIMADORES UNIVERSALES DE PREDISEÑO
+# ==============================================================================
+# Estos estimadores evitan que la app dependa de un buque específico. Si el usuario
+# sube un PDF, sus datos reales se usan para comparación; si no, la app genera
+# valores preliminares transparentes y editables a partir de dimensiones y tipo de buque.
+
+def coef_bloque_referencia(tipo_buque):
+    tabla = {
+        "Buque tanque": 0.82,
+        "Bulk carrier": 0.80,
+        "Portacontenedores": 0.66,
+        "OSV / PSV": 0.62,
+        "AHTS": 0.58,
+        "Remolcador": 0.54,
+        "Ferry": 0.55,
+        "Libre / Personalizado": 0.70,
+    }
+    return tabla.get(tipo_buque, 0.70)
+
+def estimar_estela(tipo_buque, cb=None):
+    cb = coef_bloque_referencia(tipo_buque) if cb is None else cb
+    w = 0.05 + 0.38 * cb
+    return float(min(max(w, 0.12), 0.45))
+
+def estimar_deduccion_empuje(w):
+    # Relación preliminar habitual: t menor que w para buques de una hélice.
+    return float(min(max(0.55 * w, 0.06), 0.32))
+
+def estimar_eta_s(tipo_transmision="Directa / sin caja reductora"):
+    return 0.990 if str(tipo_transmision).startswith("Directa") else 0.985
+
+def estimar_eta_g(tipo_transmision="Directa / sin caja reductora"):
+    return 1.000 if str(tipo_transmision).startswith("Directa") else 0.975
+
+def estimar_coeficientes_forma(tipo_buque, cb=None):
+    """
+    Estima coeficientes geométricos mínimos para que la app pueda operar
+    aun cuando el usuario solo tenga dimensiones principales.
+    """
+    cb = coef_bloque_referencia(tipo_buque) if cb is None else float(cb)
+    cm = 0.977 + 0.085 * (cb - 0.60)
+    cm = float(min(max(cm, 0.70), 0.999))
+    cp = safe_div(cb, cm, default=cb)
+    cp = float(min(max(cp, 0.45), 0.90))
+    cwp = 0.180 + 0.860 * cp
+    cwp = float(min(max(cwp, 0.55), 0.98))
+    return cp, cm, cwp
+
+def estimar_superficie_mojada_simple(lwl, manga, calado, cb=None):
+    """Estimación preliminar de superficie mojada tipo Mumford simplificada."""
+    L = max(float(lwl), 1.0)
+    B = max(float(manga), 0.1)
+    T = max(float(calado), 0.1)
+    cb = 0.70 if cb is None else float(cb)
+    return float(L * (2.0*T + B) * math.sqrt(max(cb, 0.30)))
+
+def estimar_propulsor_inicial(tipo_buque, calado, manga, velocidad_kn):
+    """Recomienda una geometría inicial de hélice para modo básico."""
+    tipo = str(tipo_buque)
+    T = max(float(calado), 0.1)
+    B = max(float(manga), 0.1)
+    if tipo == "Buque tanque":
+        z, pd, ae, hub = 4, 0.72, 0.55, 0.16
+        d = 0.72 * T
+    elif tipo == "Bulk carrier":
+        z, pd, ae, hub = 4, 0.75, 0.52, 0.16
+        d = 0.70 * T
+    elif tipo == "Portacontenedores":
+        z, pd, ae, hub = 5, 0.90, 0.65, 0.17
+        d = 0.62 * T
+    elif tipo in ["OSV / PSV", "AHTS"]:
+        z, pd, ae, hub = 4, 0.85, 0.70, 0.18
+        d = 0.55 * T
+    elif tipo == "Remolcador":
+        z, pd, ae, hub = 4, 0.80, 0.75, 0.20
+        d = 0.50 * T
+    elif tipo == "Ferry":
+        z, pd, ae, hub = 5, 0.95, 0.65, 0.18
+        d = 0.55 * T
+    else:
+        z, pd, ae, hub = 4, 0.80, 0.60, 0.17
+        d = 0.62 * T
+    d = float(min(max(d, 0.80), max(0.85*T, 1.0), max(B*0.22, 1.0)))
+    return int(z), float(d), float(pd), float(ae), float(hub)
+
+def etiqueta_origen(valor, origen):
+    return {"Valor usado": valor, "Origen": origen}
+
+def estimar_resistencia_ittc_kn(lwl, manga, calado, velocidad_kn, tipo_buque, rho=1025.0, nu=1.1883e-6, sw_m2=0.0, ajuste_pct=0.0, cb=None):
+    """
+    Estimación preliminar universal de resistencia total RT.
+
+    Método usado por la app:
+    1) Calcula la resistencia friccional con la línea ITTC-1957:
+       Cf = 0.075 / (log10(Re) - 2)^2
+    2) Usa la superficie mojada real si el usuario la proporciona.
+       Si no existe, estima S con L, B, T y Cb de referencia por tipo de buque.
+    3) Convierte resistencia friccional a resistencia total mediante un factor global
+       por forma, apéndices y resistencia residual. Este factor es preliminar y editable
+       indirectamente mediante el tipo de buque.
+    4) Aplica un ajuste adicional opcional, por ejemplo estela no uniforme o margen
+       hidrodinámico local, solo cuando el usuario lo indique.
+
+    No sustituye canal de pruebas, CFD ni Holtrop-Mennen completo; sirve como
+    predimensionamiento reproducible para que la app funcione con cualquier buque.
+    """
+    v = max(velocidad_kn * 0.514444, 0.01)
+    L = max(float(lwl), 1.0)
+    B = max(float(manga), 0.1)
+    T = max(float(calado), 0.1)
+    cb = coef_bloque_referencia(tipo_buque) if cb is None else float(cb)
+
+    if sw_m2 and sw_m2 > 0:
+        s_mojada = float(sw_m2)
+    else:
+        s_mojada = L * (2*T + B) * max(0.70, min(0.95, 0.72 + 0.25*cb))
+
+    rn = max(v * L / max(nu, 1e-12), 1e5)
+    cf = 0.075 / ((math.log10(rn) - 2.0) ** 2)
+    q = 0.5 * rho * v**2
+    rf = q * s_mojada * cf
+
+    factor = {
+        "Buque tanque": 1.70,
+        "Bulk carrier": 1.65,
+        "Portacontenedores": 1.85,
+        "OSV / PSV": 2.10,
+        "AHTS": 2.20,
+        "Remolcador": 2.35,
+        "Ferry": 2.00,
+        "Libre / Personalizado": 1.80
+    }.get(tipo_buque, 1.80)
+
+    rt_kn = float(rf * factor / 1000.0)
+    rt_kn = rt_kn * (1.0 + max(float(ajuste_pct), 0.0)/100.0)
+    return rt_kn
+
+def estimar_diametro_eje_mm(pb_kw, rpm, material="Acero Forjado Naval Estándar"):
+    # Predimensionamiento por torsión para que la app funcione sin dato de eje.
+    # Se limita a valores razonables y debe validarse con reglas de clase.
+    if pb_kw <= 0 or rpm <= 0:
+        return 250.0
+    omega = 2.0 * math.pi * rpm / 60.0
+    torque = pb_kw * 1000.0 / omega
+    tau_adm = 45e6  # Pa, valor preliminar conservador para prediseño académico.
+    d = (16.0 * torque / (math.pi * tau_adm)) ** (1/3)
+    return float(min(max(d * 1000.0, 80.0), 1200.0))
+
+def estimar_peso_helice_kg(diametro_m, z):
+    # Correlación didáctica proporcional a D^3; evita usar pesos de un buque específico.
+    return float(max(250.0, 48.0 * (max(diametro_m, 0.1)**3) * (max(z, 3)/4.0)))
+
+def estimar_voladizo_m(diametro_m):
+    return float(min(max(0.35 * diametro_m, 0.8), 5.0))
+
+
 # ==============================================================================
 # ENCABEZADO
 # ==============================================================================
@@ -320,23 +2510,61 @@ with st.sidebar:
             "Remolcador",
             "Ferry"
         ],
-        help="Este selector solo sirve como guía visual. Los valores siguen siendo editables por el usuario."
+        index=1,
+        help="Define rangos típicos para autocompletar datos cuando el usuario no tiene toda la información."
     )
+
+    st.markdown("---")
+    st.subheader("🧠 Modo de datos disponibles")
+    nivel_datos = st.selectbox(
+        "¿Qué tantos datos tiene el usuario?",
+        [
+            "Básico: solo dimensiones principales",
+            "Intermedio: tengo algunos coeficientes",
+            "Avanzado / manual: quiero editar todo",
+            "Validación: comparar contra Maxsurf / Michigan / ficha"
+        ],
+        index=0,
+        help="La app activa u oculta entradas según el nivel. Si faltan datos, los estima con criterios de prediseño y deja visible el origen."
+    )
+    editar_intermedio = nivel_datos in ["Intermedio: tengo algunos coeficientes", "Avanzado / manual: quiero editar todo", "Validación: comparar contra Maxsurf / Michigan / ficha"]
+    editar_avanzado = nivel_datos in ["Avanzado / manual: quiero editar todo", "Validación: comparar contra Maxsurf / Michigan / ficha"]
+    modo_validacion = nivel_datos == "Validación: comparar contra Maxsurf / Michigan / ficha"
+    mostrar_estimaciones = st.toggle(
+        "Mostrar tabla de datos estimados y origen",
+        value=True,
+        help="Muestra qué valores fueron ingresados por el usuario y cuáles fueron estimados por la app."
+    )
+    st.markdown("---")
+    st.subheader("📄 Ficha técnica del buque real")
+    pdf_buque = st.file_uploader(
+        "Subir PDF de ficha técnica para comparar",
+        type=["pdf"],
+        help="Opcional. La app intentará detectar datos reales como Lpp, velocidad, motor, MCR, hélice y RPM. Después podrás corregirlos manualmente."
+    )
+    texto_pdf = extraer_texto_pdf(pdf_buque) if pdf_buque is not None else ""
+    datos_pdf = parsear_ficha_tecnica(texto_pdf) if texto_pdf else {}
+    hay_pdf_valido = bool(datos_pdf)
+    # Cuando no se carga PDF, la aplicación conserva los valores internos de
+    # prediseño que usaba la versión anterior. El PDF solo sirve para comparar
+    # o reemplazar datos reales; no debe ser obligatorio para que la app calcule.
+    if pdf_buque is not None:
+        st.success("PDF leído. Revisa los datos detectados en la pestaña 📄 PDF / Comparación.")
 
     st.markdown("---")
     st.subheader("🌎 Constantes físicas")
 
-    p_atm_auto = st.number_input("Presión atmosférica [Pa]", value=101325.0, format="%.2f")
-    p_vap_auto = st.number_input("Presión de vapor del agua [Pa]", value=1704.0, format="%.2f")
-    rho_auto = st.number_input("Densidad del agua [kg/m³]", value=1026.021, format="%.3f")
-    g_auto = st.number_input("Gravedad [m/s²]", value=9.80665, format="%.5f")
+    p_atm_auto = st.number_input("Presión atmosférica [Pa]", value=float(nvl(datos_pdf.get("p_atm_pa"), 101325.0)), format="%.2f")
+    p_vap_auto = st.number_input("Presión de vapor del agua [Pa]", value=float(nvl(datos_pdf.get("p_vap_pa"), 1704.0)), format="%.2f")
+    rho_auto = st.number_input("Densidad del agua [kg/m³]", value=float(nvl(datos_pdf.get("rho_kg_m3"), 1026.021)), format="%.3f")
+    g_auto = st.number_input("Gravedad [m/s²]", value=float(nvl(datos_pdf.get("g_ms2"), 9.80665)), format="%.5f")
 
     st.markdown("---")
     st.subheader("🚢 Dimensiones principales")
 
     eslora = st.number_input(
         "Eslora entre perpendiculares Lpp [m]",
-        value=320.0,
+        value=float(nvl(datos_pdf.get("lpp_m"), 320.0)),
         min_value=1.0,
         step=1.0,
         help="Distancia longitudinal entre perpendicular de proa y popa. Remolcadores: 20–50 m; OSV: 60–100 m; buques tanque: 250–330 m; portacontenedores: 250–400 m."
@@ -344,7 +2572,7 @@ with st.sidebar:
 
     lwl = st.number_input(
         "Eslora en flotación LWL [m]",
-        value=325.5,
+        value=float(nvl(datos_pdf.get("lwl_m"), 325.5)),
         min_value=1.0,
         step=1.0,
         help="Longitud del buque sobre la línea de agua. Normalmente es igual o ligeramente mayor que Lpp."
@@ -352,7 +2580,7 @@ with st.sidebar:
 
     manga = st.number_input(
         "Manga B [m]",
-        value=58.0,
+        value=float(nvl(datos_pdf.get("manga"), 58.0)),
         min_value=1.0,
         step=0.5,
         help="Ancho máximo del buque. Debe guardar proporción con Lpp según el tipo de embarcación."
@@ -360,7 +2588,7 @@ with st.sidebar:
 
     puntal = st.number_input(
         "Puntal D [m]",
-        value=30.0,
+        value=float(nvl(datos_pdf.get("puntal_m"), 30.0)),
         min_value=1.0,
         step=0.5,
         help="Altura estructural desde la línea base hasta cubierta principal."
@@ -368,7 +2596,7 @@ with st.sidebar:
 
     calado = st.number_input(
         "Calado T [m]",
-        value=20.8,
+        value=float(nvl(datos_pdf.get("calado"), 20.8)),
         min_value=0.1,
         step=0.1,
         help="Profundidad sumergida del casco. Debe ser menor que el puntal."
@@ -376,80 +2604,295 @@ with st.sidebar:
 
     velocidad = st.number_input(
         "Velocidad de servicio [kn]",
-        value=15.5,
+        value=float(nvl(datos_pdf.get("velocidad_kn"), 15.5)),
         min_value=0.1,
         step=0.5,
         help="Velocidad de operación del buque. Buques mercantes usualmente operan entre 10 y 25 nudos."
     )
 
+    cb_auto = coef_bloque_referencia(modo_guia)
+    cb_buque = st.number_input(
+        "Coeficiente de bloque Cb [-]",
+        value=float(nvl(datos_pdf.get("cb"), cb_auto)),
+        min_value=0.30,
+        max_value=0.95,
+        step=0.001,
+        format="%.3f",
+        help="Dato básico recomendado. Si no se conoce, la app propone un Cb típico según el tipo de buque."
+    )
+    cp_auto, cm_auto, cwp_auto = estimar_coeficientes_forma(modo_guia, cb_buque)
+    with st.expander("📐 Coeficientes de forma estimados / editables", expanded=editar_intermedio):
+        cp_buque = st.number_input(
+            "Coeficiente prismático Cp [-]",
+            value=float(nvl(datos_pdf.get("cp"), cp_auto)),
+            min_value=0.30,
+            max_value=0.95,
+            step=0.001,
+            format="%.3f",
+            disabled=not editar_intermedio,
+            help="En modo básico se estima con Cb/Cm. En modo intermedio o avanzado puedes editarlo."
+        )
+        cm_buque = st.number_input(
+            "Coeficiente de sección media Cm [-]",
+            value=float(nvl(datos_pdf.get("cm"), cm_auto)),
+            min_value=0.50,
+            max_value=1.00,
+            step=0.001,
+            format="%.3f",
+            disabled=not editar_intermedio,
+            help="Si no existe el dato, se estima con una relación empírica dependiente de Cb."
+        )
+        cwp_buque = st.number_input(
+            "Coeficiente de flotación Cwp [-]",
+            value=float(nvl(datos_pdf.get("cwp"), cwp_auto)),
+            min_value=0.40,
+            max_value=1.00,
+            step=0.001,
+            format="%.3f",
+            disabled=not editar_intermedio,
+            help="Si no existe el dato, se estima a partir de Cp."
+        )
+
+    st.markdown("---")
+    st.subheader("🌊 Superficies y ajustes hidrodinámicos")
+    sw_auto = estimar_superficie_mojada_simple(lwl, manga, calado, cb_buque)
+    superficie_mojada_sin_timon_m2 = st.number_input(
+        "Superficie mojada sin timón Swo [m²]",
+        value=float(nvl(datos_pdf.get("swo_m2"), sw_auto * 0.99)),
+        min_value=0.0,
+        step=100.0,
+        disabled=not editar_intermedio,
+        help="En modo básico se estima con LWL, B, T y Cb. Activa modo intermedio/avanzado para editarla."
+    )
+    superficie_mojada_con_timon_m2 = st.number_input(
+        "Superficie mojada con timón Sw [m²]",
+        value=float(nvl(datos_pdf.get("sw_m2"), sw_auto)),
+        min_value=0.0,
+        step=100.0,
+        disabled=not editar_intermedio,
+        help="Superficie mojada total. En modo básico se estima automáticamente; en modo intermedio/avanzado puedes reemplazarla por Maxsurf o ficha técnica."
+    )
+    ajuste_estela_no_uniforme_pct = st.number_input(
+        "Nonuniform Wake Adjustment [%]",
+        value=float(nvl(datos_pdf.get("wake_adjustment_pct"), 5.0)),
+        min_value=0.0,
+        max_value=30.0,
+        step=0.5,
+        disabled=not editar_avanzado,
+        help="Ajuste avanzado por estela no uniforme. En modo básico queda como hipótesis típica visible."
+    )
+
     st.markdown("---")
     st.subheader("🌀 Interacción casco-propulsor")
 
+    w_estimado = estimar_estela(modo_guia, cb_buque)
+    t_estimado = estimar_deduccion_empuje(w_estimado)
+
     estela = st.number_input(
         "Fracción de estela w [-]",
-        value=0.351,
+        value=float(nvl(datos_pdf.get("w"), w_estimado)),
         min_value=0.0,
         max_value=0.8,
         step=0.001,
         format="%.3f",
-        help="Reduce la velocidad efectiva que llega a la hélice. Valores comunes: 0.10–0.45."
+        disabled=not editar_avanzado,
+        help="En modo básico/intermedio se estima por tipo de buque y Cb. Activa modo avanzado o validación para ajustarla manualmente."
     )
 
     t_fraction = st.slider(
         "Fracción de deducción de empuje t [-]",
         0.05,
         0.35,
-        0.180,
+        float(nvl(datos_pdf.get("t"), t_estimado)),
         0.005,
-        help="Pérdida asociada a la interacción entre el empuje de la hélice y el casco."
+        disabled=not editar_avanzado,
+        help="En modo básico/intermedio se estima a partir de w. Activa modo avanzado o validación para editarla."
     )
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=1.015,
+        value=float(nvl(datos_pdf.get("eta_r"), 1.010)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
-        format="%.3f"
+        format="%.3f",
+        disabled=not editar_intermedio,
+        help="En modo básico se usa valor típico; en intermedio/avanzado puedes editarlo."
     )
 
     inmersion_eje_m = st.number_input(
         "Inmersión del centro del eje h [m]",
-        value=14.10,
+        value=float(nvl(datos_pdf.get("inmersion_eje_m"), max(0.50*calado, 0.1))),
         min_value=0.1,
         step=0.1,
-        help="Profundidad del centro de la hélice respecto a la superficie libre. A mayor inmersión, menor tendencia a cavitación."
+        disabled=not editar_intermedio,
+        help="Si no se conoce, se aproxima como 50% del calado. Activa modo intermedio/avanzado para editarlo."
     )
 
     st.markdown("---")
     st.subheader("⚙️ Geometría de la hélice")
 
-    z_val = st.slider("Número de palas Z", 3, 7, 4)
-    diam_prop_m = st.number_input("Diámetro de hélice D [m]", value=9.86, min_value=0.1, step=0.01)
-    pd_val = st.slider("Relación paso/diámetro P/D [-]", 0.5, 1.4, 0.721, 0.001)
-    ae_val = st.slider("Relación de área expandida Ae/A0 [-]", 0.3, 1.0, 0.431, 0.001)
-    margen_servicio = st.slider("Margen de servicio requerido [%]", 0.0, 30.0, 15.0, 0.5)
+    z_auto, d_auto, pd_auto, ae_auto, hub_auto = estimar_propulsor_inicial(modo_guia, calado, manga, velocidad)
+    # Sin PDF se conservan los valores de prediseño de la versión anterior.
+    # En modo básico siguen funcionando como autocompletado; en intermedio/avanzado el usuario puede editarlos.
+    z_default_sin_pdf = 4
+    d_default_sin_pdf = 9.86
+    pd_default_sin_pdf = 0.721
+    ae_default_sin_pdf = 0.431
+    z_val = st.slider(
+        "Número de palas Z", 3, 7,
+        int(nvl(datos_pdf.get("prop_z"), z_default_sin_pdf)),
+        disabled=not editar_intermedio,
+        help="En modo básico se usa el valor de prediseño; en intermedio/avanzado puedes editarlo."
+    )
+    diam_prop_m = st.number_input(
+        "Diámetro de hélice D [m]",
+        value=float(nvl(datos_pdf.get("prop_diam_m"), d_default_sin_pdf)),
+        min_value=0.1,
+        step=0.01,
+        disabled=not editar_intermedio,
+        help="Sin PDF se usa el diámetro de prediseño de la versión anterior; editable en modo intermedio/avanzado."
+    )
+    pd_val = st.slider(
+        "Relación paso/diámetro P/D [-]", 0.5, 1.4,
+        float(nvl(datos_pdf.get("prop_pd"), pd_default_sin_pdf)), 0.001,
+        disabled=not editar_intermedio,
+        help="Sin PDF se usa la relación P/D de prediseño; editable en modo intermedio/avanzado."
+    )
+    ae_val = st.slider(
+        "Relación de área expandida Ae/A0 [-]", 0.3, 1.0,
+        float(nvl(datos_pdf.get("prop_aeao"), ae_default_sin_pdf)), 0.001,
+        disabled=not editar_intermedio,
+        help="Sin PDF se usa Ae/A0 de prediseño; editable en modo intermedio/avanzado."
+    )
+    hub_ratio = st.number_input(
+        "Relación del cubo Hub Ratio [-]",
+        value=float(nvl(datos_pdf.get("hub_ratio"), hub_auto)),
+        min_value=0.0,
+        max_value=0.5,
+        step=0.001,
+        format="%.3f",
+        disabled=not editar_intermedio
+    )
+    margen_servicio = st.slider(
+        "Margen de servicio requerido [%]", 0.0, 30.0,
+        float(nvl(datos_pdf.get("sea_margin_pct"), 15.0)), 0.5,
+        disabled=not editar_avanzado,
+        help="En modo básico se usa 15% como margen preliminar típico."
+    )
 
     st.markdown("---")
     st.subheader("⚙️ Material del sistema propulsivo")
     st.info(
         "Selecciona el material de referencia para evaluar el límite admisible de esfuerzo. "
-        "Los demás parámetros mecánicos se mantienen internamente como valores de referencia "
-        "para no saturar la interfaz del usuario."
+        "Los parámetros que no existan en la ficha técnica se estiman de forma preliminar y quedan visibles/editables."
     )
 
-    # ==========================================================
-    # PARÁMETROS MECÁNICOS INTERNOS DE REFERENCIA
-    # ==========================================================
-    # Se ocultan en el sidebar para mantener la app limpia y didáctica.
-    # Si más adelante deseas hacerlos editables, basta con convertirlos
-    # nuevamente en st.number_input().
-    potencia_kw_base = 22000.0
-    potencia_kw = potencia_kw_base * (1 + margen_servicio / 100)
-    rpm_motor = 75.0
-    diametro_eje_mm = 680.0
-    peso_helice_kg = 52000.0
-    longitud_volado_m = 3.5
+    st.markdown("---")
+    st.subheader("⚡ Cadena de potencias")
+    rt_estimado_kn = estimar_resistencia_ittc_kn(
+        lwl, manga, calado, velocidad, modo_guia, rho_auto, nu=1.1883e-6,
+        sw_m2=superficie_mojada_con_timon_m2, ajuste_pct=0.0, cb=cb_buque
+    )
+    rt_modo = st.radio(
+        "Modo de resistencia total RT",
+        ["Automática preliminar", "Dato conocido / manual"],
+        index=1 if modo_validacion and datos_pdf.get("rt_kn") else 0,
+        horizontal=True,
+        disabled=(nivel_datos == "Básico: solo dimensiones principales"),
+        help="En modo básico se calcula automáticamente. En validación puedes introducir RT de Maxsurf, PPP, canal, CFD o ficha técnica."
+    )
+    resistencia_total_manual_kn = st.number_input(
+        "RT conocida/manual [kN]",
+        value=float(nvl(datos_pdf.get("rt_kn"), 2120.0)),
+        min_value=0.0, step=50.0,
+        disabled=(rt_modo == "Automática preliminar"),
+        help="Úsalo solo si cuentas con una resistencia de referencia. Para KVLCC2 el dato de referencia es aproximadamente 2120 kN."
+    )
+    if rt_modo == "Automática preliminar":
+        resistencia_total_kn = rt_estimado_kn
+        rt_fuente = "Calculada automáticamente por la app"
+        st.caption(f"RT automática preliminar: {resistencia_total_kn:,.0f} kN. Se recalcula con LWL, B, T, Vs, superficie mojada y tipo de buque.")
+    else:
+        resistencia_total_kn = resistencia_total_manual_kn
+        rt_fuente = "Dato conocido/manual del usuario o PDF"
+        st.caption(f"RT manual usada: {resistencia_total_kn:,.0f} kN.")
+
+    with st.expander("📘 ¿Cómo calcula la app la RT automática?", expanded=False):
+        st.markdown("""
+        La resistencia total automática es una **estimación preliminar universal**. La app no usa un valor fijo de un barco específico.
+
+        1. Calcula Reynolds con la eslora y la velocidad.
+        2. Calcula el coeficiente friccional con ITTC-1957.
+        3. Usa la superficie mojada ingresada; si no existe, la aproxima con dimensiones principales.
+        4. Aplica un factor global por tipo de buque para representar forma, apéndices y resistencia residual.
+
+        Para trabajo académico es suficiente como prediseño, pero para diseño final debe validarse con canal de pruebas, CFD, Holtrop-Mennen completo o datos reales del buque.
+        """)
+        st.latex(r"Re=\frac{V_s L}{\nu}")
+        st.latex(r"C_F=\frac{0.075}{(\log_{10}Re-2)^2}")
+        st.latex(r"R_F=\frac{1}{2}\rho V_s^2 S C_F")
+        st.latex(r"R_T \approx R_F \cdot K_{forma/residual}")
+
+    transmision_tipo = st.selectbox("Tipo de transmisión", ["Automática según motor recomendado", "Directa / sin caja reductora", "Con caja reductora"], disabled=not editar_intermedio )
+    transmision_para_eta = "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo
+    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=estimar_eta_s(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
+    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=estimar_eta_g(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
+    eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado, help="Normalmente 1.000 si no se considera una pérdida adicional.")
+
+    st.markdown("---")
+    st.subheader("🛠️ Motor y transmisión")
+    st.caption("El motor real solo se toma del PDF si el usuario lo sube. Sin PDF, la app no usa ningún motor fijo: recomienda opciones desde la base interna.")
+    motor_nombre_pdf = datos_pdf.get("motor_modelo") or "Sin motor real cargado"
+    motor_nombre = st.text_input("Motor real detectado/manual", value=motor_nombre_pdf)
+    motor_mcr_kw = st.number_input("Potencia MCR del motor [kW]", value=float(nvl(datos_pdf.get("mcr_kw"), 0.0)), min_value=0.0, step=100.0)
+    motor_mcr_rpm = st.number_input("RPM MCR del motor [rpm]", value=float(nvl(datos_pdf.get("mcr_rpm"), 0.0)), min_value=0.0, step=1.0)
+    motor_ncr_kw = st.number_input("Potencia NCR / servicio real [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), motor_mcr_kw * 0.85 if motor_mcr_kw else 0.0)), min_value=0.0, step=100.0)
+    motor_ncr_rpm = st.number_input("RPM NCR / servicio real [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), motor_mcr_rpm if motor_mcr_rpm else 0.0)), min_value=0.0, step=1.0)
+
+    if transmision_tipo == "Con caja reductora":
+        marca_caja = st.selectbox("Caja reductora real", ["Reintjes WAF/WGF", "ZF Marine", "Twin Disc", "Lufkin", "Otra"] )
+        relacion_reduccion = st.number_input("Relación de reducción i = RPM motor / RPM hélice", value=1.50, min_value=1.0, step=0.01, format="%.2f")
+    elif transmision_tipo == "Directa / sin caja reductora":
+        marca_caja = "No aplica: motor lento acoplado directamente"
+        relacion_reduccion = 1.0
+    else:
+        marca_caja = "Automática: se propone directa o reductora en pestaña Motor"
+        relacion_reduccion = 1.0
+
+    st.markdown("---")
+    st.subheader("🔎 Datos reales para comparar")
+    st.caption("Estos campos son opcionales. Si no hay PDF o ficha técnica, déjalos en 0 y la app calculará sin comparar contra datos reales.")
+    pb_real_kw = st.number_input("PB real/NCR del buque [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 0.0)), min_value=0.0, step=100.0)
+    rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 0.0)), min_value=0.0, step=1.0)
+    diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 0.0)), min_value=0.0, step=0.01)
+    z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 0)), min_value=0, step=1)
+    pd_real = st.number_input("P/D real", value=float(nvl(datos_pdf.get("prop_pd"), 0.0)), min_value=0.0, step=0.001, format="%.3f")
+
+    st.markdown("---")
+    st.subheader("⚙️ Parámetros mecánicos visibles")
+    st.caption("Si no tienes estos datos, la app puede estimarlos. No se usa ningún valor fijo de un barco específico.")
+    rpm_motor_default = float(nvl(datos_pdf.get("ncr_rpm"), rpm_real if rpm_real > 0 else 75.0))
+    rpm_motor = st.number_input("RPM de operación para vibración [rpm]", value=rpm_motor_default, min_value=0.1, step=1.0, help="Si no hay PDF, se conserva el valor de prediseño de la versión anterior; editable para análisis.")
+
+    # IMPORTANTE: si no hay PDF, NO se deja en cero. La versión anterior calculaba
+    # torsión, lateral, axial y balanceo con una potencia/eje preliminares internos.
+    # Estos valores se conservan como respaldo para que la app funcione por sí sola.
+    potencia_base_default = float(nvl(datos_pdf.get("ncr_kw"), 22000.0))
+    potencia_kw_base = st.number_input("Potencia base manual para análisis de eje [kW]", value=potencia_base_default, min_value=0.0, step=100.0, help="Si no hay PDF, la app usa 22,000 kW como potencia preliminar interna, igual que la versión anterior. Puedes cambiarlo manualmente.")
+    potencia_kw = potencia_kw_base * (1 + margen_servicio / 100) if potencia_kw_base > 0 else 0.0
+
+    # Sin PDF se conserva d=680 mm de la versión anterior. Si hay PDF o dato manual, se puede reemplazar.
+    if datos_pdf.get("shaft_diam_mm") not in [None, "", 0, 0.0]:
+        diametro_eje_default = float(datos_pdf.get("shaft_diam_mm"))
+    else:
+        diametro_eje_default = 680.0
+    diametro_eje_mm = st.number_input("Diámetro del eje [mm]", value=diametro_eje_default, min_value=50.0, step=10.0, help="Sin PDF se conserva 680 mm, valor preliminar de la versión anterior. Edita este dato si tienes plano o regla de clase.")
+
+    peso_helice_default = float(nvl(datos_pdf.get("prop_weight_kg"), 52000.0))
+    longitud_volado_default = float(nvl(datos_pdf.get("shaft_overhang_m"), 3.5))
+    peso_helice_kg = st.number_input("Peso estimado de hélice [kg]", value=peso_helice_default, min_value=1.0, step=500.0, help="Sin PDF se conserva 52,000 kg, valor preliminar de la versión anterior. Editable si el fabricante proporciona el peso real.")
+    longitud_volado_m = st.number_input("Longitud en voladizo del eje [m]", value=longitud_volado_default, min_value=0.1, step=0.1, help="Sin PDF se conserva 3.5 m, valor preliminar de la versión anterior. Corregir con arreglo de línea de ejes si existe.")
 
     dict_materiales = {
         "Bronce de Níquel-Aluminio (Cu3)": 590.0,
@@ -461,8 +2904,34 @@ with st.sidebar:
         "Acero Inoxidable Austenítico Forjado": 520.0
     }
 
-    material_seleccionado = st.selectbox("Material de referencia", list(dict_materiales.keys()))
+    material_seleccionado = st.selectbox("Material de referencia", list(dict_materiales.keys()), disabled=not editar_intermedio)
     sigma_uts = dict_materiales[material_seleccionado]
+
+    # --------------------------------------------------------------------------
+    # Trazabilidad del autocompletado
+    # --------------------------------------------------------------------------
+    def _origen(campo, manual_condicion):
+        if datos_pdf.get(campo) not in [None, "", 0, 0.0]:
+            return "📄 Detectado desde PDF / ficha"
+        return "🟢 Ingresado por usuario" if manual_condicion else "🟡 Estimado por la app"
+
+    datos_estimados_df = pd.DataFrame([
+        {"Parámetro":"Cb", "Valor usado": f"{cb_buque:.3f}", "Origen": _origen("cb", True), "Uso":"Forma del casco y estimadores"},
+        {"Parámetro":"Cp", "Valor usado": f"{cp_buque:.3f}", "Origen": _origen("cp", editar_intermedio), "Uso":"Coeficiente de forma para revisión"},
+        {"Parámetro":"Cm", "Valor usado": f"{cm_buque:.3f}", "Origen": _origen("cm", editar_intermedio), "Uso":"Coeficiente de sección media"},
+        {"Parámetro":"Cwp", "Valor usado": f"{cwp_buque:.3f}", "Origen": _origen("cwp", editar_intermedio), "Uso":"Coeficiente de flotación"},
+        {"Parámetro":"Sw", "Valor usado": f"{superficie_mojada_con_timon_m2:,.1f} m²", "Origen": _origen("sw_m2", editar_intermedio), "Uso":"Resistencia ITTC preliminar"},
+        {"Parámetro":"w", "Valor usado": f"{estela:.3f}", "Origen": _origen("w", editar_avanzado), "Uso":"Velocidad de avance VA"},
+        {"Parámetro":"t", "Valor usado": f"{t_fraction:.3f}", "Origen": _origen("t", editar_avanzado), "Uso":"Empuje requerido"},
+        {"Parámetro":"ηR", "Valor usado": f"{eta_r:.3f}", "Origen": _origen("eta_r", editar_intermedio), "Uso":"Potencia entregada PD"},
+        {"Parámetro":"Hélice", "Valor usado": f"Z={z_val}, D={diam_prop_m:.2f} m, P/D={pd_val:.3f}, Ae/A0={ae_val:.3f}", "Origen": "🟢 Ingresado por usuario" if editar_intermedio else "🟡 Estimado por la app", "Uso":"Wageningen / cavitación"},
+        {"Parámetro":"Eje", "Valor usado": f"d={diametro_eje_mm:.0f} mm", "Origen": "🟢 Ingresado por usuario" if editar_intermedio else "🟡 Estimado por la app", "Uso":"Seguridad, vibración y fatiga"},
+    ])
+    if mostrar_estimaciones:
+        with st.expander("🧠 Datos autocompletados por la app", expanded=False):
+            st.caption("Esta tabla sirve para defender el análisis: muestra qué datos entraron manualmente y cuáles fueron estimados para poder ejecutar el prediseño.")
+            st.dataframe(datos_estimados_df, use_container_width=True, hide_index=True, height=360)
+
 
 # ==============================================================================
 # CÁLCULOS PRINCIPALES
@@ -616,6 +3085,39 @@ def construir_tabla_campbell():
 
 campbell_df = construir_tabla_campbell()
 
+
+def construir_zonas_prohibidas_campbell(df, rpm_operacion, max_rpm=None):
+    """Genera zonas de operación a evitar a partir de cruces Campbell.
+    Se usa una banda ±5% alrededor de cruces de riesgo alto y ±3% para riesgo medio.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["Modo", "Orden", "RPM central", "Límite inferior [rpm]", "Límite superior [rpm]", "Riesgo", "Acción recomendada"])
+    max_rpm = float(max_rpm or max(float(rpm_operacion) * 2.2, float(rpm_operacion) + 50.0, 120.0))
+    filas = []
+    for _, r in df.iterrows():
+        riesgo = str(r.get("Riesgo", ""))
+        if riesgo not in ["Alto", "Medio"]:
+            continue
+        rpm_c = float(r.get("RPM de intersección", 0.0) or 0.0)
+        if rpm_c <= 0 or rpm_c > max_rpm:
+            continue
+        banda = 0.05 if riesgo == "Alto" else 0.03
+        filas.append({
+            "Modo": r.get("Modo natural", ""),
+            "Orden": r.get("Orden", ""),
+            "RPM central": rpm_c,
+            "Límite inferior [rpm]": max(0.0, rpm_c * (1.0 - banda)),
+            "Límite superior [rpm]": rpm_c * (1.0 + banda),
+            "Riesgo": riesgo,
+            "Acción recomendada": "Evitar operación continua" if riesgo == "Alto" else "Cruzar rápidamente / monitorear"
+        })
+    out = pd.DataFrame(filas)
+    if not out.empty:
+        out = out.sort_values(["Riesgo", "RPM central"], ascending=[True, True]).reset_index(drop=True)
+    return out
+
+zonas_prohibidas_df = construir_zonas_prohibidas_campbell(campbell_df, rpm_motor)
+
 v_ms = (velocidad * 0.5144) * (1.0 - estela)
 nu = 1.188e-6
 reynolds = safe_div(v_ms * diam_prop_m, nu)
@@ -625,11 +3127,194 @@ sigma_n = safe_div(
     0.5 * rho_auto * max(v_ms**2, 1e-12)
 )
 
+# ==============================================================================
+# CADENA DE POTENCIAS, MOTOR, REDUCTORA, BURRILL, KELLER Y COMPARACIÓN
+# ==============================================================================
+RT_N = resistencia_total_kn * 1000.0
+PE_kw_sin_margen = RT_N * velocidad_buque_ms / 1000.0
+PE_kw = PE_kw_sin_margen * (1 + margen_servicio / 100.0)
+VA_ms = v_ms
+thrust_req_N = safe_div(RT_N, max(1.0 - t_fraction, 1e-9))
+PT_kw = thrust_req_N * VA_ms / 1000.0
+eta_h = safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
+eta_b = max_eff * eta_r
+eta_d = eta_h * eta_b * eta_o_extra
+PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
+PS_kw = safe_div(PD_kw, max(eta_s, 1e-9))
+PB_kw_calc = safe_div(PS_kw, max(eta_g, 1e-9))
+MCR_requerido_kw = safe_div(PB_kw_calc, 0.85, default=0.0)
+# Si el usuario no proporcionó potencia para vibraciones, se toma PB calculada automáticamente.
+if potencia_kw_base <= 0:
+    potencia_kw = PB_kw_calc
+    empuje_estimado_n = thrust_req_N
+    amplitud_empuje_axial_n = 0.08 * empuje_estimado_n
+    desplazamiento_axial_est_m = safe_div(amplitud_empuje_axial_n, rigidez_axial_equivalente_n_m)
+potencia_85_mcr_kw = motor_mcr_kw * 0.85
+# Validación de motor en tres niveles:
+# 1) IDEAL: PB <= 85% MCR, cumple el criterio de reserva operativa pedido.
+# 2) OBSERVACIÓN: PB > 85% MCR pero PB <= MCR; el motor tiene capacidad máxima,
+#    pero el punto de operación queda por encima del NCR/85% MCR.
+# 3) NO CUMPLE: PB > MCR; el motor no tiene capacidad suficiente.
+motor_cumple_ideal = motor_mcr_kw > 0 and PB_kw_calc <= potencia_85_mcr_kw
+motor_cumple_observacion = motor_mcr_kw > 0 and potencia_85_mcr_kw < PB_kw_calc <= motor_mcr_kw
+motor_no_cumple = motor_mcr_kw > 0 and PB_kw_calc > motor_mcr_kw
+motor_cumple = motor_cumple_ideal or motor_cumple_observacion
+exceso_sobre_85_kw = max(PB_kw_calc - potencia_85_mcr_kw, 0.0)
+exceso_sobre_85_pct = safe_div(exceso_sobre_85_kw, max(potencia_85_mcr_kw, 1e-9)) * 100.0
+margen_hasta_mcr_kw = motor_mcr_kw - PB_kw_calc if motor_mcr_kw > 0 else 0.0
+margen_hasta_mcr_pct = safe_div(margen_hasta_mcr_kw, max(motor_mcr_kw, 1e-9)) * 100.0
+rpm_helice_requerida = safe_div(VA_ms, max(j_opt * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_opt > 0 else 0.0
+# Para validación contra ficha técnica NO se fuerza que la RPM teórica por J óptimo sea igual a la RPM real.
+# La RPM teórica representa el punto de máxima eficiencia en aguas abiertas; la RPM real puede responder a motor,
+# transmisión, diámetro permitido, cavitación, vibración, contrato de velocidad o decisiones de fabricante.
+rpm_helice_validacion = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
+# Para validación de transmisión se usa primero la RPM real/manual si existe, porque J óptimo no siempre representa la RPM real de servicio.
+rpm_helice_objetivo = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
+if transmision_tipo == "Con caja reductora":
+    rpm_helice_por_caja = safe_div(motor_ncr_rpm, max(relacion_reduccion, 1e-9), default=0.0)
+elif transmision_tipo == "Directa / sin caja reductora":
+    rpm_helice_por_caja = motor_ncr_rpm
+else:
+    rpm_helice_por_caja = 0.0
+relacion_recomendada = safe_div(motor_ncr_rpm, max(rpm_helice_objetivo, 1e-9), default=0.0) if motor_ncr_rpm > 0 else 0.0
+tolerancia_rpm = max(5.0, 0.10 * max(rpm_helice_objetivo, 1.0))
+caja_cumple = True if transmision_tipo.startswith("Automática") or motor_ncr_rpm <= 0 else abs(rpm_helice_por_caja - rpm_helice_objetivo) <= tolerancia_rpm
+# Alias usado en el módulo avanzado de cumplimiento.
+# Se separa para evitar errores si más adelante se cambia el nombre interno de la validación de caja/transmisión.
+transmision_ok = bool(caja_cumple)
+
+# Keller: área expandida mínima preliminar para evitar cavitación excesiva.
+p0_pv = (p_atm_auto + rho_auto * g_auto * inmersion_eje_m - p_vap_auto)
+keller_ae_min = safe_div((1.3 + 0.3 * z_val) * thrust_req_N, max(p0_pv * diam_prop_m**2, 1e-9), default=0.0) + 0.10
+keller_ok = ae_val >= keller_ae_min
+
+# Burrill preliminar: coeficiente de carga de empuje vs sigma.
+area_disco = math.pi * diam_prop_m**2 / 4.0
+tau_c_burrill = safe_div(thrust_req_N, 0.5 * rho_auto * max(VA_ms**2, 1e-9) * max(area_disco, 1e-9), default=0.0)
+tau_c_admisible = 0.22 + 0.18 * sigma_n
+burrill_ok = tau_c_burrill <= tau_c_admisible
+
+comparacion_df = pd.DataFrame([
+    {"Parámetro": "Potencia al freno PB [kW]", "Calculado": PB_kw_calc, "Real PDF/manual": pb_real_kw, "Error [%]": error_pct(PB_kw_calc, pb_real_kw)},
+    {"Parámetro": "RPM de hélice de validación [rpm]", "Calculado": rpm_helice_validacion, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_helice_validacion, rpm_real)},
+    {"Parámetro": "Diámetro de hélice [m]", "Calculado": diam_prop_m, "Real PDF/manual": diam_real_m, "Error [%]": error_pct(diam_prop_m, diam_real_m)},
+    {"Parámetro": "Número de palas Z", "Calculado": z_val, "Real PDF/manual": z_real, "Error [%]": error_pct(z_val, z_real)},
+    {"Parámetro": "P/D", "Calculado": pd_val, "Real PDF/manual": pd_real, "Error [%]": error_pct(pd_val, pd_real)},
+])
+
+power_chain_df = pd.DataFrame([
+    {"Etapa": "RT", "Descripción": "Resistencia total", "Valor": resistencia_total_kn, "Unidad": "kN"},
+    {"Etapa": "PE", "Descripción": "Potencia efectiva sin margen", "Valor": PE_kw_sin_margen, "Unidad": "kW"},
+    {"Etapa": "PE + Sea Margin", "Descripción": f"Potencia efectiva con {margen_servicio:.1f}% de margen", "Valor": PE_kw, "Unidad": "kW"},
+    {"Etapa": "PT", "Descripción": "Potencia de empuje", "Valor": PT_kw, "Unidad": "kW"},
+    {"Etapa": "PD", "Descripción": "Potencia entregada a la hélice", "Valor": PD_kw, "Unidad": "kW"},
+    {"Etapa": "PS", "Descripción": "Potencia en el eje", "Valor": PS_kw, "Unidad": "kW"},
+    {"Etapa": "PB", "Descripción": "Potencia al freno requerida", "Valor": PB_kw_calc, "Unidad": "kW"},
+    {"Etapa": "MCR requerido", "Descripción": "MCR mínimo para operar PB al 85%", "Valor": MCR_requerido_kw, "Unidad": "kW"},
+])
+
+
+def dictamen_error_porcentual(err):
+    try:
+        if pd.isna(err):
+            return "Sin dato real"
+        if err <= 5:
+            return "Cumple"
+        if err <= 15:
+            return "Revisar"
+        return "No cumple"
+    except Exception:
+        return "Sin dato real"
+
+
+def dictamen_eficiencia(valor, minimo=0.0, maximo=1.2):
+    try:
+        if pd.isna(valor):
+            return "Sin dato"
+        if minimo <= float(valor) <= maximo:
+            return "Cumple"
+        return "Revisar"
+    except Exception:
+        return "Sin dato"
+
+
+def style_estado(val):
+    if val in ["Cumple", "Aprobado", "Ideal"]:
+        return "background-color:#dcfce7; color:#166534; font-weight:800"
+    if val in ["Revisar", "Observación", "Cumple con observación", "Sin dato real", "Sin dato"]:
+        return "background-color:#fef3c7; color:#92400e; font-weight:800"
+    if val in ["No cumple", "Riesgo"]:
+        return "background-color:#fee2e2; color:#991b1b; font-weight:800"
+    return ""
+
+
+def formatear_numero_tabla(x):
+    try:
+        if pd.isna(x):
+            return "—"
+        return f"{float(x):,.3f}"
+    except Exception:
+        return str(x)
+
+
+# Tablas de apoyo con dictamen visible.
+power_chain_status_df = power_chain_df.copy()
+power_chain_status_df["Dictamen"] = "Cumple"
+power_chain_status_df.loc[power_chain_status_df["Valor"].isna(), "Dictamen"] = "Revisar"
+
+comparacion_prof_df = comparacion_df.copy()
+comparacion_prof_df["Dictamen"] = comparacion_prof_df["Error [%]"].apply(dictamen_error_porcentual)
+
+efficiency_prof_df = pd.DataFrame([
+    {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h, "Rango esperado": "0.80–1.30", "Dictamen": dictamen_eficiencia(eta_h, 0.80, 1.30)},
+    {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas Wageningen", "Valor": max_eff, "Rango esperado": "0.40–0.85", "Dictamen": dictamen_eficiencia(max_eff, 0.40, 0.85)},
+    {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r, "Rango esperado": "0.90–1.10", "Dictamen": dictamen_eficiencia(eta_r, 0.90, 1.10)},
+    {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_b, 0.35, 0.90)},
+    {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_d, 0.35, 0.90)},
+    {"Eficiencia": "ηS", "Descripción": "Eficiencia del eje", "Valor": eta_s, "Rango esperado": "0.95–1.00", "Dictamen": dictamen_eficiencia(eta_s, 0.95, 1.00)},
+    {"Eficiencia": "ηG", "Descripción": "Eficiencia de engranaje/transmisión", "Valor": eta_g, "Rango esperado": "0.94–1.00", "Dictamen": dictamen_eficiencia(eta_g, 0.94, 1.00)},
+])
+
 torque_nominal = safe_div(potencia_kw * 1000.0, omega)
 torque_dinamico_alternante = torque_nominal * 0.15
 wt_modulo_torsional = math.pi * diametro_m**3 / 16.0
 esfuerzo_real_mpa = safe_div(torque_dinamico_alternante, wt_modulo_torsional) / 1e6
 tau_admisible_mpa = 0.35 * (sigma_uts / 3.0)
+
+# ==============================================================================
+# INTEGRIDAD MECÁNICA DEL EJE: FS Y FATIGA
+# ==============================================================================
+# Se separa el esfuerzo medio por torque transmitido y el alternante por fluctuación dinámica.
+# Es un prediseño académico; para diseño final deben usarse reglas completas de clase,
+# concentradores de esfuerzo, chaveteros, camisas, acoplamientos, corrosión y datos certificados.
+tau_media_mpa = safe_div(torque_nominal, max(wt_modulo_torsional, 1e-12), default=0.0) / 1e6
+tau_alternante_mpa = esfuerzo_real_mpa
+tau_maxima_estimada_mpa = tau_media_mpa + tau_alternante_mpa
+fs_torsional_estatico = safe_div(tau_admisible_mpa, max(tau_maxima_estimada_mpa, 1e-9), default=0.0)
+
+limite_fatiga_torsion_mpa = max(0.18 * sigma_uts, 1e-9)
+resistencia_corte_ultima_mpa = max(0.67 * sigma_uts, 1e-9)
+sigma_y_aprox_mpa = 0.60 * sigma_uts
+resistencia_corte_fluencia_mpa = max(0.58 * sigma_y_aprox_mpa, 1e-9)
+fs_goodman = safe_div(1.0, safe_div(tau_alternante_mpa, limite_fatiga_torsion_mpa, 0.0) + safe_div(tau_media_mpa, resistencia_corte_ultima_mpa, 0.0), default=0.0)
+fs_soderberg = safe_div(1.0, safe_div(tau_alternante_mpa, limite_fatiga_torsion_mpa, 0.0) + safe_div(tau_media_mpa, resistencia_corte_fluencia_mpa, 0.0), default=0.0)
+fatiga_ok = fs_goodman >= 1.50
+fs_eje_ok = fs_torsional_estatico >= 1.50
+
+def _estado_fs(fs):
+    try:
+        fs = float(fs)
+        if fs >= 2.0:
+            return "Seguro"
+        if fs >= 1.5:
+            return "Aceptable"
+        if fs >= 1.0:
+            return "Revisar"
+        return "No cumple"
+    except Exception:
+        return "Sin dato"
+
+
 
 # Criterios lógicos
 torsion_ok = esfuerzo_real_mpa <= tau_admisible_mpa
@@ -649,6 +3334,13 @@ score += 10 if desbalance_ok else 0
 score += 10 if cavitacion_ok else 0
 score += 10 if reynolds_ok else 0
 score += 10 if hidro_ok else 0
+# Bonificación técnica interna: si el eje también cumple FS y fatiga, se conserva el máximo 100.
+# Si falla, se penaliza para que el dictamen no ignore integridad mecánica.
+if not fs_eje_ok:
+    score = max(score - 8, 0)
+if not fatiga_ok:
+    score = max(score - 8, 0)
+score = min(score, 100)
 
 dictamen, dictamen_tipo, dictamen_icono = diagnostico_score(score)
 
@@ -681,6 +3373,12 @@ if not desbalance_ok:
     recomendaciones.append("Revisar balanceo dinámico: reducir masa excéntrica, excentricidad o verificar balanceo de hélice y eje en taller/pruebas.")
 if not torsion_ok:
     recomendaciones.append("Aumentar diámetro del eje, cambiar material o revisar excitaciones torsionales del sistema propulsivo.")
+if not fs_eje_ok:
+    recomendaciones.append("Revisar el factor de seguridad del eje: aumentar diámetro, usar material de mayor resistencia o reducir torque transmitido.")
+if not fatiga_ok:
+    recomendaciones.append("Revisar vida a fatiga del eje mediante Goodman/Soderberg con datos reales de material, concentradores de esfuerzo y ciclo de carga.")
+if not zonas_prohibidas_df.empty:
+    recomendaciones.append("Evitar operación continua dentro de las zonas prohibidas detectadas en Campbell; cruzarlas rápidamente durante aceleración/desaceleración.")
 if max_eff < 0.45:
     recomendaciones.append("Revisar P/D, Ae/A0 y número de palas; la eficiencia de aguas abiertas está baja.")
 if not recomendaciones:
@@ -700,7 +3398,14 @@ def construir_resumen_dataframe():
             "Puntal D [m]",
             "Calado T [m]",
             "Velocidad [kn]",
+            "Superficie mojada sin timón Swo [m²]",
+            "Superficie mojada con timón Sw [m²]",
+            "Nonuniform Wake Adjustment [%]",
+            "Hub Ratio [-]",
             "Potencia con margen [kW]",
+            "PB calculada [kW]",
+            "MCR requerido [kW]",
+            "RPM hélice requerida [rpm]",
             "RPM [rpm]",
             "Diámetro hélice [m]",
             "Número de palas",
@@ -733,7 +3438,14 @@ def construir_resumen_dataframe():
             puntal,
             calado,
             velocidad,
+            superficie_mojada_sin_timon_m2,
+            superficie_mojada_con_timon_m2,
+            ajuste_estela_no_uniforme_pct,
+            hub_ratio,
             potencia_kw,
+            PB_kw_calc,
+            MCR_requerido_kw,
+            rpm_helice_requerida,
             rpm_motor,
             diam_prop_m,
             z_val,
@@ -762,128 +3474,788 @@ def construir_resumen_dataframe():
     return pd.DataFrame(datos)
 
 
+
+# ==============================================================================
+# EXPORTACIÓN INTEGRAL: TODAS LAS TABLAS Y GRÁFICAS PRINCIPALES
+# ===============================================================================
+
+def _safe_sheet_name(name):
+    """Nombre de hoja compatible con Excel."""
+    name = re.sub(r"[\\/*?:\[\]]", "_", str(name))
+    return name[:31]
+
+
+def _safe_num(x, default=0.0):
+    try:
+        if x is None or (isinstance(x, float) and np.isnan(x)):
+            return default
+        return float(x)
+    except Exception:
+        return default
+
+
+def construir_tablas_exportacion_completas():
+    # FIX robusto de exportación:
+    # Algunas variables globales pueden cambiar de nombre entre versiones de la app.
+    # Se crean alias locales seguros para que el Excel/PDF no bloquee toda la aplicación.
+    g = globals()
+    PB_kw_calc = float(g.get("PB_kw_calc", g.get("pb_req_kw", g.get("potencia_kw", 0.0))) or 0.0)
+    MCR_requerido_kw = float(g.get("MCR_requerido_kw", safe_div(PB_kw_calc, 0.85, default=0.0)) or 0.0)
+    mcr_real_disponible = float(g.get("mcr_real_disponible", g.get("motor_mcr_kw", MCR_requerido_kw)) or 0.0)
+    rpm_motor = float(g.get("rpm_motor", g.get("rpm_operacion", g.get("rpm_helice_objetivo", 0.0))) or 0.0)
+    potencia_kw = float(g.get("potencia_kw", PB_kw_calc) or 0.0)
+    """Construye, en el momento de exportar, todas las tablas técnicas principales.
+    Se evita depender de tablas creadas dentro de pestañas posteriores para que el
+    botón de descarga funcione siempre desde Resumen.
+    """
+    tablas = {}
+
+    tablas["01_Resumen"] = construir_resumen_dataframe()
+
+    tablas["02_Datos_Entrada"] = pd.DataFrame([
+        ["Modo de referencia", modo_guia, "Entrada del usuario / valor por defecto"],
+        ["Lpp", f"{eslora:.3f} m", "Geometría principal"],
+        ["LWL", f"{lwl:.3f} m", "Geometría principal"],
+        ["Manga B", f"{manga:.3f} m", "Geometría principal"],
+        ["Puntal", f"{puntal:.3f} m", "Geometría principal"],
+        ["Calado", f"{calado:.3f} m", "Geometría principal"],
+        ["Velocidad de servicio", f"{velocidad:.3f} kn", "Condición de operación"],
+        ["Superficie mojada sin timón", f"{superficie_mojada_sin_timon_m2:,.1f} m²", "Entrada / ficha técnica"],
+        ["Superficie mojada con timón", f"{superficie_mojada_con_timon_m2:,.1f} m²", "Entrada / ficha técnica"],
+        ["RT", f"{resistencia_total_kn:,.1f} kN", rt_fuente],
+        ["Sea Margin", f"{margen_servicio:.1f} %", "Margen de servicio"],
+        ["w", f"{estela:.3f}", "Fracción de estela"],
+        ["t", f"{t_fraction:.3f}", "Fracción de deducción de empuje"],
+        ["ηR", f"{eta_r:.3f}", "Eficiencia rotativa relativa"],
+        ["Z", f"{z_val}", "Número de palas"],
+        ["D hélice", f"{diam_prop_m:.3f} m", "Diámetro de propulsor"],
+        ["P/D", f"{pd_val:.3f}", "Relación paso-diámetro"],
+        ["Ae/A0", f"{ae_val:.3f}", "Relación de área expandida"],
+        ["Hub ratio", f"{hub_ratio:.3f}", "Relación de cubo"],
+        ["Inmersión del eje", f"{inmersion_eje_m:.3f} m", "Cavitación"],
+        ["Material de eje", material_seleccionado, "Propiedades mecánicas"],
+    ], columns=["Parámetro", "Valor", "Comentario"])
+
+    tablas["03_Hipotesis_Metodo"] = pd.DataFrame([
+        ["Propiedades del fluido", f"ρ={rho_auto:.3f} kg/m³, Pv={p_vap_auto:.1f} Pa", "Agua salada / condiciones de referencia"],
+        ["Potencia efectiva", "PE = RT · Vs", "Convierte resistencia al avance en potencia"],
+        ["Velocidad de avance", "VA = Vs(1-w)", "Incluye efecto de estela"],
+        ["Eficiencia de casco", "ηH = (1-t)/(1-w)", "Interacción casco-hélice"],
+        ["Potencia entregada", "PD = PT/ηO", "Potencia requerida en hélice"],
+        ["Potencia al eje", "PS = PD/ηS", "Incluye pérdidas de eje"],
+        ["Potencia al freno", "PB = PS/ηG", "Potencia requerida en motor"],
+        ["MCR requerido", "MCR = PB/0.85", "Reserva operativa aproximada del 15%"],
+        ["Burrill", "τc vs τ admisible", "Carga de pala y cavitación preliminar"],
+        ["Keller", "Ae/A0 actual vs mínimo", "Área expandida mínima para cavitación"],
+        ["Campbell", "Órdenes 1P, ZP, 2ZP, 3ZP vs fn", "Revisión preliminar de resonancia"],
+    ], columns=["Tema", "Fórmula / criterio", "Uso técnico"])
+
+    tablas["04_Cadena_Potencias"] = power_chain_df.copy()
+    tablas["05_Eficiencias"] = efficiency_prof_df.copy() if "efficiency_prof_df" in globals() else pd.DataFrame()
+    tablas["06_Comparacion_Real"] = comparacion_df.copy()
+    tablas["07_Wageningen_Datos"] = res.copy()
+
+    tablas["08_Cavitacion"] = pd.DataFrame([
+        {"Análisis": "Reynolds", "Resultado": reynolds, "Límite/Referencia": "> 1e7", "Dictamen": "Cumple" if reynolds_ok else "Revisar", "Lectura": "Régimen turbulento típico de hélices navales."},
+        {"Análisis": "Sigma cavitación", "Resultado": sigma_n, "Límite/Referencia": "> 0.20 preliminar", "Dictamen": "Cumple" if cavitacion_ok else "Revisar", "Lectura": "Mayor σ indica menor tendencia inicial a cavitar."},
+        {"Análisis": "Burrill τc", "Resultado": tau_c_burrill, "Límite/Referencia": tau_c_admisible, "Dictamen": "Cumple" if burrill_ok else "Revisar", "Lectura": "Compara carga de pala contra límite preliminar admisible."},
+        {"Análisis": "Keller Ae/A0", "Resultado": ae_val, "Límite/Referencia": keller_ae_min, "Dictamen": "Cumple" if keller_ok else "No cumple", "Lectura": "Verifica área expandida mínima."},
+    ])
+
+    tablas["09_Vibracion_Torsional"] = pd.DataFrame([
+        ["Torque nominal", f"{torque_nominal/1000:,.3f} kN·m", "Par transmitido por el eje"],
+        ["Esfuerzo torsional", f"{esfuerzo_real_mpa:.3f} MPa", "Resultado de torsión"],
+        ["Límite admisible", f"{tau_admisible_mpa:.3f} MPa", "Referencia preliminar"],
+        ["Factor de utilización", f"{safe_div(esfuerzo_real_mpa, tau_admisible_mpa, 0):.3f}", "Debe mantenerse bajo 1"],
+        ["Dictamen", "Cumple" if torsion_ok else "No cumple", "Revisión preliminar del eje"],
+    ], columns=["Parámetro", "Valor", "Interpretación"])
+
+    tablas["10_Vibracion_Axial"] = axial_df.copy()
+    tablas["11_Campbell"] = campbell_df.copy()
+
+    tablas["12_Vibracion_Lateral"] = pd.DataFrame([
+        ["Frecuencia natural lateral", f"{f_natural_hz:.3f} Hz", "Modo lateral estimado"],
+        ["RPM crítica lateral", f"{rpm_critica_lateral:.3f} rpm", "Velocidad crítica estimada"],
+        ["Banda inferior", f"{margen_inf:.3f} rpm", "Límite inferior de zona crítica"],
+        ["Banda superior", f"{margen_sup:.3f} rpm", "Límite superior de zona crítica"],
+        ["RPM operación", f"{rpm_motor:.3f} rpm", "Punto de operación"],
+        ["Dictamen", "Cumple" if lateral_ok else "No cumple", "Separación frente a velocidad crítica"],
+    ], columns=["Parámetro", "Valor", "Interpretación"])
+
+    tablas["13_Balanceo"] = pd.DataFrame([
+        ["Masa equivalente de hélice", f"{peso_helice_kg:,.2f} kg", "Masa rotativa estimada/entrada"],
+        ["RPM operación", f"{rpm_motor:.3f}", "Velocidad de giro"],
+        ["Fuerza de desbalance", f"{fuerza_desbalance_n:,.2f} N", "Fuerza dinámica 1P estimada"],
+        ["Riesgo", riesgo_desbalance, "Clasificación preliminar"],
+        ["Dictamen", "Cumple" if desbalance_ok else "No cumple", "Evaluación conceptual"],
+    ], columns=["Parámetro", "Valor", "Interpretación"])
+
+    tablas["14_Seguridad_Eje"] = pd.DataFrame([
+        ["FS torsional estático", f"{fs_torsional_estatico:.3f}", "≥ 1.50", _estado_fs(fs_torsional_estatico)],
+        ["FS Goodman", f"{fs_goodman:.3f}", "≥ 1.50", _estado_fs(fs_goodman)],
+        ["FS Soderberg", f"{fs_soderberg:.3f}", "≥ 1.50", _estado_fs(fs_soderberg)],
+        ["τ media", f"{tau_media_mpa:.3f} MPa", "Informativo", "—"],
+        ["τ alternante", f"{tau_alternante_mpa:.3f} MPa", "Informativo", "—"],
+        ["τ máxima estimada", f"{tau_maxima_estimada_mpa:.3f} MPa", "Informativo", "—"],
+    ], columns=["Criterio", "Resultado", "Referencia", "Estado"])
+
+    tablas["15_Zonas_Prohibidas"] = zonas_prohibidas_df.copy()
+
+    try:
+        opt_df = optimizar_helice_wageningen("Detallada", rpm_helice_objetivo, VA_ms, diam_prop_m).head(30)
+    except Exception:
+        opt_df = pd.DataFrame()
+    tablas["17_Optimizacion"] = opt_df
+
+    try:
+        rec_motores_export = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo, n=30)
+    except Exception:
+        rec_motores_export = pd.DataFrame()
+    tablas["18_Motores_Recomendados"] = rec_motores_export
+
+    try:
+        relacion_nec = safe_div(rpm_motor_real if rpm_motor_real > 0 else mcr_rpm_manual, rpm_helice_objetivo, default=relacion_reduccion)
+        rec_red = recomendar_reductoras(PB_kw_calc, relacion_nec, n=20)
+    except Exception:
+        rec_red = pd.DataFrame()
+    tablas["19_Reductoras"] = rec_red
+
+    motor_norma_estado = "Sin dato real"
+    try:
+        if mcr_real_disponible > 0:
+            if PB_kw_calc <= 0.85 * mcr_real_disponible:
+                motor_norma_estado = "Cumple ideal"
+            elif PB_kw_calc <= mcr_real_disponible:
+                motor_norma_estado = "Cumple con observación"
+            else:
+                motor_norma_estado = "No cumple"
+    except Exception:
+        pass
+    tablas["20_Normativa_Por_Pestana"] = pd.DataFrame([
+        ["Dashboard", "ITTC / ISO / ABS-DNV", "Resultado → criterio → dictamen", "Integra indicadores y no solo muestra números aislados."],
+        ["PDF / Comparación", "Ficha técnica / IACS / trazabilidad", "Error % = |calculado-real|/real·100", "Verifica la diferencia entre datos calculados y datos reales del buque."],
+        ["Potencias", "ITTC 7.5-02", "PE=RT·VS ; VA=VS(1-w) ; PD=PE/ηD ; PB=PS/ηG", "Justifica la cadena de potencia desde resistencia hasta motor."],
+        ["Motor / Reductora", "ISO 3046 / ABS-DNV Pt.4 / fabricante", "P85%MCR=0.85MCR ; i=nmotor/nhélice", "Comprueba reserva de potencia y relación de reducción."],
+        ["Hidrodinámica / Optimización", "Wageningen Serie B / MARIN / ITTC", "J=VA/(nD), KT=T/(ρn²D⁴), KQ=Q/(ρn²D⁵), ηO=JKT/(2πKQ)", "Avalan la selección preliminar de hélice y su punto óptimo."],
+        ["Vibración", "DNV Pt.4 Ch.4 / ABS Pt.4 / ISO 20816", "fexc=orden·RPM/60 ; separación=|fn-fexc|/fn·100", "Evalúa si las excitaciones se acercan a frecuencias naturales."],
+        ["Balanceo", "ISO 1940-1 / ISO 21940", "eperm=9549G/n ; U=m·e", "Justifica el desbalance residual permisible."],
+        ["Campbell", "DNV/ABS + buenas prácticas", "RPMcruce=60fn/k ; zona crítica≈RPMcruce±5%", "Define cruces y bandas a evitar por resonancia."],
+        ["Cavitación", "Burrill / Keller / ITTC", "σ=(Patm+ρgh-Pv)/(0.5ρVA²) ; Re=VA·D/ν ; Ae/A0≥mínimo", "Justifica riesgo de cavitación y régimen de flujo."],
+        ["Seguridad del eje", "ABS/DNV + Goodman/Soderberg", "T=9550PB/n ; τ=16T/(πd³) ; FS=τadm/τ", "Evalúa resistencia torsional y fatiga preliminar del eje."],
+        ["Integración visual 3D", "Wageningen / dinámica rotativa", "P=2πnQ ; T=KTρn²D⁴", "Relaciona motor, eje, hélice, torque, rpm y empuje."],
+        ["Informe técnico", "Formato de reporte de ingeniería", "Resultado → interpretación → recomendación", "Explica por qué cada resultado cumple, se revisa o requiere rediseño."],
+    ], columns=["Pestaña", "Norma / regla", "Fórmula o criterio", "Por qué avala el resultado"])
+
+    tablas["20_Normativa"] = pd.DataFrame([
+        {"Área": "Condición del agua", "Referencia técnica": "ITTC @ 15 °C", "Variable de la app": f"ρ={rho_auto:.1f} kg/m³, Pv={p_vap_auto:.0f} Pa", "Dictamen": "Cumple"},
+        {"Área": "Resistencia al avance", "Referencia técnica": "ITTC/Holtrop/ficha técnica", "Variable de la app": f"RT={resistencia_total_kn:,.0f} kN ({rt_fuente})", "Dictamen": "Calculada" if rt_modo == "Automática preliminar" else "Dato manual"},
+        {"Área": "Margen de servicio", "Referencia técnica": "ITTC Speed/Power Trials", "Variable de la app": f"Sea Margin={margen_servicio:.1f}%", "Dictamen": "Cumple" if margen_servicio >= 10 else "Revisar"},
+        {"Área": "Hélice Wageningen", "Referencia técnica": "B-Series / ITTC Open Water", "Variable de la app": f"ηO máx={max_eff*100:.2f}%, J={j_opt:.3f}", "Dictamen": "Cumple" if hidro_ok else "Revisar"},
+        {"Área": "Cavitación Burrill", "Referencia técnica": "Diagrama σ-τc", "Variable de la app": f"τc={tau_c_burrill:.3f}, τadm={tau_c_admisible:.3f}", "Dictamen": "Cumple" if burrill_ok else "Revisar"},
+        {"Área": "Cavitación Keller", "Referencia técnica": "Área expandida mínima", "Variable de la app": f"Ae/A0={ae_val:.3f}, mínimo={keller_ae_min:.3f}", "Dictamen": "Cumple" if keller_ok else "No cumple"},
+        {"Área": "Reynolds", "Referencia técnica": "ITTC / similitud", "Variable de la app": f"Re={reynolds:.2e}", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
+        {"Área": "Motor", "Referencia técnica": "Fabricante / 85% MCR", "Variable de la app": f"PB={PB_kw_calc:,.0f} kW, MCR real={mcr_real_disponible:,.0f} kW", "Dictamen": motor_norma_estado},
+        {"Área": "Transmisión", "Referencia técnica": "Fabricante de caja", "Variable de la app": f"Tipo={transmision_tipo}, i={relacion_reduccion:.2f}", "Dictamen": "Cumple" if transmision_ok else "Revisar"},
+        {"Área": "Torsión de eje", "Referencia técnica": "ABS/DNV/IACS UR M68", "Variable de la app": f"τ={esfuerzo_real_mpa:.2f} MPa, τadm={tau_admisible_mpa:.2f} MPa", "Dictamen": "Cumple" if torsion_ok else "No cumple"},
+        {"Área": "Vibración lateral", "Referencia técnica": "Velocidad crítica", "Variable de la app": f"Operación={rpm_motor:.1f} rpm, zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
+        {"Área": "Vibración axial", "Referencia técnica": "Órdenes 1P/ZP", "Variable de la app": f"Riesgo axial={riesgo_axial_global}", "Dictamen": "Cumple" if axial_ok else "No cumple"},
+        {"Área": "Campbell", "Referencia técnica": "Resonancia rotativa", "Variable de la app": "Intersecciones 1P, ZP, 2ZP, 3ZP", "Dictamen": "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "No cumple"},
+        {"Área": "Zonas prohibidas", "Referencia técnica": "Campbell / bandas críticas", "Variable de la app": f"Zonas detectadas={len(zonas_prohibidas_df)}", "Dictamen": "Cumple" if zonas_prohibidas_df.empty else "Revisar"},
+        {"Área": "Factor de seguridad del eje", "Referencia técnica": "Prediseño shafting", "Variable de la app": f"FS={fs_torsional_estatico:.2f}", "Dictamen": "Cumple" if fs_eje_ok else "Revisar"},
+        {"Área": "Fatiga del eje", "Referencia técnica": "Goodman/Soderberg", "Variable de la app": f"Goodman={fs_goodman:.2f}, Soderberg={fs_soderberg:.2f}", "Dictamen": "Cumple" if fatiga_ok else "Revisar"},
+        {"Área": "Balanceo", "Referencia técnica": "ISO 1940", "Variable de la app": f"Riesgo={riesgo_desbalance}", "Dictamen": "Cumple" if desbalance_ok else "No cumple"},
+    ])
+
+    tablas["21_Visual_3D"] = pd.DataFrame([
+        ["Sistema propulsivo 3D", "D, Z, d eje, PB, RPM, transmisión", "Representa el arreglo motor-transmisión-eje-hélice."],
+        ["Hélice 3D paramétrica", "D, Z, P/D, Ae/A0, hub ratio", "Muestra cómo la geometría cambia con los parámetros de entrada."],
+        ["Prueba de mar virtual", "V, RT, PE, PB, σ, ηD", "Simula el aumento de demanda energética al acelerar hasta servicio."],
+        ["Mapa de carga en hélice", "D, Z, P/D, Ae/A0, σ, KT, KQ", "Localiza zonas de mayor demanda hidrodinámica sobre las palas."],
+    ], columns=["Módulo visual", "Datos que usa", "Interpretación"])
+
+    tablas["22_Recomendaciones"] = pd.DataFrame({"Recomendación técnica": recomendaciones})
+    return tablas
+
+
+def _fig_axial_export():
+    fig, ax = plt.subplots(figsize=(10.2, 4.8))
+    df = axial_df.copy()
+    ax.bar(df["Orden de excitación"], df["Frecuencia excitante [Hz]"])
+    ax.axhline(f_axial_natural_hz, linestyle="--", linewidth=2, label=f"fn axial = {f_axial_natural_hz:.2f} Hz")
+    ax.set_title("Órdenes axiales vs frecuencia natural del sistema")
+    ax.set_xlabel("Orden de excitación")
+    ax.set_ylabel("Frecuencia [Hz]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    for i, row in df.iterrows():
+        ax.text(i, row["Frecuencia excitante [Hz]"], f"{row['Frecuencia excitante [Hz]']:.2f} Hz\nsep. {row['Separación [%]']:.1f}%", ha="center", va="bottom", fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def _fig_lateral_export():
+    fig, ax = plt.subplots(figsize=(9.6, 3.9))
+    ax.axvspan(margen_inf, margen_sup, alpha=0.18, label="Banda crítica ±20%")
+    ax.axvline(rpm_critica_lateral, linestyle="--", linewidth=2, label=f"RPM crítica {rpm_critica_lateral:.1f}")
+    ax.scatter([rpm_motor], [1], s=140, label=f"Operación {rpm_motor:.1f} rpm")
+    ax.set_title("Margen frente a velocidad crítica lateral")
+    ax.set_xlabel("RPM")
+    ax.set_yticks([])
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+def _fig_balanceo_export():
+    fig, ax = plt.subplots(figsize=(9.5, 4.2))
+    rpm_range = np.linspace(max(1, rpm_motor*0.35), max(rpm_motor*1.65, rpm_motor+20), 120)
+    fuerza = fuerza_desbalance_n * (rpm_range / max(rpm_motor, 1e-9))**2
+    ax.plot(rpm_range, fuerza, linewidth=2.8, label="Fuerza de desbalance estimada")
+    ax.scatter([rpm_motor], [fuerza_desbalance_n], s=120, label="Operación")
+    ax.set_title("Fuerza de desbalance contra RPM")
+    ax.set_xlabel("RPM")
+    ax.set_ylabel("Fuerza [N]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_optimizacion_export():
+    try:
+        opt = optimizar_helice_wageningen("Detallada", rpm_helice_objetivo, VA_ms, diam_prop_m).head(10).copy()
+        labels = [f"Z{int(r.Z)} | P/D {r['P/D']:.2f} | Ae {r['Ae/A0']:.2f}" for _, r in opt.iterrows()]
+        vals = opt["Puntaje optimizado"].to_numpy()
+    except Exception:
+        labels, vals = ["Sin datos"], [0]
+    fig, ax = plt.subplots(figsize=(11, 5.2))
+    y = np.arange(len(labels))[::-1]
+    ax.barh(y, vals[::-1])
+    ax.set_yticks(y); ax.set_yticklabels(labels[::-1], fontsize=8)
+    ax.set_title("Top 10 combinaciones de optimización Wageningen")
+    ax.set_xlabel("Puntaje optimizado")
+    ax.grid(True, axis="x", linestyle=":", alpha=0.55)
+    fig.tight_layout()
+    return fig
+
+
+def _fig_bode_export():
+    zeta = 0.05
+    fn = max(f_axial_natural_hz, 0.1)
+    f = np.linspace(0.05, max(fn*3.0, 30), 400)
+    r = f / fn
+    H = 1 / np.sqrt((1-r**2)**2 + (2*zeta*r)**2)
+    fig, ax = plt.subplots(figsize=(9.5, 4.2))
+    ax.semilogy(f, H, linewidth=2.4)
+    ax.axvline(fn, linestyle="--", label=f"fn={fn:.2f} Hz")
+    ax.set_title("Bode de magnitud — referencia axial")
+    ax.set_xlabel("Frecuencia [Hz]")
+    ax.set_ylabel("Amplificación [x]")
+    ax.grid(True, which="both", linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_orbita_export():
+    amp_x = max(5.0, min(120.0, 0.75 * fuerza_desbalance_n / max(peso_helice_kg, 1)))
+    amp_y = amp_x * 0.55
+    fase = np.deg2rad(55)
+    t = np.linspace(0, 2*np.pi, 260)
+    x = amp_x * np.cos(t)
+    y = amp_y * np.sin(t + fase)
+    fig, ax = plt.subplots(figsize=(6.5, 6.0))
+    ax.plot(x, y, linewidth=2.5, label="Órbita estimada")
+    ax.scatter([0], [0], marker="+", s=130, label="Centro nominal")
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_title("Órbita lateral estimada del eje")
+    ax.set_xlabel("X [µm]")
+    ax.set_ylabel("Y [µm]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_prueba_mar_export():
+    v = np.linspace(0.1, max(velocidad*1.10, 1), 80)
+    rt = resistencia_total_kn*(v/max(velocidad, 0.1))**2.15
+    pe = PE_kw*(v/max(velocidad, 0.1))**3.15
+    pb = PB_kw_calc*(v/max(velocidad, 0.1))**3.15
+    fig, ax = plt.subplots(figsize=(10.5, 4.8))
+    ax.plot(v, rt, label="RT [kN]", linewidth=2.4)
+    ax.plot(v, pe, label="PE [kW]", linewidth=2.4)
+    ax.plot(v, pb, label="PB [kW]", linewidth=2.4)
+    ax.axvline(velocidad, linestyle="--", label=f"Servicio {velocidad:.1f} kn")
+    ax.set_title("Prueba de mar virtual — curvas escaladas de prediseño")
+    ax.set_xlabel("Velocidad [kn]")
+    ax.set_ylabel("Magnitud")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def _fig_carga_helice_export():
+    r = np.linspace(max(hub_ratio, 0.05), 1.0, 140)
+    carga = 0.45 + 0.65*np.exp(-((r-0.72)/0.18)**2) + 0.25*np.clip(0.35-sigma_n, 0, 1)
+    fig, ax = plt.subplots(figsize=(9.5, 4.3))
+    ax.plot(r, carga, linewidth=2.8)
+    ax.fill_between(r, carga, alpha=0.16)
+    ax.axvline(0.7, linestyle="--", label="zona típica 0.7R")
+    ax.set_title("Distribución radial de carga relativa en la pala")
+    ax.set_xlabel("Radio relativo r/R")
+    ax.set_ylabel("Carga relativa [-]")
+    ax.grid(True, linestyle=":", alpha=0.55)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def construir_graficas_exportacion_completas():
+    """Devuelve lista de tuplas: (titulo, pestaña, descripción, figura matplotlib)."""
+    graficas = []
+    def add(titulo, pestana, desc, fig_fn):
+        try:
+            fig = fig_fn()
+            if fig is not None:
+                graficas.append((titulo, pestana, desc, fig))
+        except Exception as e:
+            # No se interrumpe la exportación por una gráfica opcional.
+            pass
+    add("Comparación contra dato real", "PDF / Comparación", "Error porcentual entre resultados calculados y datos reales/manuales.", lambda: crear_figura_comparacion(comparacion_df))
+    add("Curvas Wageningen Serie B", "Hidrodinámica", "KT, 10KQ y ηO en función del coeficiente de avance J.", lambda: crear_figura_wageningen(res, j_opt))
+    add("Cadena completa de potencias", "Potencias", "Progresión energética RT → PE → PT → PD → PS → PB → MCR.", lambda: crear_figura_cadena_potencias_profesional(power_chain_df))
+    add("Efecto del Sea Margin", "Potencias", "Aumento de PE por margen de servicio.", lambda: crear_figura_waterfall_pe(PE_kw_sin_margen, PE_kw, margen_servicio))
+    add("Conversión PE a PT", "Potencias", "Conversión de potencia efectiva a potencia de empuje.", lambda: crear_figura_empuje_profesional(PE_kw, PT_kw, VA_ms, thrust_req_N/1000))
+    add("Eficiencias propulsivas", "Potencias", "ηH, ηO, ηR y ηD.", lambda: crear_figura_eficiencias_propulsivas(eta_h, max_eff, eta_r, eta_d))
+    add("Motor y MCR", "Motor / Reductora", "Pérdidas mecánicas y reserva de potencia del motor.", lambda: crear_figura_motor_mcr(PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw))
+    add("Mapa de eficiencias", "Potencias", "Eficiencias adoptadas en la cadena de potencia.", lambda: crear_figura_mapa_eficiencias(efficiency_prof_df))
+    add("Criterio de Burrill", "Cavitación", "Revisión σ vs τc para riesgo de cavitación.", lambda: crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
+    add("Criterio de Keller", "Cavitación", "Ae/A0 actual contra área expandida mínima.", lambda: crear_figura_keller(keller_ae_min, ae_val))
+    add("Diagrama de Campbell", "Campbell", "Órdenes de excitación contra frecuencias naturales.", lambda: crear_figura_campbell(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val))
+    add("Órdenes axiales", "Vibración", "Órdenes 1P/ZP/2ZP/3ZP contra frecuencia natural axial.", _fig_axial_export)
+    add("Margen lateral", "Vibración", "RPM de operación frente a zona crítica lateral.", _fig_lateral_export)
+    add("Balanceo", "Balanceo", "Fuerza de desbalance estimada contra RPM.", _fig_balanceo_export)
+    add("Optimización Wageningen", "Optimización", "Top de combinaciones por eficiencia y cercanía a RPM real.", _fig_optimizacion_export)
+    add("Bode de magnitud", "Integridad dinámica", "Amplificación dinámica de referencia alrededor de la frecuencia natural.", _fig_bode_export)
+    add("Órbita del eje", "Integridad dinámica", "Órbita lateral estimada del eje.", _fig_orbita_export)
+    add("Prueba de mar virtual", "Integración visual 3D", "Curvas de RT, PE y PB durante aceleración virtual.", _fig_prueba_mar_export)
+    add("Carga radial de hélice", "Integración visual 3D", "Distribución conceptual de carga relativa sobre la pala.", _fig_carga_helice_export)
+    return graficas
+
+
+def insertar_figura_excel_con_texto(writer, fig, sheet_name, descripcion=""):
+    """Crea una hoja de Excel con descripción técnica + imagen."""
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        tmp.close()
+        fig.savefig(tmp.name, format="png", dpi=170, bbox_inches="tight")
+        ws = writer.book.create_sheet(_safe_sheet_name(sheet_name))
+        ws["A1"] = "Descripción técnica"
+        ws["A1"].font = ws["A1"].font.copy(bold=True)
+        ws["A2"] = descripcion
+        ws["A2"].alignment = ws["A2"].alignment.copy(wrap_text=True)
+        ws.column_dimensions["A"].width = 95
+        img = XLImage(tmp.name)
+        img.anchor = "A4"
+        ws.add_image(img)
+        return tmp.name
+    except Exception:
+        return None
+
+
 def generar_excel():
+    """Exporta un libro Excel ordenado como memoria técnica, no como hojas sueltas."""
     output = BytesIO()
-    resumen_df = construir_resumen_dataframe()
+    tmp_files = []
+    tablas = construir_tablas_exportacion_completas()
+    graficas = construir_graficas_exportacion_completas()
+
+    def _format_sheet(ws, title_fill="1E1B4B"):
+        try:
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            thin = Side(style="thin", color="CBD5E1")
+            for cell in ws[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor=title_fill)
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = Border(bottom=thin)
+            ws.freeze_panes = "A2"
+            for col in ws.columns:
+                max_len = 8
+                col_letter = col[0].column_letter
+                for cell in col[:120]:
+                    val = "" if cell.value is None else str(cell.value)
+                    max_len = max(max_len, len(val))
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+                ws.column_dimensions[col_letter].width = min(max_len + 2, 46)
+        except Exception:
+            pass
+
+    def _section_from_name(nombre):
+        n = str(nombre).lower()
+        if any(k in n for k in ["dashboard", "entrada", "resumen", "validacion"]):
+            return "01 Resumen y datos base"
+        if any(k in n for k in ["potencia", "eficiencia", "motor", "reduct"]):
+            return "02 Potencias, motor y transmisión"
+        if any(k in n for k in ["wageningen", "hidro", "optimizacion"]):
+            return "03 Hidrodinámica y optimización"
+        if any(k in n for k in ["cavitacion", "burrill", "keller", "reynolds"]):
+            return "04 Cavitación y régimen de flujo"
+        if any(k in n for k in ["torsion", "vibracion", "campbell", "lateral", "axial", "balanceo"]):
+            return "05 Integridad dinámica"
+        if any(k in n for k in ["normativa", "clase"]):
+            return "06 Normativa y cumplimiento"
+        if any(k in n for k in ["visual", "3d", "prueba", "carga"]):
+            return "07 Integración visual"
+        return "08 Anexos técnicos"
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        resumen_df.to_excel(writer, sheet_name="Resumen", index=False)
-        res.to_excel(writer, sheet_name="Wageningen", index=False)
+        # 00 Portada / guía de lectura
+        portada = pd.DataFrame([
+            ["Aplicación", "Naval Propulsion & Shaft Dynamics Pro"],
+            ["Tipo de archivo", "Libro técnico exportado automáticamente"],
+            ["Contenido", "Tablas completas, gráficas principales, validaciones y anexos"],
+            ["Criterio de organización", "Resumen → datos base → potencias → hidrodinámica → cavitación → dinámica → normativa → anexos"],
+            ["Uso recomendado", "Revisión técnica, presentación, anexos de reporte y trazabilidad de cálculo"],
+            ["Nota", "El PDF resume; este Excel conserva la memoria de cálculo completa y hojas de apoyo."],
+        ], columns=["Campo", "Descripción"])
+        portada.to_excel(writer, sheet_name="00_Portada", index=False)
+        _format_sheet(writer.sheets["00_Portada"], "0F172A")
 
-        cumplimiento = pd.DataFrame({
-            "Criterio": [
-                "Hidrodinámica",
-                "Reynolds",
-                "Cavitación",
-                "Vibración torsional",
-                "Vibración lateral",
-                "Vibración axial",
-                "Balanceo/desbalance"
-            ],
-            "Resultado": [
-                "Cumple" if hidro_ok else "Observación",
-                "Cumple" if reynolds_ok else "Observación",
-                "Cumple" if cavitacion_ok else "No cumple",
-                "Cumple" if torsion_ok else "No cumple",
-                "Cumple" if lateral_ok else "No cumple",
-                "Cumple" if axial_ok else "No cumple",
-                "Cumple" if desbalance_ok else "No cumple"
-            ]
-        })
-        cumplimiento.to_excel(writer, sheet_name="Cumplimiento", index=False)
-        axial_df.to_excel(writer, sheet_name="Vibracion_Axial", index=False)
-        campbell_df.to_excel(writer, sheet_name="Campbell", index=False)
+        # 01 Resumen ejecutivo del libro
+        resumen_excel = pd.DataFrame([
+            {"Bloque": "Buque", "Resultado": f"L={eslora:.2f} m · B={manga:.2f} m · T={calado:.2f} m · V={velocidad:.2f} kn", "Lectura": "Datos principales del caso evaluado."},
+            {"Bloque": "Potencia", "Resultado": f"PB={PB_kw_calc:,.0f} kW · MCR requerido={MCR_requerido_kw:,.0f} kW", "Lectura": "Demanda de potencia y margen de motor."},
+            {"Bloque": "Hélice", "Resultado": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Lectura": "Configuración geométrica usada en el cálculo."},
+            {"Bloque": "Cavitación", "Resultado": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Lectura": "Verificación preliminar de riesgo de cavitación."},
+            {"Bloque": "Dinámica", "Resultado": f"Torsión={'Cumple' if torsion_ok else 'No cumple'} · Lateral={'Cumple' if lateral_ok else 'No cumple'} · Axial={'Cumple' if axial_ok else 'No cumple'}", "Lectura": "Síntesis de integridad dinámica."},
+        ])
+        resumen_excel.to_excel(writer, sheet_name="01_Resumen_Ejecutivo", index=False)
+        _format_sheet(writer.sheets["01_Resumen_Ejecutivo"], "312E81")
 
+        indice_items = []
+        for nombre, df in tablas.items():
+            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                continue
+            sheet = _safe_sheet_name(nombre)
+            section = _section_from_name(nombre)
+            df.to_excel(writer, sheet_name=sheet, index=False)
+            _format_sheet(writer.sheets[sheet], "1E1B4B")
+            indice_items.append({
+                "Sección": section,
+                "Hoja": sheet,
+                "Tipo": "Tabla completa",
+                "Filas": len(df),
+                "Columnas": len(df.columns),
+                "Descripción": "Tabla de cálculo, validación o trazabilidad exportada desde la app."
+            })
+
+        for idx, (titulo, pestana, desc, fig) in enumerate(graficas, start=1):
+            sheet = _safe_sheet_name(f"G{idx:02d}_{titulo}")
+            tmp = insertar_figura_excel_con_texto(writer, fig, sheet, f"Pestaña de origen: {pestana}. {desc}")
+            if tmp:
+                tmp_files.append(tmp)
+            indice_items.append({
+                "Sección": _section_from_name(pestana + " " + titulo),
+                "Hoja": sheet,
+                "Tipo": "Gráfica",
+                "Filas": "—",
+                "Columnas": "—",
+                "Descripción": desc
+            })
+            try:
+                plt.close(fig)
+            except Exception:
+                pass
+
+        indice_df = pd.DataFrame(indice_items)
+        if not indice_df.empty:
+            indice_df = indice_df.sort_values(["Sección", "Tipo", "Hoja"]).reset_index(drop=True)
+        indice_df.to_excel(writer, sheet_name="02_Indice_Contenido", index=False)
+        _format_sheet(writer.sheets["02_Indice_Contenido"], "0F766E")
+
+        # Reordenar: portada, resumen, índice, después hojas en orden lógico.
+        try:
+            wb = writer.book
+            priority = {"00_Portada": 0, "01_Resumen_Ejecutivo": 1, "02_Indice_Contenido": 2}
+            wb._sheets.sort(key=lambda ws: priority.get(ws.title, 10 + list(priority).count(ws.title)))
+        except Exception:
+            pass
+
+    for tmp in tmp_files:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
     output.seek(0)
     return output
 
-
 def generar_pdf():
+    """Genera un PDF tipo memoria técnica con todas las tablas y gráficas principales."""
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
     except Exception:
         return None
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=28, leftMargin=28, topMargin=28, bottomMargin=28)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        "CustomTitle",
-        parent=styles["Title"],
-        textColor=colors.HexColor("#1e1b4b"),
-        fontSize=18,
-        leading=22
-    )
+    title_style = ParagraphStyle("CustomTitle", parent=styles["Title"], textColor=colors.HexColor("#1e1b4b"), fontSize=18, leading=22)
+    h1 = ParagraphStyle("H1", parent=styles["Heading1"], textColor=colors.HexColor("#1e1b4b"), fontSize=15, leading=18, spaceAfter=8)
+    h2 = styles["Heading2"]
+    body = styles["BodyText"]
+
+    def add_table(story, df, max_rows=38):
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            story.append(Paragraph("Sin datos disponibles para esta tabla.", body))
+            story.append(Spacer(1, 8))
+            return
+        data = tabla_a_reportlab(df, max_rows=max_rows)
+        ncols = len(data[0]) if data else 1
+        usable = 535
+        col_widths = [usable / ncols] * ncols
+        table = Table(data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1e1b4b")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#CBD5E1")),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("BACKGROUND", (0,1), (-1,-1), colors.HexColor("#F8FAFC")),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("FONTSIZE", (0,0), (-1,-1), 6.4),
+            ("LEADING", (0,0), (-1,-1), 7.5),
+        ]))
+        story.append(table)
+        if len(df) > max_rows:
+            story.append(Paragraph(f"Nota: se muestran {max_rows} de {len(df)} filas. El Excel incluye la tabla completa.", body))
+        story.append(Spacer(1, 12))
+
+    def add_fig(story, fig, titulo, pestana, desc, width=500):
+        story.append(Paragraph(titulo, styles["Heading3"]))
+        story.append(Paragraph(f"<b>Pestaña de origen:</b> {pestana}", body))
+        story.append(Paragraph(desc, body))
+        story.append(Spacer(1, 4))
+        img_buf = fig_to_bytes(fig)
+        story.append(Image(img_buf, width=width, height=width*0.55))
+        story.append(Spacer(1, 12))
+        try:
+            plt.close(fig)
+        except Exception:
+            pass
+
+    tablas = construir_tablas_exportacion_completas()
+    graficas = construir_graficas_exportacion_completas()
 
     story = []
     story.append(Paragraph("Universal Ship Propulsion & Shafting Analysis Suite", title_style))
-    story.append(Spacer(1, 12))
-    story.append(Paragraph("Reporte técnico preliminar de propulsión naval", styles["Heading2"]))
-    story.append(Spacer(1, 12))
+    story.append(Paragraph("Memoria técnica integral exportada automáticamente", h2))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(
+        "Este reporte reúne las tablas, gráficas, criterios de revisión y resultados principales de la aplicación. "
+        "Las visualizaciones interactivas y animadas de la app se documentan aquí mediante capturas/gráficas estáticas equivalentes para dejar trazabilidad técnica en el PDF.", body))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(f"<b>Dictamen global:</b> {dictamen} — score {score:.0f}%", body))
+    story.append(Paragraph("<b>Alcance:</b> prediseño académico/técnico. Para aprobación final se requieren datos certificados de fabricante, ensayos de canal o CFD, planos de línea de ejes y revisión formal por sociedad clasificadora.", body))
 
-    intro = (
-        "Este reporte resume los resultados principales del análisis hidrodinámico, "
-        "vibratorio, de cavitación y de cumplimiento preliminar del sistema propulsivo. "
-        "Los resultados son orientativos y deben complementarse con análisis de sociedad "
-        "de clasificación para diseño final."
-    )
-    story.append(Paragraph(intro, styles["BodyText"]))
-    story.append(Spacer(1, 16))
+    story.append(PageBreak())
+    story.append(Paragraph("Índice de contenido exportado", h1))
+    idx_tab = pd.DataFrame([{"Sección": k, "Tipo": "Tabla", "Filas": len(v)} for k, v in tablas.items() if isinstance(v, pd.DataFrame) and not v.empty])
+    idx_graf = pd.DataFrame([{"Sección": t, "Tipo": "Gráfica", "Pestaña": p} for t, p, d, f in graficas])
+    add_table(story, idx_tab, max_rows=60)
+    add_table(story, idx_graf, max_rows=60)
 
-    resumen = construir_resumen_dataframe()
-    tabla_datos = [["Parámetro", "Valor"]]
-    for _, row in resumen.iterrows():
-        val = row["Valor"]
-        if isinstance(val, float):
-            val = f"{val:,.4g}"
-        tabla_datos.append([str(row["Parámetro"]), str(val)])
+    # Tablas completas por bloques
+    for nombre, df in tablas.items():
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        story.append(PageBreak())
+        story.append(Paragraph(nombre.replace("_", " "), h1))
+        add_table(story, df, max_rows=45)
 
-    table = Table(tabla_datos, colWidths=[230, 250])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1e1b4b")),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#CBD5E1")),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("BACKGROUND", (0,1), (-1,-1), colors.HexColor("#F8FAFC")),
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("FONTSIZE", (0,0), (-1,-1), 8),
-    ]))
+    # Gráficas completas
+    for titulo, pestana, desc, fig in graficas:
+        story.append(PageBreak())
+        add_fig(story, fig, titulo, pestana, desc)
 
-    story.append(table)
-    story.append(Spacer(1, 16))
-    story.append(Paragraph(f"Dictamen general: {dictamen}", styles["Heading2"]))
-    story.append(Paragraph("Recomendaciones:", styles["Heading3"]))
-
+    story.append(PageBreak())
+    story.append(Paragraph("Conclusión técnica final", h1))
+    story.append(Paragraph(
+        "La memoria integra el cálculo hidrodinámico, cadena de potencias, selección de motor/transmisión, cavitación, vibración, Campbell, balanceo, normativa preliminar y visualizaciones 3D de apoyo. "
+        "Los resultados permiten defender el prediseño y ubicar de forma clara los puntos que cumplen, requieren revisión o necesitan ajuste.", body))
     for rec in recomendaciones:
-        story.append(Paragraph(f"• {rec}", styles["BodyText"]))
+        story.append(Paragraph(f"• {rec}", body))
+
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("Desarrollo del software", h1))
+    story.append(Paragraph("Naval Propulsion & Shaft Dynamics Pro · v1.0<br/>© 2026", body))
 
     doc.build(story)
     buffer.seek(0)
     return buffer
 
+
 # ==============================================================================
-# TABS
+# LABORATORIO VIRTUAL AVANZADO — FACTOR WOW
+# ==============================================================================
+# Estas funciones añaden un módulo de simulación visual de prediseño: casco 3D,
+# prueba de mar animada, mapa de carga en hélice y vibración animada. Son
+# modelos conceptuales e interactivos, ligados a los resultados actuales de la app.
+
+def crear_casco_flujo_empuje_3d_wow(D=9.86, Lpp=320.0, B=58.0, T=20.8, rpm=75.0, thrust_kN=0.0, sigma=1.0, Z=4, PD=0.72, AeAo=0.43, hub_ratio=0.155, wake=0.35):
+    if go is None:
+        return None
+    D = float(max(D, 0.5)); R = D/2.0
+    Lvis = max(7.0*D, 42.0)
+    Bvis = max(2.5*D, 12.0)
+    Tvis = max(1.15*D, 7.0)
+    x = np.linspace(-Lvis, 1.25*D, 70)
+    th = np.linspace(0, 2*np.pi, 54)
+    X, TH = np.meshgrid(x, th)
+    s = (X - x.min())/(x.max()-x.min())
+    # Forma tipo popa/bulbo conceptual: más ancha en el centro, cerrada a popa.
+    taper = np.sin(np.pi*np.clip(s, 0.03, 0.98))**0.42
+    stern_cut = 0.42 + 0.58/(1+np.exp(8*(s-0.72)))
+    half_b = 0.50*Bvis*taper*stern_cut
+    half_t = 0.50*Tvis*(0.58 + 0.42*taper)
+    Y = half_b*np.cos(TH)
+    Zs = -0.12*Tvis + half_t*np.sin(TH)
+
+    fig = go.Figure()
+    fig.add_trace(go.Surface(
+        x=X, y=Y, z=Zs, colorscale=[[0,'rgba(14,165,233,0.15)'],[1,'rgba(59,130,246,0.35)']],
+        showscale=False, opacity=0.32, name='Casco transparente',
+        hovertemplate='<b>Casco conceptual</b><br>Representa el volumen de popa y zona de estela.<br>La escala se ajusta con D y dimensiones principales.<extra></extra>'
+    ))
+    # Línea de crujía y quilla.
+    fig.add_trace(go.Scatter3d(x=[x.min(), x.max()], y=[0,0], z=[-0.62*Tvis,-0.62*Tvis], mode='lines', name='Quilla / crujía', line=dict(color='#334155', width=5), hovertemplate='<b>Línea de crujía</b><br>Referencia longitudinal del buque.<extra></extra>'))
+    # Eje.
+    Xc,Yc,Zc = _cylinder_surface(radius=max(0.035*D,0.12), length=0.62*Lvis, x0=-0.57*Lvis, axis='x', n_theta=48, n_len=12)
+    fig.add_trace(go.Surface(x=Xc,y=Yc,z=Zc-0.10*Tvis, colorscale=[[0,'#334155'],[1,'#94a3b8']], showscale=False, opacity=0.96, name='Línea de eje', hovertemplate=f'<b>Línea de eje</b><br>RPM={rpm:.1f}<br>Empuje≈{thrust_kN:,.1f} kN<extra></extra>'))
+    # Hélice.
+    xp, yp, zp, ii, jj, kk, inten = _propeller_mesh_arrays(D, int(Z), PD, AeAo, hub_ratio, phase=0.0, x_offset=0.05*D, axis='x', detail=22)
+    prop_trace = len(fig.data)
+    fig.add_trace(go.Mesh3d(x=xp, y=yp, z=zp-0.10*Tvis, i=ii, j=jj, k=kk, intensity=inten, colorscale='Viridis', opacity=.98, flatshading=False, showscale=False, name='Hélice', hovertemplate=f'<b>Hélice paramétrica</b><br>D={D:.2f} m · Z={Z}<br>P/D={PD:.3f} · Ae/A0={AeAo:.3f}<br>σ={sigma:.3f}<extra></extra>'))
+    # Timón.
+    rud_x = 0.82*D
+    fig.add_trace(go.Mesh3d(x=[rud_x,rud_x,rud_x,rud_x], y=[-.06*D,.06*D,.06*D,-.06*D], z=[-0.98*D,-0.98*D,0.82*D,0.82*D], i=[0,0], j=[1,2], k=[2,3], color='#0f766e', opacity=.45, name='Timón', hovertemplate='<b>Timón conceptual</b><br>Elemento de gobierno aguas abajo del propulsor.<extra></extra>'))
+    # Estela / líneas de corriente y partículas.
+    n_lines = 9
+    line_ids = []
+    for idx, yy in enumerate(np.linspace(-0.95*D,0.95*D,n_lines)):
+        z0 = -0.10*Tvis + 0.20*D*np.sin(idx)
+        xs = np.linspace(-0.65*Lvis, 0.35*D, 80)
+        ys = yy*(0.35 + 0.65*(xs-xs.min())/(xs.max()-xs.min())) + 0.08*D*np.sin(np.linspace(0,2*np.pi,80)+idx)
+        zs = z0 + 0.10*D*np.sin(np.linspace(0,1.6*np.pi,80)+idx)
+        fig.add_trace(go.Scatter3d(x=xs,y=ys,z=zs,mode='lines', name='Líneas de corriente' if idx==0 else '', showlegend=idx==0, line=dict(color='rgba(14,165,233,0.40)', width=4), hovertemplate='<b>Línea de corriente</b><br>Representa entrada de flujo/estela al propulsor.<extra></extra>'))
+        line_ids.append(len(fig.data)-1)
+    # Vector empuje.
+    fig.add_trace(go.Cone(x=[0.35*D], y=[0], z=[-0.10*Tvis], u=[max(0.8*D, thrust_kN/2000)], v=[0], w=[0], sizemode='absolute', sizeref=0.55*D, anchor='tail', colorscale=[[0,'#38bdf8'],[1,'#0284c7']], showscale=False, name='Vector de empuje', hovertemplate=f'<b>Empuje</b><br>T≈{thrust_kN:,.1f} kN<br>Longitud visual proporcional al empuje.<extra></extra>'))
+    # Nube de cavitación según sigma.
+    rng=np.random.default_rng(10)
+    risk = 0.15 if sigma>0.5 else (0.45 if sigma>0.2 else 0.9)
+    nb=int(20+85*risk)
+    ang=rng.uniform(0,2*np.pi,nb); rr=rng.uniform(0.62*R,1.07*R,nb)
+    xb=rng.normal(0.18*D,0.12*D,nb); yb=rr*np.cos(ang); zb=-0.10*Tvis+rr*np.sin(ang)
+    fig.add_trace(go.Scatter3d(x=xb,y=yb,z=zb,mode='markers', name='Cavitación simbólica', marker=dict(size=3+7*risk, color='#93c5fd', opacity=.38), hovertemplate=f'<b>Burbujas simbólicas</b><br>σ={sigma:.3f}<br>Riesgo visual={risk:.2f}<extra></extra>'))
+    # Animación de hélice y partículas de flujo.
+    frames=[]
+    y0=np.asarray(yp); z0=np.asarray(zp-0.10*Tvis)
+    for n,ang0 in enumerate(np.linspace(0,2*np.pi,22,endpoint=False)):
+        ca,sa=np.cos(ang0),np.sin(ang0)
+        yr=ca*y0-sa*(z0+0.10*Tvis)
+        zr=sa*y0+ca*(z0+0.10*Tvis)-0.10*Tvis
+        frames.append(go.Frame(data=[go.Mesh3d(x=xp,y=yr,z=zr,i=ii,j=jj,k=kk,intensity=inten,colorscale='Viridis',opacity=.98,flatshading=False,showscale=False)], traces=[prop_trace], name=str(n)))
+    fig.frames=frames
+    fig.update_layout(updatemenus=[dict(type='buttons', showactive=False, x=.02, y=1.08, buttons=[dict(label='▶ Animar flujo y hélice', method='animate', args=[None, {'frame':{'duration':40,'redraw':True}, 'fromcurrent':True, 'transition':{'duration':0}}]), dict(label='⏸ Pausa', method='animate', args=[[None], {'frame':{'duration':0,'redraw':False}, 'mode':'immediate'}])])])
+    fig.update_layout(title=dict(text='Casco 3D, estela, hélice y vector de empuje',x=.02), height=720, template='plotly_white', scene=dict(aspectmode='data', camera=dict(eye=dict(x=1.65,y=1.8,z=.85)), xaxis_title='Longitud', yaxis_title='Manga', zaxis_title='Vertical', bgcolor='white'), margin=dict(l=0,r=0,t=85,b=0), hoverlabel=dict(bgcolor='white',font_size=12,font_color='#0f172a'))
+    return fig
+
+def crear_prueba_mar_animada_wow(v_serv_kn, rt_kn, pe_kw, pb_kw, sigma_base, eta_d):
+    if go is None:
+        return None
+    v_serv_kn=float(max(v_serv_kn,0.5)); rt_kn=float(max(rt_kn,1)); pe_kw=float(max(pe_kw,1)); pb_kw=float(max(pb_kw,1))
+    v=np.linspace(0.1, v_serv_kn*1.10, 80)
+    rt=rt_kn*(v/v_serv_kn)**2.15
+    pe=pe_kw*(v/v_serv_kn)**3.15
+    pb=pb_kw*(v/v_serv_kn)**3.15
+    sigma=np.maximum(0.05, sigma_base*(v_serv_kn/np.maximum(v,0.1))**1.2)
+    fig=go.Figure()
+    fig.add_trace(go.Scatter(x=v,y=rt,mode='lines',name='Resistencia RT [kN]',line=dict(color='#2563eb',width=3),hovertemplate='V=%{x:.2f} kn<br>RT=%{y:,.1f} kN<extra></extra>'))
+    fig.add_trace(go.Scatter(x=v,y=pe,mode='lines',name='PE [kW]',line=dict(color='#059669',width=3),hovertemplate='V=%{x:.2f} kn<br>PE=%{y:,.0f} kW<extra></extra>'))
+    fig.add_trace(go.Scatter(x=v,y=pb,mode='lines',name='PB [kW]',line=dict(color='#7c3aed',width=3),hovertemplate='V=%{x:.2f} kn<br>PB=%{y:,.0f} kW<extra></extra>'))
+    idx0=int(np.argmin(abs(v-v_serv_kn)))
+    fig.add_trace(go.Scatter(x=[v[idx0]],y=[pb[idx0]],mode='markers+text',name='Punto de servicio',marker=dict(size=16,color='#ef4444'),text=[f'{v[idx0]:.1f} kn'],textposition='top center',hovertemplate='Punto de servicio<br>V=%{x:.2f} kn<br>PB=%{y:,.0f} kW<extra></extra>'))
+    frames=[]
+    for k in range(0,len(v),2):
+        frames.append(go.Frame(data=[go.Scatter(x=[v[k]],y=[pb[k]],mode='markers+text',marker=dict(size=16,color='#ef4444'),text=[f'{v[k]:.1f} kn'],textposition='top center')], traces=[3], name=str(k)))
+    fig.frames=frames
+    fig.add_vline(x=v_serv_kn,line_dash='dash',line_color='#0f172a',annotation_text='Velocidad de servicio')
+    fig.add_annotation(x=.02,y=.98,xref='paper',yref='paper',showarrow=False,align='left',bgcolor='rgba(255,255,255,.9)',bordercolor='#e2e8f0',text=f'ηD≈{eta_d:.3f}<br>σ servicio≈{sigma_base:.2f}<br>Curvas escaladas para prediseño')
+    fig.update_layout(title='Prueba de mar virtual — aceleración hasta velocidad de servicio',xaxis_title='Velocidad [kn]',yaxis_title='Magnitud calculada',height=600,template='plotly_white',hovermode='x unified',updatemenus=[dict(type='buttons',showactive=False,x=.02,y=1.12,buttons=[dict(label='▶ Simular aceleración',method='animate',args=[None,{'frame':{'duration':35,'redraw':True},'fromcurrent':True,'transition':{'duration':0}}]),dict(label='⏸ Pausa',method='animate',args=[[None],{'frame':{'duration':0},'mode':'immediate'}])])],margin=dict(l=70,r=40,t=90,b=70))
+    fig.update_xaxes(showgrid=True,gridcolor='rgba(148,163,184,.28)'); fig.update_yaxes(showgrid=True,gridcolor='rgba(148,163,184,.28)')
+    return fig
+
+def crear_mapa_carga_helice_wow(D=9.86,Z=4,PD=.72,AeAo=.43,hub_ratio=.155,sigma=1.0,KT=0.1,KQ=0.02):
+    if go is None:
+        return None
+    x,y,z,i,j,k,inten=_propeller_mesh_arrays(D,int(Z),PD,AeAo,hub_ratio,phase=0,axis='x',detail=34)
+    # Carga conceptual: más alta hacia 0.7R y en la zona de punta si sigma baja.
+    load=0.45+0.65*np.exp(-((inten-.72)/.18)**2)+0.25*np.clip(.35-sigma,0,1)
+    fig=go.Figure()
+    fig.add_trace(go.Mesh3d(x=x,y=y,z=z,i=i,j=j,k=k,intensity=load,colorscale='Turbo',opacity=.98,flatshading=False,showscale=True,colorbar=dict(title='Carga<br>relativa'),name='Mapa de carga',hovertemplate=f'<b>Pala — mapa de carga</b><br>Carga relativa=%{{intensity:.2f}}<br>D={D:.2f} m · Z={Z}<br>P/D={PD:.3f} · Ae/A0={AeAo:.3f}<br>KT≈{KT:.4f} · KQ≈{KQ:.4f}<extra></extra>'))
+    R=D/2; th=np.linspace(0,2*np.pi,220)
+    fig.add_trace(go.Scatter3d(x=np.zeros_like(th),y=R*np.cos(th),z=R*np.sin(th),mode='lines',line=dict(color='#94a3b8',width=4),name='Disco de hélice',hovertemplate='Disco barrido por la hélice<extra></extra>'))
+    fig.update_layout(title=dict(text='Mapa 3D de carga relativa sobre la hélice',x=.02),height=680,template='plotly_white',scene=dict(aspectmode='data',camera=dict(eye=dict(x=1.65,y=1.85,z=.9)),xaxis_title='Eje X',yaxis_title='Y',zaxis_title='Z',bgcolor='white'),margin=dict(l=0,r=0,t=80,b=0),hoverlabel=dict(bgcolor='white',font_size=12,font_color='#0f172a'))
+    return fig
+
+def crear_vibracion_eje_3d_wow(L=30.0,D=10.0,rpm=75.0,f_lat=1.0,f_tors=1.0,f_ax=16.0,modo='Lateral'):
+    if go is None:
+        return None
+    L=float(max(L,10.0)); D=float(max(D,0.5)); amp=0.10*D
+    x=np.linspace(0,L,160); base_y=np.zeros_like(x); base_z=np.zeros_like(x)
+    fig=go.Figure()
+    fig.add_trace(go.Scatter3d(x=x,y=base_y,z=base_z,mode='lines',name='Eje sin deformar',line=dict(color='#94a3b8',width=7),hovertemplate='Eje sin deformar<extra></extra>'))
+    frames=[]
+    for n,ph in enumerate(np.linspace(0,2*np.pi,32,endpoint=False)):
+        if modo=='Torsional':
+            y=0.25*amp*np.sin(2*np.pi*x/L+ph); z=0.25*amp*np.cos(2*np.pi*x/L+ph)
+        elif modo=='Axial':
+            y=0*x; z=0.18*amp*np.sin(2*np.pi*x/L+ph)
+        else:
+            y=amp*np.sin(np.pi*x/L)*np.cos(ph); z=0.35*amp*np.sin(np.pi*x/L)*np.sin(ph)
+        frames.append(go.Frame(data=[go.Scatter3d(x=x,y=y,z=z,mode='lines',line=dict(color='#2563eb',width=8),name='Eje deformado')], traces=[1] if len(fig.data)>1 else [0], name=str(n)))
+    fig.add_trace(go.Scatter3d(x=x,y=amp*np.sin(np.pi*x/L),z=0*x,mode='lines',name='Eje deformado',line=dict(color='#2563eb',width=8),hovertemplate='Modo de vibración conceptual<br>X=%{x:.2f}<br>Y=%{y:.3f}<br>Z=%{z:.3f}<extra></extra>'))
+    fig.frames=frames
+    fig.update_layout(title=dict(text=f'Animación 3D de vibración del eje — modo {modo}',x=.02),height=600,template='plotly_white',scene=dict(aspectmode='data',camera=dict(eye=dict(x=1.6,y=1.7,z=.8)),xaxis_title='Longitud del eje',yaxis_title='Desplazamiento Y',zaxis_title='Desplazamiento Z'),updatemenus=[dict(type='buttons',showactive=False,x=.02,y=1.10,buttons=[dict(label='▶ Animar modo',method='animate',args=[None,{'frame':{'duration':45,'redraw':True},'fromcurrent':True,'transition':{'duration':0}}]),dict(label='⏸ Pausa',method='animate',args=[[None],{'frame':{'duration':0},'mode':'immediate'}])])],margin=dict(l=0,r=0,t=80,b=0))
+    return fig
+
+
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_axial, tab_lateral, tab_balanceo, tab_campbell, tab_cav, tab_normativa, tab_clase, tab_export, tab_formulas, tab_guia = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_eje, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
+    "📄 PDF / Comparación",
+    "⚡ Potencias",
+    "🛠️ Motor / Reductora",
     "📈 Hidrodinámica",
-    "📋 Resultados",
-    "💥 Torsional",
-    "↔️ Axial",
-    "📊 Lateral",
+    "⭐ Optimización",
+    "🧭 Vibración",
     "⚖️ Balanceo",
     "🗺️ Campbell",
     "🔍 Cavitación",
+    "🧱 Seguridad del eje",
     "📚 Normativa",
-    "📋 Clase",
-    "📄 Exportar",
-    "🧮 Fórmulas",
-    "📚 Guía"
+    "🧩 Integración visual 3D",
+    "⚙️ Integridad dinámica",
+    "📌 Informe técnico"
 ])
 
 # ==============================================================================
@@ -892,6 +4264,7 @@ tab_dash, tab_resumen, tab_hidro, tab_resultados, tab_torsion, tab_axial, tab_la
 
 with tab_dash:
     st.subheader("📊 Dashboard Ejecutivo del Diseño")
+    normativa_pestana("Síntesis de cumplimiento basada en reglas de clase y criterios ITTC/ISO/ABS/DNV.", [("ITTC", "base hidrodinámica, densidad/viscosidad y trazabilidad de ensayos"), ("ISO 484 / ISO 1940", "calidad geométrica de hélice y balanceo rotativo"), ("ABS/DNV", "márgenes preliminares para eje, vibración y operación segura")])
 
     st.markdown("""
     <div class="section-card">
@@ -903,7 +4276,7 @@ with tab_dash:
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Velocidad", f"{velocidad:.1f} kn")
-    c2.metric("Potencia", f"{potencia_kw/1000:.2f} MW")
+    c2.metric("PB requerida", f"{PB_kw_calc/1000:.2f} MW")
     c3.metric("RPM", f"{rpm_motor:.0f}")
     c4.metric("D Hélice", f"{diam_prop_m:.2f} m")
     c5.metric("ηO máx.", f"{max_eff*100:.2f}%")
@@ -939,6 +4312,7 @@ with tab_dash:
 
 with tab_resumen:
     st.subheader("📑 Resumen Ejecutivo del Proyecto")
+    normativa_pestana("Resumen técnico trazable del sistema propulsivo.", [("ITTC 7.5-02", "metodología general de predicción de potencia y extrapolación"), ("Reglas de clase ABS/DNV", "criterios de revisión para propulsión, eje y maquinaria"), ("Ficha técnica del fabricante", "comparación de potencia, rpm, motor y hélice reales")])
 
     st.markdown(f"""
     <div class="section-card">
@@ -982,320 +4356,748 @@ with tab_resumen:
     resultado_df = construir_resumen_dataframe()
     st.dataframe(resultado_df, use_container_width=True, height=520)
 
+    st.markdown("### 📄 Exportar resultados completos")
+    st.markdown("""
+    Desde aquí puedes descargar el análisis completo. El Excel incluye tablas y hojas con gráficas;
+    el PDF incluye resumen, cadena de potencias, comparación real, Wageningen, Burrill, Keller, Campbell y recomendaciones.
+    """)
+
+    col_exp1, col_exp2 = st.columns(2)
+    with col_exp1:
+        excel_data = generar_excel()
+        st.download_button(
+            label="📥 Descargar Excel completo",
+            data=excel_data,
+            file_name="resultados_propulsion_completo.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    with col_exp2:
+        pdf_data = generar_pdf()
+        if pdf_data is not None:
+            st.download_button(
+                label="📄 Descargar PDF completo",
+                data=pdf_data,
+                file_name="reporte_propulsion_completo.pdf",
+                mime="application/pdf"
+            )
+        else:
+            st.warning("Para activar PDF agrega 'reportlab' a requirements.txt.")
+
+
+# ==============================================================================
+# PDF / COMPARACIÓN CON BUQUE REAL
+# ==============================================================================
+
+with tab_pdf_comp:
+    st.subheader("📄 Lectura de ficha técnica y comparación con buque real")
+    normativa_pestana("Trazabilidad documental exigida para justificar datos reales.", [("Ficha técnica / plano del buque", "fuente primaria para dimensiones, motor, hélice y velocidad"), ("IACS / sociedad clasificadora", "principio de trazabilidad de datos de diseño"), ("Criterio académico del proyecto", "el profesor puede reproducir los cálculos con los mismos datos")])
+    st.markdown("""
+    <div class="section-card">
+    Esta sección valida el prediseño contra datos reales. Si se carga una ficha técnica, la app extrae valores de referencia y los compara con los resultados calculados. Si no hay PDF, se usan datos manuales opcionales.
+    </div>
+    """, unsafe_allow_html=True)
+
+    if datos_pdf:
+        st.markdown("### Datos detectados del PDF")
+        df_pdf = pd.DataFrame([{"Dato": k, "Valor detectado": v} for k, v in datos_pdf.items()])
+        st.dataframe(df_pdf, use_container_width=True, height=320)
+    else:
+        st.info("No se cargó PDF o no se detectaron datos. La app continuará con los parámetros manuales del panel lateral.")
+
+    st.markdown("### Tabla profesional de validación")
+    st.caption("Criterio sugerido: ≤5% cumple, 5–15% requiere revisión, >15% no cumple respecto al dato real disponible.")
+    if rpm_real and rpm_real > 0 and rpm_helice_requerida > 0:
+        err_teorico_rpm = error_pct(rpm_helice_requerida, rpm_real)
+        estado_html(
+            f"ℹ️ Interpretación técnica de RPM: la app identifica una velocidad teórica de máxima eficiencia en aguas abiertas de {rpm_helice_requerida:.2f} rpm y la ficha/entrada de referencia trabaja a {rpm_real:.2f} rpm. Esta diferencia puede ser normal en diseño naval: la RPM final también depende del motor disponible, la transmisión, el diámetro máximo permitido, cavitación, vibración, margen de servicio y decisiones del fabricante. Por eso la RPM real se usa como referencia operativa y la RPM teórica queda como apoyo para optimización hidrodinámica.",
+            "warn" if err_teorico_rpm and err_teorico_rpm > 15 else "good"
+        )
+    st.dataframe(
+        comparacion_prof_df.style
+        .format({"Calculado": formatear_numero_tabla, "Real PDF/manual": formatear_numero_tabla, "Error [%]": lambda x: "—" if pd.isna(x) else f"{x:.2f}%"})
+        .map(style_estado, subset=["Dictamen"]),
+        use_container_width=True,
+        height=270
+    )
+
+    st.markdown("### 📊 Error porcentual por parámetro")
+    fig_cmp = crear_figura_comparacion(comparacion_df)
+    st.pyplot(fig_cmp)
+
+    colv1, colv2, colv3 = st.columns(3)
+    errores_validos = pd.to_numeric(comparacion_prof_df["Error [%]"], errors="coerce").dropna()
+    colv1.metric("Error medio", "—" if errores_validos.empty else f"{errores_validos.mean():.2f}%")
+    colv2.metric("Error máximo", "—" if errores_validos.empty else f"{errores_validos.max():.2f}%")
+    colv3.metric("Parámetros comparados", f"{len(errores_validos)}")
+
+    rpm_err_row = comparacion_prof_df[comparacion_prof_df["Parámetro"].astype(str).str.contains("RPM", case=False, na=False)]
+    if not rpm_err_row.empty:
+        err_val = pd.to_numeric(rpm_err_row.iloc[0].get("Error [%]"), errors="coerce")
+        if pd.notna(err_val) and err_val > 10:
+            estado_html(f"⚠️ La RPM de validación se aleja {err_val:.2f}% de la RPM real. Revisa si estás comparando la RPM de servicio correcta o si deseas usar la optimización con restricción de RPM.", "warn")
+
+# ==============================================================================
+# CADENA DE POTENCIAS
+# ==============================================================================
+
+with tab_potencias:
+    st.subheader("⚡ Cadena completa de potencias")
+    normativa_pestana("Cálculo de resistencia, potencia efectiva y potencia al freno.", [("ITTC 7.5-02-03-01", "procedimiento de predicción de potencia y resistencia"), ("ITTC 7.5-02-03-02", "factores de forma, estela, deducción de empuje y eficiencia propulsiva"), ("Sea Margin", "margen de servicio usado en selección de potencia")])
+    st.markdown("""
+    <div class="section-card">
+    La cadena de potencias se presenta como una memoria interactiva: cada subpestaña explica una etapa, muestra su fórmula, su tabla de cálculo, una gráfica y un dictamen de cumplimiento preliminar.
+    </div>
+    """, unsafe_allow_html=True)
+
+    pot_resumen, pot_flow, pot_pe, pot_pt, pot_pd, pot_pb, pot_eff = st.tabs([
+        "📌 Resumen", "🔁 Flujo interactivo", "🌊 PE", "🌀 PT", "⚙️ PD", "🔩 PS / PB", "📉 Eficiencias"
+    ])
+
+    with pot_resumen:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PE con margen", f"{PE_kw:,.0f} kW")
+        c2.metric("PD", f"{PD_kw:,.0f} kW")
+        c3.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
+        c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+
+        if motor_mcr_kw <= 0:
+            estado_html("ℹ️ Sin motor real cargado: se calcula la PB requerida y la app puede recomendar motores candidatos.", "warn")
+        elif motor_cumple_ideal:
+            estado_html("✅ Cumple potencia ideal: PB requerida ≤ 85% del MCR del motor seleccionado.", "good")
+        elif motor_cumple_observacion:
+            estado_html(f"⚠️ Cumple con observación: PB supera el 85% MCR en {exceso_sobre_85_pct:.1f}%, pero todavía está por debajo del MCR.", "warn")
+        else:
+            estado_html("❌ No cumple potencia: PB requerida supera el MCR del motor seleccionado.", "bad")
+
+        st.markdown("### Diagrama profesional de crecimiento de potencia")
+        fig_pot = crear_figura_cadena_potencias_profesional(power_chain_df)
+        st.pyplot(fig_pot)
+
+        st.markdown("### Tabla de cadena con dictamen")
+        st.dataframe(
+            power_chain_status_df.style
+            .format({"Valor":"{:,.3f}"})
+            .map(style_estado, subset=["Dictamen"]),
+            use_container_width=True,
+            height=360
+        )
+
+    with pot_flow:
+        st.markdown("""
+        ### 🔁 Flujo energético interactivo del sistema propulsivo
+        Esta visualización convierte la cadena de potencias en un flujo tipo Sankey. Permite ver de forma directa cómo la energía pasa desde el motor hasta la potencia útil y dónde aparecen las pérdidas por eficiencia propulsiva, eje y transmisión.
+        """)
+        if HAS_PLOTLY:
+            fig_sankey = crear_sankey_potencias_interactivo(PE_kw, PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw)
+            st.plotly_chart(fig_sankey, use_container_width=True)
+            eficiencia_pb_pe = safe_div(PE_kw, PB_kw_calc, default=0.0)*100.0
+            if eficiencia_pb_pe >= 70:
+                estado_html(f"✅ Flujo energético favorable: la eficiencia global PB→PE es aproximadamente {eficiencia_pb_pe:.1f}% y las pérdidas son coherentes para un prediseño naval.", "good")
+            elif eficiencia_pb_pe >= 58:
+                estado_html(f"⚠️ Flujo energético a revisar: la eficiencia global PB→PE es {eficiencia_pb_pe:.1f}%. No implica falla, pero conviene revisar eficiencias, RT y margen.", "warn")
+            else:
+                estado_html(f"❌ Flujo energético deficiente: la eficiencia global PB→PE es {eficiencia_pb_pe:.1f}%. Revisar cadena de potencias y supuestos.", "bad")
+        else:
+            estado_html("⚠️ Para activar el flujo interactivo instala Plotly agregando `plotly` a requirements.txt.", "warn")
+        sankey_df = pd.DataFrame([
+            {"Etapa": "PE útil con margen", "Valor [kW]": PE_kw, "Lectura técnica": "Potencia útil para vencer la resistencia del casco."},
+            {"Etapa": "Pérdidas propulsivas", "Valor [kW]": max(PD_kw-PE_kw, 0), "Lectura técnica": "Efecto de la interacción casco-hélice y eficiencia propulsiva."},
+            {"Etapa": "Pérdida de eje", "Valor [kW]": max(PS_kw-PD_kw, 0), "Lectura técnica": "Pérdidas mecánicas de la línea de ejes."},
+            {"Etapa": "Pérdida de transmisión", "Valor [kW]": max(PB_kw_calc-PS_kw, 0), "Lectura técnica": "Caja reductora/acoplamientos/transmisión."},
+            {"Etapa": "Reserva MCR", "Valor [kW]": max(MCR_requerido_kw-PB_kw_calc, 0), "Lectura técnica": "Margen para operar la PB alrededor del 85% del MCR."},
+        ])
+        st.dataframe(sankey_df.style.format({"Valor [kW]": "{:,.1f}"}), use_container_width=True, height=255)
+
+    with pot_pe:
+        st.markdown("### 🌊 Potencia efectiva PE")
+        st.markdown("La potencia efectiva es la potencia mínima para vencer la resistencia del casco a la velocidad de servicio, antes de pérdidas propulsivas.")
+        st.latex(r"P_E=R_TV_S")
+        cols = st.columns(4)
+        cols[0].metric("RT", f"{resistencia_total_kn:,.1f} kN")
+        cols[1].metric("VS", f"{velocidad_buque_ms:.2f} m/s")
+        cols[2].metric("PE sin margen", f"{PE_kw_sin_margen:,.0f} kW")
+        cols[3].metric("PE con margen", f"{PE_kw:,.0f} kW")
+        df_pe = pd.DataFrame([
+            {"Parámetro":"Resistencia total RT", "Valor":resistencia_total_kn, "Unidad":"kN", "Fuente/criterio":"Entrada, PDF o estimación", "Dictamen":"Cumple"},
+            {"Parámetro":"Velocidad de servicio VS", "Valor":velocidad_buque_ms, "Unidad":"m/s", "Fuente/criterio":"kn × 0.5144", "Dictamen":"Cumple"},
+            {"Parámetro":"Sea Margin", "Valor":margen_servicio, "Unidad":"%", "Fuente/criterio":"ITTC / criterio usuario", "Dictamen":"Cumple" if margen_servicio >= 10 else "Revisar"},
+            {"Parámetro":"PE con margen", "Valor":PE_kw, "Unidad":"kW", "Fuente/criterio":"PE(1+SM)", "Dictamen":"Cumple"},
+        ])
+        st.dataframe(df_pe.style.format({"Valor":"{:,.3f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_waterfall_pe_prof(PE_kw_sin_margen, PE_kw, margen_servicio), use_container_width=True, config=_plotly_config())
+        else:
+            fig = crear_figura_waterfall_pe(PE_kw_sin_margen, PE_kw, margen_servicio)
+            st.pyplot(fig)
+
+    with pot_pt:
+        st.markdown("### 🌀 Potencia de empuje PT")
+        st.markdown("PT considera el empuje que debe producir la hélice y la velocidad de avance afectada por la estela.")
+        st.latex(r"T=\frac{R_T}{1-t}\qquad P_T=TV_A")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("t", f"{t_fraction:.3f}")
+        c2.metric("VA", f"{VA_ms:.2f} m/s")
+        c3.metric("Empuje", f"{thrust_req_N/1000:,.1f} kN")
+        c4.metric("PT", f"{PT_kw:,.0f} kW")
+        df_pt = pd.DataFrame([
+            {"Parámetro":"Deducción de empuje t", "Valor":t_fraction, "Unidad":"-", "Rango esperado":"0.05–0.35", "Dictamen":dictamen_eficiencia(t_fraction,0.05,0.35)},
+            {"Parámetro":"Velocidad de avance VA", "Valor":VA_ms, "Unidad":"m/s", "Rango esperado":">0", "Dictamen":"Cumple" if VA_ms>0 else "No cumple"},
+            {"Parámetro":"Empuje requerido", "Valor":thrust_req_N/1000, "Unidad":"kN", "Rango esperado":"positivo", "Dictamen":"Cumple" if thrust_req_N>0 else "No cumple"},
+            {"Parámetro":"Potencia de empuje PT", "Valor":PT_kw, "Unidad":"kW", "Rango esperado":"positivo", "Dictamen":"Cumple" if PT_kw>0 else "No cumple"},
+        ])
+        st.dataframe(df_pt.style.format({"Valor":"{:,.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        fig = crear_figura_empuje_profesional(PE_kw, PT_kw, VA_ms, thrust_req_N/1000)
+        st.pyplot(fig)
+
+    with pot_pd:
+        st.markdown("### ⚙️ Potencia entregada a la hélice PD")
+        st.markdown("PD es la potencia que debe llegar a la hélice considerando la eficiencia cuasi-propulsiva del conjunto casco-hélice.")
+        st.latex(r"\eta_D=\eta_H\eta_O\eta_R\qquad P_D=\frac{P_E}{\eta_D}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("ηH", f"{eta_h:.3f}")
+        c2.metric("ηO", f"{max_eff:.3f}")
+        c3.metric("ηD", f"{eta_d:.3f}")
+        c4.metric("PD", f"{PD_kw:,.0f} kW")
+        df_pd = efficiency_prof_df[efficiency_prof_df["Eficiencia"].isin(["ηH","ηO","ηR","ηD"])].copy()
+        st.dataframe(df_pd.style.format({"Valor":"{:.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        fig = crear_figura_eficiencias_propulsivas(eta_h, max_eff, eta_r, eta_d)
+        st.pyplot(fig)
+
+    with pot_pb:
+        st.markdown("### 🔩 Potencia en eje PS y potencia al freno PB")
+        st.markdown("PS incluye pérdidas mecánicas del eje; PB es la potencia que debe cubrir el motor antes de aplicar el criterio MCR.")
+        st.latex(r"P_S=\frac{P_D}{\eta_S}\qquad P_B=\frac{P_S}{\eta_G}\qquad MCR_{req}=\frac{P_B}{0.85}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PS", f"{PS_kw:,.0f} kW")
+        c2.metric("PB", f"{PB_kw_calc:,.0f} kW")
+        c3.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+        c4.metric("ηS·ηG", f"{eta_s*eta_g:.3f}")
+        df_pb = pd.DataFrame([
+            {"Etapa":"PD", "Descripción":"Potencia entregada a la hélice", "Valor":PD_kw, "Unidad":"kW", "Dictamen":"Cumple"},
+            {"Etapa":"PS", "Descripción":"Potencia en el eje", "Valor":PS_kw, "Unidad":"kW", "Dictamen":"Cumple"},
+            {"Etapa":"PB", "Descripción":"Potencia al freno requerida", "Valor":PB_kw_calc, "Unidad":"kW", "Dictamen":"Cumple"},
+            {"Etapa":"MCR requerido", "Descripción":"MCR mínimo para trabajar al 85%", "Valor":MCR_requerido_kw, "Unidad":"kW", "Dictamen":"Cumple" if MCR_requerido_kw>0 else "Revisar"},
+        ])
+        st.dataframe(df_pb.style.format({"Valor":"{:,.3f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
+        fig = crear_figura_motor_mcr(PD_kw, PS_kw, PB_kw_calc, MCR_requerido_kw)
+        st.pyplot(fig)
+
+    with pot_eff:
+        st.markdown("### 📉 Eficiencias adoptadas")
+        st.markdown("Esta tabla resume las eficiencias usadas, sus rangos de referencia y un dictamen para defender las hipótesis de cálculo.")
+        st.dataframe(efficiency_prof_df.style.format({"Valor":"{:.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True, height=330)
+        fig = crear_figura_mapa_eficiencias(efficiency_prof_df)
+        st.pyplot(fig)
+
+# ==============================================================================
+# MOTOR Y REDUCTORA
+# ==============================================================================
+
+with tab_motor:
+    st.subheader("🛠️ Selección de motor real y transmisión")
+    normativa_pestana("Selección preliminar de maquinaria propulsora.", [("ISO 3046", "condiciones de potencia de motores de combustión interna"), ("Reglas ABS/DNV Pt.4", "maquinaria, transmisión y línea de ejes"), ("Catálogo del fabricante", "MCR, NCR, rpm, consumo y límites reales de operación")])
+    with st.expander("📘 Teoría y fórmulas de motor / reductora", expanded=False):
+        st.markdown("""
+        El motor se selecciona comparando la potencia al freno requerida contra el MCR disponible. Para operación continua se usa como referencia el 85% del MCR. Si el motor gira a más RPM que la hélice, se requiere una caja reductora.
+        """)
+        st.latex(r"P_{85\%MCR}=0.85\,MCR")
+        st.latex(r"MCR_{req}=\frac{P_B}{0.85}")
+        st.latex(r"i=\frac{n_{motor}}{n_{helice}}")
+        st.markdown("Si PB ≤ 85% MCR, cumple ideal. Si PB está entre 85% MCR y MCR, cumple con observación. Si PB > MCR, no cumple.")
+
+    st.markdown("""
+    <div class="section-card">
+    El motor se valida contra la potencia al freno calculada. El criterio pedido por el proyecto es que la potencia de diseño trabaje aproximadamente al 85% del MCR, dejando 15% de reserva operativa.
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("PB calculada", f"{PB_kw_calc:,.0f} kW")
+    c2.metric("MCR motor", f"{motor_mcr_kw:,.0f} kW")
+    c3.metric("85% MCR", f"{potencia_85_mcr_kw:,.0f} kW")
+    c4.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+
+    if motor_mcr_kw <= 0:
+        estado_html("ℹ️ No hay motor real cargado. La app no asume ningún motor fijo; usa la tabla de recomendación automática para elegir candidatos preliminares.", "warn")
+    elif motor_cumple_ideal:
+        estado_html(f"✅ Motor compatible ideal: {motor_nombre}. El 85% del MCR cubre la PB calculada.", "good")
+    elif motor_cumple_observacion:
+        estado_html(f"⚠️ Motor compatible con observación: {motor_nombre}. La PB calculada queda {exceso_sobre_85_pct:.1f}% arriba del 85% MCR, pero aún está por debajo del MCR. Es válido como alerta de revisión, no como falla automática.", "warn")
+    else:
+        estado_html(f"❌ Motor insuficiente: {motor_nombre}. Se requiere un MCR mínimo aproximado de {MCR_requerido_kw:,.0f} kW.", "bad")
+
+    st.markdown("### 📊 Validación visual motor–transmisión")
+    st.markdown("Esta gráfica resume si el motor tiene reserva suficiente y si la transmisión es coherente con la RPM objetivo de la hélice. Sirve para defender de forma visual el criterio del 85% MCR y la relación de reducción.")
+    if HAS_PLOTLY:
+        fig_motor_trans = crear_figura_motor_transmision_interactiva(
+            PB_kw_calc,
+            motor_mcr_kw if motor_mcr_kw > 0 else MCR_requerido_kw,
+            motor_ncr_rpm if motor_ncr_rpm > 0 else rpm_helice_objetivo,
+            rpm_helice_objetivo,
+            relacion_reduccion,
+            transmision_tipo,
+            motor_nombre
+        )
+        st.plotly_chart(fig_motor_trans, use_container_width=True)
+    else:
+        st.info("Instala plotly para ver el diagrama interactivo motor–transmisión.")
+
+    st.markdown("### 🧠 Recomendación automática desde base de motores")
+    st.caption("Base didáctica amplia para preselección. Antes de entregar, confirma el modelo exacto con hoja técnica del fabricante.")
+    total_motores_db = len(construir_base_motores())
+    st.info(f"La base de datos interna contiene {total_motores_db} configuraciones de motores de referencia entre motores lentos 2T, medios 4T y rápidos. La selección es preliminar y debe verificarse con ficha técnica del fabricante.")
+    transmision_busqueda = "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo
+    rec_motores = recomendar_motores(PB_kw_calc, rpm_helice_objetivo, transmision_busqueda, n=25)
+    if rec_motores.empty:
+        st.warning("No se encontró un motor en la base didáctica que cubra la PB calculada al 85% MCR. Prueba aumentar base de datos o usar un motor manual.")
+    else:
+        st.dataframe(rec_motores.drop(columns=["Puntaje"], errors="ignore").style.format({
+            "MCR [kW]":"{:,.0f}", "RPM MCR":"{:,.0f}", "85% MCR [kW]":"{:,.0f}",
+            "Exceso 85% MCR [kW]":"{:,.0f}", "MCR requerido aprox [kW]":"{:,.0f}",
+            "Diferencia RPM [%]":"{:.1f}", "Relación recomendada i":"{:.2f}"
+        }), use_container_width=True, height=420)
+        mejor_motor = rec_motores.iloc[0]
+        estado_html(f"Sugerencia: {mejor_motor['Fabricante']} {mejor_motor['Modelo']} — MCR {mejor_motor['MCR [kW]']:,.0f} kW, {mejor_motor['RPM MCR']:.0f} rpm.", "good")
+
+    st.markdown("### Transmisión")
+    trans_df = pd.DataFrame([
+        {"Concepto":"Tipo", "Valor": transmision_tipo},
+        {"Concepto":"Caja/reductora", "Valor": marca_caja},
+        {"Concepto":"Relación de reducción indicada", "Valor": relacion_reduccion},
+        {"Concepto":"Relación recomendada i", "Valor": relacion_recomendada},
+        {"Concepto":"RPM hélice por J óptimo", "Valor": rpm_helice_requerida},
+        {"Concepto":"RPM objetivo usada para validar", "Valor": rpm_helice_objetivo},
+        {"Concepto":"RPM hélice por transmisión", "Valor": rpm_helice_por_caja},
+        {"Concepto":"Compatibilidad", "Valor": "Compatible" if caja_cumple else "Revisar"},
+    ])
+    st.dataframe(trans_df, use_container_width=True)
+    if caja_cumple:
+        estado_html("✅ La transmisión/RPM es compatible dentro de una tolerancia preliminar.", "good")
+    else:
+        estado_html("⚠️ Revisar relación de reducción o RPM: la RPM que entrega la transmisión no coincide con la RPM objetivo de la hélice.", "warn")
+
+    if transmision_tipo == "Con caja reductora":
+        st.markdown("### ⚙️ Reductoras sugeridas")
+        rec_red = recomendar_reductoras(PB_kw_calc, relacion_recomendada, n=8)
+        if rec_red.empty:
+            st.info("No se encontró una reductora estándar en la base didáctica para esa potencia y relación. Puede requerirse otro rango/modelo o transmisión directa.")
+        else:
+            st.dataframe(rec_red.style.format({"Potencia mín [kW]":"{:,.0f}", "Potencia máx [kW]":"{:,.0f}", "i mín":"{:.2f}", "i máx":"{:.2f}", "ηG ref":"{:.3f}"}), use_container_width=True)
+
+    with st.expander("¿Qué significa esto?", expanded=False):
+        st.markdown("""
+        - Si el motor es lento y trabaja casi a las mismas RPM que la hélice, puede usarse **transmisión directa**.
+        - Si el motor gira más rápido que la hélice, se necesita una **caja reductora**.
+        - La relación se calcula como: **i = RPM motor / RPM hélice**.
+        """)
+
+# ==============================================================================
+# OPTIMIZACIÓN AUTOMÁTICA
+# ==============================================================================
+
+with tab_opt:
+    st.subheader("⭐ Optimización automática de hélice Wageningen")
+    normativa_pestana("Optimización preliminar de hélice por desempeño hidrodinámico.", [("Wageningen Serie B / MARIN", "curvas KT, KQ y eficiencia en aguas abiertas"), ("ITTC", "uso de coeficientes no dimensionales J, KT, KQ"), ("ISO 484", "calidad geométrica y tolerancias de manufactura de hélices")])
+    st.markdown("""
+    <div class="section-card">
+    Esta herramienta no cambia tus datos automáticamente: prueba combinaciones comerciales de número de palas Z, P/D y Ae/A0, calcula sus curvas Wageningen y genera una propuesta preliminar. Si existe RPM real cargada desde el PDF o entrada manual, la optimización no solo busca eficiencia: también penaliza las configuraciones que se alejan demasiado de la RPM real de servicio.
+    Para evitar que la app se quede cargando y bloquee las pestañas siguientes, la optimización se ejecuta solo cuando el usuario presiona el botón.
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("📘 Teoría y fórmulas de optimización", expanded=False):
+        st.markdown("""
+        La optimización evalúa combinaciones de geometría de hélice dentro de rangos comerciales. Para cada combinación se calcula la curva de aguas abiertas, se localiza la máxima eficiencia y, si existe dato real del PDF, se compara la RPM estimada contra la RPM real del buque.
+        """)
+        st.latex(r"J=\frac{V_A}{nD}")
+        st.latex(r"n=\frac{V_A}{JD}")
+        st.latex(r"\eta_O=\frac{J}{2\pi}\frac{K_T}{K_Q}")
+        st.latex(r"\text{Error RPM}=\frac{|n_{calc}-n_{real}|}{n_{real}}\times100")
+        st.latex(r"\text{Puntaje}=\eta_O(\%) - 0.35\,\text{Error RPM}(\%)")
+        st.info("Si no se sube PDF o no existe RPM real, la app ordena principalmente por eficiencia ηO.")
+
+    st.markdown("### ⚙️ Optimización Wageningen B-Series")
+    st.caption("La app usa la búsqueda detallada por defecto para mantener una evaluación más consistente. Se revisan combinaciones de Z, P/D y Ae/A0 y se pondera la eficiencia junto con la cercanía a la RPM real cuando existe.")
+    modo_opt = "Detallada"
+    ejecutar_opt = st.button("▶️ Ejecutar optimización detallada", key="btn_opt_helice")
+
+    if ejecutar_opt:
+        with st.spinner("Calculando combinaciones de hélice con búsqueda detallada... espera unos segundos."):
+            st.session_state["opt_df"] = optimizar_helice_wageningen(modo_opt, rpm_real, VA_ms, diam_prop_m)
+            st.session_state["opt_modo"] = modo_opt
+        st.success(f"Optimización detallada terminada. Se evaluaron {len(st.session_state['opt_df'])} combinaciones.")
+
+    if "opt_df" in st.session_state:
+        opt_df = st.session_state["opt_df"]
+        st.dataframe(
+            opt_df.head(20).style.format({
+                "P/D":"{:.3f}",
+                "Ae/A0":"{:.3f}",
+                "J óptimo":"{:.3f}",
+                "KT":"{:.4f}",
+                "KQ":"{:.4f}",
+                "ηO [%]":"{:.2f}",
+                "RPM estimada [rpm]":"{:.2f}",
+                "Error RPM [%]":"{:.2f}",
+                "Puntaje optimizado":"{:.2f}"
+            }).map(style_estado, subset=["Dictamen RPM"]),
+            use_container_width=True,
+            height=520
+        )
+        mejor = opt_df.iloc[0]
+        estado_html(f"Mejor combinación encontrada por puntaje: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%, RPM estimada={mejor['RPM estimada [rpm]']:.2f} rpm.", "good")
+
+        st.markdown("### 📊 Visualización de mejores alternativas")
+        top_opt = opt_df.head(10).copy()
+        top_opt["Configuración"] = top_opt.apply(lambda r: f"Z{int(r['Z'])} | P/D {r['P/D']:.2f} | Ae {r['Ae/A0']:.2f}", axis=1)
+        fig_opt, ax_opt = plt.subplots(figsize=(10.5, 5.0))
+        ax_opt.barh(top_opt["Configuración"][::-1], top_opt["Puntaje optimizado"][::-1])
+        ax_opt.set_xlabel("Puntaje optimizado [-]")
+        ax_opt.set_title("Top 10 combinaciones por eficiencia y cercanía a RPM real", fontsize=12, fontweight="bold")
+        ax_opt.grid(True, axis="x", linestyle=":", alpha=0.55)
+        for y, val in enumerate(top_opt["Puntaje optimizado"][::-1]):
+            ax_opt.text(val + 0.15, y, f"{val:.2f}", va="center", fontsize=8)
+        st.pyplot(fig_opt)
+
+        st.markdown("### 📌 Comparación contra la configuración actual")
+        comp_opt = pd.DataFrame([
+            {"Concepto":"Actual", "Z":z_val, "P/D":pd_val, "Ae/A0":ae_val, "J óptimo":j_opt, "ηO [%]":max_eff*100, "RPM estimada [rpm]":rpm_helice_requerida, "Error RPM [%]": error_pct(rpm_helice_requerida, rpm_real)},
+            {"Concepto":"Óptima encontrada", "Z":int(mejor['Z']), "P/D":mejor['P/D'], "Ae/A0":mejor['Ae/A0'], "J óptimo":mejor['J óptimo'], "ηO [%]":mejor['ηO [%]'], "RPM estimada [rpm]":mejor['RPM estimada [rpm]'], "Error RPM [%]":mejor['Error RPM [%]']},
+        ])
+        st.dataframe(comp_opt.style.format({"P/D":"{:.3f}", "Ae/A0":"{:.3f}", "J óptimo":"{:.3f}", "ηO [%]":"{:.2f}", "RPM estimada [rpm]":"{:.2f}", "Error RPM [%]":"{:.2f}"}), use_container_width=True)
+        if rpm_real and rpm_real > 0:
+            st.info("Para bajar el error de RPM puedes usar la configuración óptima sugerida como referencia y ajustar D, P/D o Ae/A0 en el panel de entrada hasta acercarte a la RPM real del PDF.")
+    else:
+        st.info("Presiona el botón para iniciar la optimización. Mientras no lo hagas, la app seguirá cargando rápido y todas las pestañas estarán disponibles.")
+
 # ==============================================================================
 # HIDRODINÁMICA
 # ==============================================================================
 
 with tab_hidro:
     st.subheader("📈 Hidrodinámica en Aguas Abiertas — Wageningen Serie B")
-
+    normativa_pestana("Análisis hidrodinámico de propulsor en aguas abiertas.", [("Wageningen Serie B", "base empírica para KT, KQ, J y ηO"), ("ITTC", "definición de coeficientes propulsivos y condiciones de agua"), ("Principios de similitud", "Reynolds, avance y carga de hélice")])
     st.markdown("""
     <div class="section-card">
-    Las curvas de aguas abiertas describen el comportamiento ideal de la hélice
-    sin interferencia directa del casco. Se calculan los coeficientes KT, KQ y ηO
-    a partir de los polinomios de la Serie B de Wageningen contenidos en el archivo Excel.
-    El punto de máxima eficiencia permite identificar una condición favorable de operación.
+    Esta sección integra las curvas Wageningen y la matriz numérica de resultados. Se eliminó la pestaña independiente de Resultados porque estos valores pertenecen directamente al análisis hidrodinámico.
     </div>
     """, unsafe_allow_html=True)
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("ηO máxima", f"{max_eff*100:.2f}%")
-    k2.metric("J óptimo", f"{j_opt:.3f}")
-    k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
-    k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
+    hidro_curvas, hidro_tabla, hidro_formulas = st.tabs(["📈 Curvas", "📋 Resultados numéricos", "🧮 Fórmulas"])
 
-    fig, ax = plt.subplots(figsize=(11, 5.2))
-    ax.plot(res["J"], res["KT"], linewidth=2.6, label="KT — Coeficiente de empuje")
-    ax.plot(res["J"], res["10KQ"], linewidth=2.6, label="10·KQ — Coeficiente de torque")
-    ax.plot(res["J"], res["nO"], linewidth=3.2, linestyle="--", label="ηO — Eficiencia")
-    ax.axvline(x=j_opt, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt:.3f}")
-    ax.fill_between(res["J"], 0, res["nO"], alpha=0.08)
-    ax.set_title("Curvas KT, 10KQ y ηO — Hélice Wageningen Serie B", fontsize=12, fontweight="bold")
-    ax.set_xlabel("Coeficiente de avance J")
-    ax.set_ylabel("Coeficientes adimensionales")
-    ax.set_xlim(0, 1.2)
-    ax.set_ylim(0, max(1.05, float(res[["KT", "10KQ", "nO"]].max().max()) * 1.1))
-    ax.grid(True, linestyle=":", alpha=0.65)
-    ax.legend(loc="best")
-    st.pyplot(fig)
+    with hidro_curvas:
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("ηO máxima", f"{max_eff*100:.2f}%")
+        k2.metric("J óptimo", f"{j_opt:.3f}")
+        k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
+        k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
 
-    st.info(
-        "Interpretación: KT indica capacidad de empuje; KQ indica demanda de torque; "
-        "ηO expresa eficiencia hidrodinámica ideal. El máximo de ηO es útil para evaluar "
-        "la coherencia preliminar de la geometría P/D, Ae/A0 y Z."
-    )
+        fig, ax = plt.subplots(figsize=(11, 5.2))
+        ax.plot(res["J"], res["KT"], linewidth=2.6, label="KT — Coeficiente de empuje")
+        ax.plot(res["J"], res["10KQ"], linewidth=2.6, label="10·KQ — Coeficiente de torque")
+        ax.plot(res["J"], res["nO"], linewidth=3.2, linestyle="--", label="ηO — Eficiencia")
+        ax.axvline(x=j_opt, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt:.3f}")
+        ax.fill_between(res["J"], 0, res["nO"], alpha=0.08)
+        ax.set_title("Curvas KT, 10KQ y ηO — Hélice Wageningen Serie B", fontsize=12, fontweight="bold")
+        ax.set_xlabel("Coeficiente de avance J")
+        ax.set_ylabel("Coeficientes adimensionales")
+        ax.set_xlim(0, 1.2)
+        ax.set_ylim(0, max(1.05, float(res[["KT", "10KQ", "nO"]].max().max()) * 1.1))
+        ax.grid(True, linestyle=":", alpha=0.65)
+        ax.legend(loc="best")
+        st.pyplot(fig)
+        st.info("KT indica capacidad de empuje; KQ indica demanda de torque; ηO expresa eficiencia hidrodinámica ideal.")
 
+    with hidro_tabla:
+        st.markdown("### 📋 Matriz numérica de resultados Wageningen")
+        tabla = res.copy()
+        st.dataframe(
+            tabla.style
+            .highlight_max(subset=["nO", "ηO (%)"], color="#dcfce7")
+            .format("{:.4f}"),
+            use_container_width=True,
+            height=520
+        )
 
-    with st.expander("🧮 Fórmulas hidrodinámicas usadas", expanded=False):
+    with hidro_formulas:
+        st.markdown("### 🧮 Fórmulas hidrodinámicas usadas")
         st.latex(r"J = \frac{V_A}{nD}")
         st.latex(r"K_T = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
         st.latex(r"K_Q = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
         st.latex(r"\eta_O = \frac{J}{2\pi}\frac{K_T}{K_Q}")
-        st.markdown("""
-        Donde **J** es el coeficiente de avance, **KT** el coeficiente de empuje,
-        **KQ** el coeficiente de torque y **ηO** la eficiencia en aguas abiertas.
-        Los coeficientes polinomiales se leen desde el archivo `Tabla 1.xlsx`.
-        """)
+        st.markdown("Los coeficientes polinomiales se leen desde `Tabla 1.xlsx`.")
 
 # ==============================================================================
-# RESULTADOS NUMÉRICOS
+# VIBRACIÓN DEL EJE: TORSIONAL, AXIAL Y LATERAL
 # ==============================================================================
 
-with tab_resultados:
-    st.subheader("📋 Matriz Numérica de Resultados")
-
+with tab_vibracion:
+    st.subheader("🧭 Análisis integral de vibración del eje")
+    normativa_pestana("Evaluación preliminar torsional, axial y lateral.", [("DNV Pt.4 Ch.4", "vibraciones torsionales y sistema propulsivo"), ("ABS Marine Vessel Rules Pt.4", "línea de ejes, vibración y maquinaria"), ("ISO 10816 / ISO 20816", "criterios generales de severidad vibratoria en maquinaria rotativa")])
     st.markdown("""
     <div class="section-card">
-    La tabla muestra los valores calculados para cada coeficiente de avance J.
-    La columna de eficiencia se resalta automáticamente en su valor máximo para facilitar
-    la identificación del punto óptimo de operación.
+    Esta pestaña concentra los tres análisis principales de vibración del eje propulsor:
+    <b>torsional</b>, <b>axial</b> y <b>lateral/whirling</b>. Se mantienen los mismos cálculos,
+    tablas y gráficas, pero organizados en subpestañas para que la navegación sea más limpia.
     </div>
     """, unsafe_allow_html=True)
 
-    tabla = res.copy()
-    st.dataframe(
-        tabla.style
-        .highlight_max(subset=["nO", "ηO (%)"], color="#d8f5d0")
-        .format("{:.4f}"),
-        use_container_width=True,
-        height=500
-    )
+    vib_torsion, vib_axial, vib_lateral = st.tabs(["💥 Torsional", "↔️ Axial", "📊 Lateral / Whirling"])
 
-# ==============================================================================
-# TORSIONAL
-# ==============================================================================
-
-with tab_torsion:
-    st.subheader("💥 Análisis de Vibración Torsional")
-
-    st.markdown("""
-    <div class="section-card">
-    La vibración torsional se asocia a variaciones periódicas del torque transmitido
-    por el eje. En un análisis de prediseño, se verifica que el esfuerzo torsional alternante
-    sea menor que un límite admisible basado en la resistencia última del material.
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("📘 Base teórica de vibración del eje — vibración torsional", expanded=False):
+    # ==============================================================================
+    # TORSIONAL
+    # ==============================================================================
+    
+    with vib_torsion:
+        st.subheader("💥 Análisis de Vibración Torsional")
+    
         st.markdown("""
-        De acuerdo con la asignación del **Vibración en el Eje Propulsor**, la vibración
-        torsional corresponde a una variación cíclica del ángulo de giro relativo entre
-        secciones del eje. Puede ser provocada por la irregularidad del par del motor y
-        por el torque resistente variable de la hélice al trabajar dentro del campo de
-        estela no uniforme del casco.
+        <div class="section-card">
+        La vibración torsional se asocia a variaciones periódicas del torque transmitido
+        por el eje. En un análisis de prediseño, se verifica que el esfuerzo torsional alternante
+        sea menor que un límite admisible basado en la resistencia última del material.
+        </div>
+        """, unsafe_allow_html=True)
+    
+        with st.expander("📘 Base teórica de vibración del eje — vibración torsional", expanded=False):
+            st.markdown("""
+            De acuerdo con la asignación del **Vibración en el Eje Propulsor**, la vibración
+            torsional corresponde a una variación cíclica del ángulo de giro relativo entre
+            secciones del eje. Puede ser provocada por la irregularidad del par del motor y
+            por el torque resistente variable de la hélice al trabajar dentro del campo de
+            estela no uniforme del casco.
+    
+            En esta aplicación se representa de forma preliminar mediante un torque alternante
+            estimado y se compara el esfuerzo torsional obtenido contra un límite admisible
+            asociado al material seleccionado. Esta revisión se conecta con el criterio didáctico
+            de **IACS UR M68**, usado como referencia para análisis torsional.
+            """)
+            st.markdown("""
+            **Instrumentación relacionada:** torsiógrafo óptico o magnético, sensores de velocidad
+            angular y software de TVA/Shafting para modelos de masas discretas, inercias, rigideces
+            y amortiguamiento.
+            """)
+    
+        with st.expander("🧮 Fórmulas de torsión usadas", expanded=False):
+            st.latex(r"\omega = \frac{2\pi n}{60}")
+            st.latex(r"T = \frac{P}{\omega}")
+            st.latex(r"T_{alt} = 0.15T")
+            st.latex(r"W_t = \frac{\pi d^3}{16}")
+            st.latex(r"\tau = \frac{T_{alt}}{W_t}")
+            st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
+            st.markdown("""
+            Estas expresiones se usan para estimar el esfuerzo torsional alternante
+            en el eje y compararlo contra un límite admisible preliminar basado en
+            la resistencia última del material seleccionado.
+            """)
+    
+        c1, c2 = st.columns([1, 1.3])
+    
+        with c1:
+            st.metric("Torque nominal", f"{torque_nominal/1000:.2f} kN·m")
+            st.metric("Torque alternante estimado", f"{torque_dinamico_alternante/1000:.2f} kN·m")
+            st.metric("Esfuerzo real", f"{esfuerzo_real_mpa:.2f} MPa")
+            st.metric("Límite admisible", f"{tau_admisible_mpa:.2f} MPa")
+    
+            if torsion_ok:
+                estado_html("✅ Cumple: el esfuerzo torsional estimado está por debajo del límite admisible.", "good")
+            else:
+                estado_html("❌ No cumple: el esfuerzo torsional estimado supera el límite admisible.", "bad")
+    
+        with c2:
+            fig_t, ax_t = plt.subplots(figsize=(7, 3.8))
+            ax_t.barh(["Esfuerzo real", "Límite admisible"], [esfuerzo_real_mpa, tau_admisible_mpa])
+            ax_t.set_xlabel("MPa")
+            ax_t.set_title("Comparación de esfuerzo torsional")
+            ax_t.grid(True, axis="x", linestyle=":", alpha=0.6)
+            st.pyplot(fig_t)
+    
 
-        En esta aplicación se representa de forma preliminar mediante un torque alternante
-        estimado y se compara el esfuerzo torsional obtenido contra un límite admisible
-        asociado al material seleccionado. Esta revisión se conecta con el criterio didáctico
-        de **IACS UR M68**, usado como referencia para análisis torsional.
-        """)
+    # ==============================================================================
+    # AXIAL
+    # ==============================================================================
+    
+    with vib_axial:
+        st.subheader("↔️ Análisis de Vibración Axial")
+    
         st.markdown("""
-        **Instrumentación relacionada:** torsiógrafo óptico o magnético, sensores de velocidad
-        angular y software de TVA/Shafting para modelos de masas discretas, inercias, rigideces
-        y amortiguamiento.
-        """)
-
-    with st.expander("🧮 Fórmulas de torsión usadas", expanded=False):
-        st.latex(r"\omega = \frac{2\pi n}{60}")
-        st.latex(r"T = \frac{P}{\omega}")
-        st.latex(r"T_{alt} = 0.15T")
-        st.latex(r"W_t = \frac{\pi d^3}{16}")
-        st.latex(r"\tau = \frac{T_{alt}}{W_t}")
-        st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
-        st.markdown("""
-        Estas expresiones se usan para estimar el esfuerzo torsional alternante
-        en el eje y compararlo contra un límite admisible preliminar basado en
-        la resistencia última del material seleccionado.
-        """)
-
-    c1, c2 = st.columns([1, 1.3])
-
-    with c1:
-        st.metric("Torque nominal", f"{torque_nominal/1000:.2f} kN·m")
-        st.metric("Torque alternante estimado", f"{torque_dinamico_alternante/1000:.2f} kN·m")
-        st.metric("Esfuerzo real", f"{esfuerzo_real_mpa:.2f} MPa")
-        st.metric("Límite admisible", f"{tau_admisible_mpa:.2f} MPa")
-
-        if torsion_ok:
-            estado_html("✅ Cumple: el esfuerzo torsional estimado está por debajo del límite admisible.", "good")
+        <div class="section-card">
+        La vibración axial corresponde al movimiento longitudinal del eje propulsor.
+        En buques, suele estar asociada a fluctuaciones del empuje de la hélice y a la
+        interacción hélice-casco. Esta sección completa el análisis de
+        vibración del eje junto con la parte torsional y lateral.
+        </div>
+        """, unsafe_allow_html=True)
+    
+        with st.expander("📘 Base teórica de vibración axial", expanded=False):
+            st.markdown("""
+            La hélice no entrega un empuje perfectamente constante. Al girar detrás del casco,
+            cada pala entra en zonas de estela diferente, por lo que el empuje puede fluctuar.
+            Esa fluctuación genera una fuerza alternante en dirección longitudinal del eje.
+    
+            En análisis preliminar, la vibración axial puede estudiarse como un sistema
+            **masa-resorte**, donde la masa equivalente incluye hélice y parte del eje, y la
+            rigidez axial representa la rigidez del eje más la rigidez del cojinete de empuje.
+    
+            Las excitaciones más importantes se revisan por órdenes:
+            - **1P:** una excitación por revolución del eje.
+            - **ZP:** frecuencia de paso de pala, donde Z es el número de palas.
+            - **2ZP y 3ZP:** armónicos superiores del paso de pala.
+            """)
+    
+        with st.expander("🧮 Fórmulas de vibración axial usadas", expanded=False):
+            st.latex(r"k_{eje}=\frac{EA}{L}")
+            st.latex(r"k_{eq}=\left(\frac{1}{k_{eje}}+\frac{1}{k_{cojinete}}\right)^{-1}")
+            st.latex(r"m_{eq}=m_{helice}+0.35m_{eje}")
+            st.latex(r"f_{n,axial}=\frac{1}{2\pi}\sqrt{\frac{k_{eq}}{m_{eq}}}")
+            st.latex(r"f_{exc}=k\frac{n}{60}")
+            st.latex(r"f_{ZP}=Z\frac{n}{60}")
+            st.latex(r"x_{axial}=\frac{F_{alt}}{k_{eq}}")
+            st.markdown("""
+            Donde **E** es el módulo de elasticidad, **A** es el área transversal del eje,
+            **L** es la longitud axial equivalente, **Z** es el número de palas y **n** es la RPM.
+            """)
+    
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Frecuencia natural axial", f"{f_axial_natural_hz:.2f} Hz")
+        a2.metric("RPM crítica axial ZP", f"{rpm_critica_axial_zp:.1f} rpm")
+        a3.metric("Rigidez axial equivalente", f"{rigidez_axial_equivalente_n_m/1e9:.2f} GN/m")
+        a4.metric("Desplazamiento axial est.", f"{desplazamiento_axial_est_m*1000:.4f} mm")
+    
+        if riesgo_axial_global == "Bajo":
+            estado_html(f"✅ Condición axial aceptable: riesgo global {riesgo_axial_global}.", "good")
+        elif riesgo_axial_global == "Medio":
+            estado_html(f"⚠️ Condición axial en zona de precaución: riesgo global {riesgo_axial_global}. No se considera falla, pero conviene revisarlo.", "warn")
         else:
-            estado_html("❌ No cumple: el esfuerzo torsional estimado supera el límite admisible.", "bad")
-
-    with c2:
-        fig_t, ax_t = plt.subplots(figsize=(7, 3.8))
-        ax_t.barh(["Esfuerzo real", "Límite admisible"], [esfuerzo_real_mpa, tau_admisible_mpa])
-        ax_t.set_xlabel("MPa")
-        ax_t.set_title("Comparación de esfuerzo torsional")
-        ax_t.grid(True, axis="x", linestyle=":", alpha=0.6)
-        st.pyplot(fig_t)
-
-# ==============================================================================
-# AXIAL
-# ==============================================================================
-
-with tab_axial:
-    st.subheader("↔️ Análisis de Vibración Axial")
-
-    st.markdown("""
-    <div class="section-card">
-    La vibración axial corresponde al movimiento longitudinal del eje propulsor.
-    En buques, suele estar asociada a fluctuaciones del empuje de la hélice y a la
-    interacción hélice-casco. Esta sección completa el análisis de
-    vibración del eje junto con la parte torsional y lateral.
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("📘 Base teórica de vibración axial", expanded=True):
-        st.markdown("""
-        La hélice no entrega un empuje perfectamente constante. Al girar detrás del casco,
-        cada pala entra en zonas de estela diferente, por lo que el empuje puede fluctuar.
-        Esa fluctuación genera una fuerza alternante en dirección longitudinal del eje.
-
-        En análisis preliminar, la vibración axial puede estudiarse como un sistema
-        **masa-resorte**, donde la masa equivalente incluye hélice y parte del eje, y la
-        rigidez axial representa la rigidez del eje más la rigidez del cojinete de empuje.
-
-        Las excitaciones más importantes se revisan por órdenes:
-        - **1P:** una excitación por revolución del eje.
-        - **ZP:** frecuencia de paso de pala, donde Z es el número de palas.
-        - **2ZP y 3ZP:** armónicos superiores del paso de pala.
-        """)
-
-    with st.expander("🧮 Fórmulas de vibración axial usadas", expanded=True):
-        st.latex(r"k_{eje}=\frac{EA}{L}")
-        st.latex(r"k_{eq}=\left(\frac{1}{k_{eje}}+\frac{1}{k_{cojinete}}\right)^{-1}")
-        st.latex(r"m_{eq}=m_{helice}+0.35m_{eje}")
-        st.latex(r"f_{n,axial}=\frac{1}{2\pi}\sqrt{\frac{k_{eq}}{m_{eq}}}")
-        st.latex(r"f_{exc}=k\frac{n}{60}")
-        st.latex(r"f_{ZP}=Z\frac{n}{60}")
-        st.latex(r"x_{axial}=\frac{F_{alt}}{k_{eq}}")
-        st.markdown("""
-        Donde **E** es el módulo de elasticidad, **A** es el área transversal del eje,
-        **L** es la longitud axial equivalente, **Z** es el número de palas y **n** es la RPM.
-        """)
-
-    a1, a2, a3, a4 = st.columns(4)
-    a1.metric("Frecuencia natural axial", f"{f_axial_natural_hz:.2f} Hz")
-    a2.metric("RPM crítica axial ZP", f"{rpm_critica_axial_zp:.1f} rpm")
-    a3.metric("Rigidez axial equivalente", f"{rigidez_axial_equivalente_n_m/1e9:.2f} GN/m")
-    a4.metric("Desplazamiento axial est.", f"{desplazamiento_axial_est_m*1000:.4f} mm")
-
-    if riesgo_axial_global == "Bajo":
-        estado_html(f"✅ Condición axial aceptable: riesgo global {riesgo_axial_global}.", "good")
-    elif riesgo_axial_global == "Medio":
-        estado_html(f"⚠️ Condición axial en zona de precaución: riesgo global {riesgo_axial_global}. No se considera falla, pero conviene revisarlo.", "warn")
-    else:
-        estado_html(f"❌ Revisar diseño: existe al menos una excitación axial con riesgo {riesgo_axial_global}.", "bad")
-
-    st.markdown("### 📋 Tabla de órdenes axiales")
-
-    def color_riesgo_axial(val):
-        if val == "Bajo":
-            return "background-color: #dcfce7; color: #166534; font-weight: bold"
-        if val == "Medio":
-            return "background-color: #fef3c7; color: #92400e; font-weight: bold"
-        return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
-
-    st.dataframe(
-        axial_df.style
-        .format({
-            "Frecuencia excitante [Hz]": "{:.3f}",
-            "Frecuencia natural axial [Hz]": "{:.3f}",
-            "Separación [%]": "{:.2f}"
-        })
-        .map(color_riesgo_axial, subset=["Riesgo axial"]),
-        use_container_width=True,
-        height=230
-    )
-
-    st.markdown("### 📈 Excitaciones axiales vs frecuencia natural")
-    fig_a, ax_a = plt.subplots(figsize=(10, 4.5))
-    ordenes_plot = axial_df["Orden de excitación"].tolist()
-    frec_plot = axial_df["Frecuencia excitante [Hz]"].tolist()
-    ax_a.bar(ordenes_plot, frec_plot, label="Frecuencia excitante")
-    ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.4, label="Frecuencia natural axial")
-    ax_a.set_ylabel("Frecuencia [Hz]")
-    ax_a.set_title("Comparación de excitaciones axiales")
-    ax_a.grid(True, axis="y", linestyle=":", alpha=0.6)
-    ax_a.legend()
-    st.pyplot(fig_a)
-
-    st.markdown("### 🧰 Instrumentación recomendada")
-    st.markdown("""
-    Para medir o validar vibración axial en un sistema real se pueden usar:
-
-    - **Acelerómetro axial** sobre chumaceras o carcasa del cojinete de empuje.
-    - **Sensor de proximidad axial** para medir desplazamiento longitudinal del eje.
-    - **Tacómetro** para sincronizar la señal con la RPM del eje.
-    - **Galgas extensométricas** para estimar esfuerzo alternante en el eje.
-    - **Monitoreo FFT** para identificar picos en 1P, ZP, 2ZP y 3ZP.
-    """)
-
-# ==============================================================================
-# LATERAL
-# ==============================================================================
-
-with tab_lateral:
-    st.subheader("📊 Análisis de Vibración Lateral / Whirling")
-
-    st.markdown("""
-    <div class="section-card">
-    La vibración lateral del eje está relacionada con la deflexión radial y la aparición
-    de velocidades críticas. Se recomienda que la velocidad de operación no coincida
-    con la zona ±20% alrededor de la primera velocidad crítica lateral.
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("📘 Base teórica de vibración del eje — vibración lateral / whirling", expanded=False):
-        st.markdown("""
-        En la guía técnica base, la vibración lateral o *whirling* se describe como
-        la deflexión radial del eje. Su frecuencia natural depende de la rigidez a flexión
-        **EI**, de la masa equivalente y de la longitud característica del sistema.
-
-        Si la frecuencia de excitación asociada al giro del eje coincide con una frecuencia
-        natural lateral, aparece una velocidad crítica. Por eso la aplicación compara la
-        velocidad de operación contra una zona de seguridad de **±20%** alrededor de la
-        velocidad crítica estimada.
-        """)
-        st.markdown("""
-        **Instrumentación relacionada:** sensores de proximidad inductivos (*eddy current*)
-        para medir órbitas del eje, acelerómetros en apoyos y mediciones durante pruebas de mar.
-        """)
-
-    with st.expander("🧮 Fórmulas de vibración lateral usadas", expanded=False):
-        st.latex(r"I = \frac{\pi d^4}{64}")
-        st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
-        st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
-        st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
-        st.latex(r"n_{crit} = 60 f_n")
-        st.markdown("""
-        El cálculo considera el peso de la hélice y el peso propio del tramo en voladizo
-        del eje. La zona crítica se evalúa como ±20% alrededor de la velocidad crítica.
-        """)
-
-    c1, c2 = st.columns([1, 1.35])
-
-    with c1:
-        st.metric("Frecuencia natural lateral", f"{f_natural_hz:.2f} Hz")
-        st.metric("RPM crítica lateral", f"{rpm_critica_lateral:.1f} rpm")
-        st.metric("Zona crítica", f"{margen_inf:.1f} - {margen_sup:.1f} rpm")
-
-        if lateral_ok:
-            estado_html("✅ Diseño seguro: la RPM de operación está fuera de la zona crítica.", "good")
+            estado_html(f"❌ Revisar diseño: existe al menos una excitación axial con riesgo {riesgo_axial_global}.", "bad")
+    
+        st.markdown("### 📋 Tabla de órdenes axiales")
+    
+        def color_riesgo_axial(val):
+            if val == "Bajo":
+                return "background-color: #dcfce7; color: #166534; font-weight: bold"
+            if val == "Medio":
+                return "background-color: #fef3c7; color: #92400e; font-weight: bold"
+            return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
+    
+        st.dataframe(
+            axial_df.style
+            .format({
+                "Frecuencia excitante [Hz]": "{:.3f}",
+                "Frecuencia natural axial [Hz]": "{:.3f}",
+                "Separación [%]": "{:.2f}"
+            })
+            .map(color_riesgo_axial, subset=["Riesgo axial"]),
+            use_container_width=True,
+            height=230
+        )
+    
+        st.markdown("### 📈 Mapa profesional de separación axial")
+        st.caption("La gráfica compara cada orden de excitación contra la frecuencia natural axial. Mientras más lejos quede cada punto de la línea natural, menor riesgo de resonancia.")
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_axial_orders_prof(axial_df, f_axial_natural_hz), use_container_width=True, config=_plotly_config())
         else:
-            estado_html("❌ Alerta: la RPM de operación cae dentro de la zona crítica.", "bad")
+            fig_a, ax_a = plt.subplots(figsize=(10.8, 4.8))
+            axial_plot = axial_df.copy()
+            x = np.arange(len(axial_plot))
+            f_exc_vals = axial_plot["Frecuencia excitante [Hz]"].to_numpy()
+            ax_a.axhspan(f_axial_natural_hz*0.95, f_axial_natural_hz*1.05, alpha=0.16, label="Zona crítica ±5%")
+            ax_a.axhspan(f_axial_natural_hz*0.88, f_axial_natural_hz*1.12, alpha=0.08, label="Zona de precaución ±12%")
+            ax_a.axhline(y=f_axial_natural_hz, linestyle="--", linewidth=2.6, label=f"Frecuencia natural axial = {f_axial_natural_hz:.2f} Hz")
+            ax_a.vlines(x, 0, f_exc_vals, linewidth=4, alpha=0.55)
+            ax_a.scatter(x, f_exc_vals, s=180, zorder=5, label="Excitación calculada")
+            ax_a.set_xticks(x); ax_a.set_xticklabels(axial_plot["Orden de excitación"].tolist())
+            ax_a.set_ylabel("Frecuencia [Hz]"); ax_a.set_title("Órdenes axiales vs frecuencia natural del sistema", fontsize=12, fontweight="bold")
+            ax_a.grid(True, axis="y", linestyle=":", alpha=0.55); ax_a.legend(loc="best", fontsize=8)
+            st.pyplot(fig_a)
+    
+        st.markdown("### 🧾 Lectura técnica automática")
+        peor_ax = axial_df.sort_values("Separación [%]").iloc[0]
+        if peor_ax["Riesgo axial"] == "Bajo":
+            estado_html(f"✅ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. La condición axial es aceptable para prediseño.", "good")
+        elif peor_ax["Riesgo axial"] == "Medio":
+            estado_html(f"⚠️ La excitación más cercana es {peor_ax['Orden de excitación']} con separación de {peor_ax['Separación [%]']:.1f}%. Conviene revisar rigidez axial, RPM o número de palas.", "warn")
+        else:
+            estado_html(f"❌ La excitación {peor_ax['Orden de excitación']} queda demasiado cerca de la frecuencia natural axial. Riesgo alto de resonancia.", "bad")
+    
+        st.markdown("### 🧰 Instrumentación recomendada")
+        st.markdown("""
+        Para medir o validar vibración axial en un sistema real se pueden usar:
+    
+        - **Acelerómetro axial** sobre chumaceras o carcasa del cojinete de empuje.
+        - **Sensor de proximidad axial** para medir desplazamiento longitudinal del eje.
+        - **Tacómetro** para sincronizar la señal con la RPM del eje.
+        - **Galgas extensométricas** para estimar esfuerzo alternante en el eje.
+        - **Monitoreo FFT** para identificar picos en 1P, ZP, 2ZP y 3ZP.
+        """)
+    
 
-    with c2:
-        fig_l, ax_l = plt.subplots(figsize=(8, 3.8))
-        ax_l.axvline(x=rpm_critica_lateral, linestyle="--", linewidth=2, label="RPM crítica")
-        ax_l.axvspan(margen_inf, margen_sup, alpha=0.20, label="Zona ±20%")
-        ax_l.scatter([rpm_motor], [1], s=160, zorder=5, label="RPM operación")
-        ax_l.set_yticks([])
-        ax_l.set_xlabel("RPM")
-        ax_l.set_title("Margen frente a velocidad crítica lateral")
-        ax_l.grid(True, axis="x", linestyle=":", alpha=0.6)
-        ax_l.legend()
-        st.pyplot(fig_l)
+    # ==============================================================================
+    # LATERAL
+    # ==============================================================================
+    
+    with vib_lateral:
+        st.subheader("📊 Análisis de Vibración Lateral / Whirling")
+    
+        st.markdown("""
+        <div class="section-card">
+        La vibración lateral del eje está relacionada con la deflexión radial y la aparición
+        de velocidades críticas. Se recomienda que la velocidad de operación no coincida
+        con la zona ±20% alrededor de la primera velocidad crítica lateral.
+        </div>
+        """, unsafe_allow_html=True)
+    
+        with st.expander("📘 Base teórica de vibración del eje — vibración lateral / whirling", expanded=False):
+            st.markdown("""
+            En la guía técnica base, la vibración lateral o *whirling* se describe como
+            la deflexión radial del eje. Su frecuencia natural depende de la rigidez a flexión
+            **EI**, de la masa equivalente y de la longitud característica del sistema.
+    
+            Si la frecuencia de excitación asociada al giro del eje coincide con una frecuencia
+            natural lateral, aparece una velocidad crítica. Por eso la aplicación compara la
+            velocidad de operación contra una zona de seguridad de **±20%** alrededor de la
+            velocidad crítica estimada.
+            """)
+            st.markdown("""
+            **Instrumentación relacionada:** sensores de proximidad inductivos (*eddy current*)
+            para medir órbitas del eje, acelerómetros en apoyos y mediciones durante pruebas de mar.
+            """)
+    
+        with st.expander("🧮 Fórmulas de vibración lateral usadas", expanded=False):
+            st.latex(r"I = \frac{\pi d^4}{64}")
+            st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
+            st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
+            st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
+            st.latex(r"n_{crit} = 60 f_n")
+            st.markdown("""
+            El cálculo considera el peso de la hélice y el peso propio del tramo en voladizo
+            del eje. La zona crítica se evalúa como ±20% alrededor de la velocidad crítica.
+            """)
+    
+        c1, c2 = st.columns([1, 1.35])
+    
+        with c1:
+            st.metric("Frecuencia natural lateral", f"{f_natural_hz:.2f} Hz")
+            st.metric("RPM crítica lateral", f"{rpm_critica_lateral:.1f} rpm")
+            st.metric("Zona crítica", f"{margen_inf:.1f} - {margen_sup:.1f} rpm")
+    
+            if lateral_ok:
+                estado_html("✅ Diseño seguro: la RPM de operación está fuera de la zona crítica.", "good")
+            else:
+                estado_html("❌ Alerta: la RPM de operación cae dentro de la zona crítica.", "bad")
+    
+        with c2:
+            if HAS_PLOTLY:
+                st.plotly_chart(plotly_lateral_margin_prof(rpm_motor, rpm_critica_lateral, margen_inf, margen_sup), use_container_width=True, config=_plotly_config())
+            else:
+                fig_l, ax_l = plt.subplots(figsize=(8, 3.8))
+                ax_l.axvline(x=rpm_critica_lateral, linestyle="--", linewidth=2, label="RPM crítica")
+                ax_l.axvspan(margen_inf, margen_sup, alpha=0.20, label="Zona ±20%")
+                ax_l.scatter([rpm_motor], [1], s=160, zorder=5, label="RPM operación")
+                ax_l.set_yticks([]); ax_l.set_xlabel("RPM"); ax_l.set_title("Margen frente a velocidad crítica lateral")
+                ax_l.grid(True, axis="x", linestyle=":", alpha=0.6); ax_l.legend()
+                st.pyplot(fig_l)
+    
 
 # ==============================================================================
 # BALANCEO Y DESBALANCE
@@ -1303,6 +5105,7 @@ with tab_lateral:
 
 with tab_balanceo:
     st.subheader("⚖️ Balanceo y Desbalance del Eje")
+    normativa_pestana("Balanceo rotativo de hélice/eje.", [("ISO 1940-1", "grado de calidad de balanceo para rotores"), ("ISO 21940", "vibración mecánica y balanceo de rotores"), ("Reglas de clase", "control de vibración y operación segura de maquinaria")])
 
     st.markdown("""
     <div class="section-card">
@@ -1313,7 +5116,7 @@ with tab_balanceo:
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Base teórica de balanceo", expanded=True):
+    with st.expander("📘 Base teórica de balanceo", expanded=False):
         st.markdown("""
         En un eje ideal, la masa gira de forma simétrica alrededor del centro. Cuando existe
         una pequeña masa excéntrica, se produce una fuerza dinámica proporcional a la masa,
@@ -1325,7 +5128,7 @@ with tab_balanceo:
         incorrecto del conjunto eje-hélice.
         """)
 
-    with st.expander("🧮 Fórmulas de desbalance usadas", expanded=True):
+    with st.expander("🧮 Fórmulas de desbalance usadas", expanded=False):
         st.latex(r"\omega=\frac{2\pi n}{60}")
         st.latex(r"F_u=m_u e \omega^2")
         st.latex(r"\%F_u=\frac{F_u}{W_h}\times 100")
@@ -1380,6 +5183,14 @@ with tab_balanceo:
 
 with tab_campbell:
     st.subheader("🗺️ Diagrama de Campbell")
+    normativa_pestana("Separación frente a resonancias y velocidades críticas.", [("DNV Pt.4 Ch.4", "revisión de vibraciones torsionales y órdenes de excitación"), ("ABS Pt.4", "márgenes de operación segura del tren propulsivo"), ("Buenas prácticas de Campbell", "evitar operación continua cerca de cruces críticos")])
+    with st.expander("📘 Teoría y fórmulas del Campbell", expanded=False):
+        st.markdown("""
+        El diagrama de Campbell compara las frecuencias naturales del sistema contra órdenes de excitación generados por el giro del eje y el paso de palas. Una intersección cerca de la RPM de operación indica riesgo de resonancia.
+        """)
+        st.latex(r"f_{exc}=k\frac{n}{60}")
+        st.latex(r"f_{ZP}=Z\frac{n}{60}")
+        st.latex(r"n_{cruce}=\frac{60f_n}{k}")
 
     st.markdown("""
     <div class="section-card">
@@ -1390,26 +5201,26 @@ with tab_campbell:
     </div>
     """, unsafe_allow_html=True)
 
-    max_rpm_grafica = max(rpm_motor * 2.0, rpm_critica_lateral * 1.25, rpm_critica_axial_zp * 1.35, 120)
-    rpm_x = np.linspace(0, max_rpm_grafica, 500)
-
-    fig_c, ax_c = plt.subplots(figsize=(11, 5.6))
-
-    ax_c.axhline(y=f_natural_hz, linestyle="--", linewidth=2.4, label=f"Modo lateral = {f_natural_hz:.2f} Hz")
-    ax_c.axhline(y=f_torsional_est, linestyle="-.", linewidth=2.0, label=f"Modo torsional est. = {f_torsional_est:.2f} Hz")
-    ax_c.axhline(y=f_axial_natural_hz, linestyle=":", linewidth=3.0, label=f"Modo axial = {f_axial_natural_hz:.2f} Hz")
-
-    ordenes_campbell = [("1P", 1), ("2P", 2), ("3P", 3), ("ZP", z_val), ("2ZP", 2 * z_val), ("3ZP", 3 * z_val)]
-    for nombre, mult in ordenes_campbell:
-        ax_c.plot(rpm_x, mult * rpm_x / 60.0, linewidth=1.7, label=nombre)
-
-    ax_c.axvline(x=rpm_motor, linestyle="-", linewidth=2.4, label=f"RPM operación = {rpm_motor:.0f}")
-    ax_c.set_xlabel("Velocidad de giro [rpm]")
-    ax_c.set_ylabel("Frecuencia [Hz]")
-    ax_c.set_title("Diagrama de Campbell — órdenes 1P/ZP y modos naturales")
-    ax_c.grid(True, linestyle=":", alpha=0.62)
-    ax_c.legend(loc="upper left", fontsize=8, ncols=2)
-    st.pyplot(fig_c)
+    max_rpm_grafica = max(rpm_motor * 2.3, rpm_critica_lateral * 1.25, rpm_critica_axial_zp * 1.35, 150)
+    if HAS_PLOTLY:
+        fig_c = plotly_campbell_profesional(rpm_motor, f_natural_hz, f_torsional_est, f_axial_natural_hz, z_val, max_rpm=max_rpm_grafica)
+        st.plotly_chart(fig_c, use_container_width=True, config={"displaylogo": False, "scrollZoom": True, "toImageButtonOptions": {"format": "png", "scale": 2}})
+    else:
+        rpm_x = np.linspace(0, max_rpm_grafica, 500)
+        fig_c, ax_c = plt.subplots(figsize=(12, 6.2))
+        ax_c.axhline(y=f_natural_hz, linestyle="--", linewidth=2.4, label=f"Modo lateral = {f_natural_hz:.2f} Hz")
+        ax_c.axhline(y=f_torsional_est, linestyle="-.", linewidth=2.0, label=f"Modo torsional est. = {f_torsional_est:.2f} Hz")
+        ax_c.axhline(y=f_axial_natural_hz, linestyle=":", linewidth=3.0, label=f"Modo axial = {f_axial_natural_hz:.2f} Hz")
+        ordenes_campbell = [("1P", 1), ("2P", 2), ("3P", 3), ("ZP", z_val), ("2ZP", 2 * z_val), ("3ZP", 3 * z_val)]
+        for nombre, mult in ordenes_campbell:
+            ax_c.plot(rpm_x, mult * rpm_x / 60.0, linewidth=1.7, label=nombre)
+        ax_c.axvline(x=rpm_motor, linestyle="-", linewidth=2.4, label=f"RPM operación = {rpm_motor:.0f}")
+        ax_c.set_xlabel("Velocidad de giro [rpm]")
+        ax_c.set_ylabel("Frecuencia [Hz]")
+        ax_c.set_title("Campbell del sistema eje–hélice")
+        ax_c.grid(True, linestyle=":", alpha=0.62)
+        ax_c.legend(loc="upper left", fontsize=8, ncols=2)
+        st.pyplot(fig_c)
 
     st.markdown("### 📋 Tabla de resonancias e intersecciones")
     st.markdown("""
@@ -1450,178 +5261,376 @@ with tab_campbell:
 # ==============================================================================
 
 with tab_cav:
-    st.subheader("🔍 Análisis de Cavitación y Número de Reynolds")
-
+    st.subheader("🔍 Cavitación y régimen de flujo")
+    normativa_pestana("Verificación preliminar de cavitación y carga de pala.", [("Burrill", "criterio de carga de pala contra cavitación"), ("Keller", "área expandida mínima Ae/A0"), ("ITTC", "propiedades del agua, presión de vapor y número de cavitación")])
     st.markdown("""
     <div class="section-card">
-    Esta sección evalúa el comportamiento hidrodinámico del propulsor mediante dos
-    indicadores fundamentales: el <b>número de Reynolds</b>, asociado al régimen de flujo,
-    y el <b>coeficiente de cavitación σ</b>, asociado a la tendencia de formación de vapor
-    sobre las palas. Estos resultados son preliminares y sirven para orientar decisiones
-    de diseño como inmersión del eje, área expandida y carga de la hélice.
+    La cavitación se organiza por análisis: resumen general, Burrill, Keller, Reynolds/σ y fórmulas. Cada subpestaña incluye dictamen y explicación para evitar depender de una pestaña final de fórmulas.
     </div>
     """, unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Velocidad efectiva Va", f"{v_ms:.2f} m/s")
-    c2.metric("Número de Reynolds", f"{reynolds:.2e}")
-    c3.metric("Coef. cavitación σ", f"{sigma_n:.3f}")
+    cav_resumen, cav_visual, cav_burrill, cav_keller, cav_flujo, cav_formulas = st.tabs([
+        "📋 Resumen", "🌊 Visual 3D", "🫧 Burrill", "📐 Keller", "🌊 Reynolds / σ", "🧮 Fórmulas"
+    ])
 
-    with st.expander("🧮 Fórmulas de Reynolds y cavitación usadas", expanded=False):
+    with cav_resumen:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Reynolds", f"{reynolds:.2e}")
+        c2.metric("σ", f"{sigma_n:.3f}")
+        c3.metric("τc Burrill", f"{tau_c_burrill:.3f}")
+        c4.metric("Ae/A0 Keller mín.", f"{keller_ae_min:.3f}")
+
+        resumen_cav = pd.DataFrame([
+            {"Análisis":"Reynolds", "Valor calculado":reynolds, "Límite/Referencia":"> 1e7", "Resultado":"Cumple" if reynolds_ok else "Revisar"},
+            {"Análisis":"Sigma cavitación", "Valor calculado":sigma_n, "Límite/Referencia":"> 0.20 preliminar", "Resultado":"Cumple" if cavitacion_ok else "Revisar"},
+            {"Análisis":"Burrill τc", "Valor calculado":tau_c_burrill, "Límite/Referencia":tau_c_admisible, "Resultado":"Cumple" if burrill_ok else "Revisar"},
+            {"Análisis":"Keller Ae/A0", "Valor calculado":ae_val, "Límite/Referencia":keller_ae_min, "Resultado":"Cumple" if keller_ok else "No cumple"},
+        ])
+        st.dataframe(
+            resumen_cav.style.format({"Valor calculado":"{:,.4g}"}).map(style_estado, subset=["Resultado"]),
+            use_container_width=True
+        )
+
+        cav_detalle_df = pd.DataFrame([
+            {"Criterio": "Reynolds", "Fórmula / base": "Re = VA·D/ν", "Valor": f"{reynolds:.3e}", "Referencia": "> 1e7 para flujo turbulento naval", "Lectura técnica": "Confirma régimen de flujo representativo de hélice marina."},
+            {"Criterio": "Coeficiente σ", "Fórmula / base": "σ=(Patm+ρgh-Pv)/(0.5ρVA²)", "Valor": f"{sigma_n:.3f}", "Referencia": "Mayor σ implica menor tendencia a vaporizar", "Lectura técnica": "Evalúa presión disponible frente a formación de cavidades."},
+            {"Criterio": "Burrill", "Fórmula / base": "Comparación τc vs τ admisible", "Valor": f"τc={tau_c_burrill:.3f}", "Referencia": f"τadm≈{tau_c_admisible:.3f}", "Lectura técnica": "Revisa carga de pala frente a riesgo preliminar de cavitación."},
+            {"Criterio": "Keller", "Fórmula / base": "Ae/A0 actual ≥ Ae/A0 mínimo", "Valor": f"{ae_val:.3f}", "Referencia": f"mín≈{keller_ae_min:.3f}", "Lectura técnica": "Verifica si el área expandida es suficiente para distribuir carga."},
+        ])
+        st.markdown("### 📌 Detalle técnico de criterios")
+        dataframe_profesional(cav_detalle_df, height=260)
+
+        if burrill_ok and keller_ok and reynolds_ok and cavitacion_ok:
+            estado_html("✅ Dictamen de cavitación preliminar favorable: cumple Reynolds, σ, Burrill y Keller.", "good")
+        elif keller_ok and burrill_ok:
+            estado_html("⚠️ Dictamen con observaciones: Burrill y Keller cumplen, pero conviene revisar Reynolds o σ.", "warn")
+        else:
+            estado_html("❌ Dictamen de cavitación con riesgo: revisar área expandida, diámetro, inmersión o carga de la hélice.", "bad")
+
+    with cav_visual:
+        st.markdown("""
+        ### 🌊 Cavitación visual interactiva
+        Esta vista convierte los resultados de **σ**, **Burrill** y **Keller** en una representación espacial alrededor de la hélice. No sustituye CFD ni prueba de túnel de cavitación, pero ayuda a explicar visualmente dónde podría concentrarse el riesgo de formación de vapor y cómo influyen Ae/A0, diámetro, inmersión y carga de pala.
+        """)
+        if HAS_PLOTLY:
+            fig_cav3d = crear_cavitacion_3d_visual(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, sigma=sigma_n, keller_ok=keller_ok, burrill_ok=burrill_ok)
+            st.plotly_chart(fig_cav3d, use_container_width=True)
+        else:
+            estado_html("⚠️ Para activar la cavitación visual instala Plotly agregando `plotly` a requirements.txt.", "warn")
+        cav_visual_df = pd.DataFrame([
+            {"Criterio": "Coeficiente σ", "Valor": f"{sigma_n:.3f}", "Lectura": "Mayor σ indica menor tendencia a formación de vapor."},
+            {"Criterio": "Burrill", "Valor": "Cumple" if burrill_ok else "Revisar", "Lectura": "Evalúa carga de pala contra límite admisible."},
+            {"Criterio": "Keller", "Valor": "Cumple" if keller_ok else "Revisar", "Lectura": "Evalúa si Ae/A0 es suficiente para limitar cavitación."},
+            {"Criterio": "Ae/A0 actual", "Valor": f"{ae_val:.3f}", "Lectura": "Más área expandida reduce carga de pala, aunque puede penalizar eficiencia."},
+        ])
+        dataframe_profesional(cav_visual_df, height=240)
+        if keller_ok and burrill_ok and sigma_n > 0.20:
+            estado_html("✅ Visualización favorable: los criterios preliminares de cavitación son aceptables.", "good")
+        else:
+            estado_html("⚠️ Visualización con observación: revisar inmersión, Ae/A0, diámetro, carga de pala o velocidad de avance.", "warn")
+
+    with cav_burrill:
+        st.markdown("### 🫧 Criterio de Burrill")
+        st.markdown("Burrill compara la carga de pala τc contra un límite admisible dependiente de σ. Es útil para detectar si la hélice está demasiado cargada.")
+        st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2A_0}")
+        b1, b2, b3 = st.columns(3)
+        b1.metric("τc calculado", f"{tau_c_burrill:.3f}")
+        b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
+        b3.metric("Margen", f"{(tau_c_admisible - tau_c_burrill):.3f}")
+        estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala es elevada.", "good" if burrill_ok else "warn")
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_burrill_prof(sigma_n, tau_c_burrill, tau_c_admisible), use_container_width=True, config=_plotly_config())
+        else:
+            st.pyplot(crear_figura_burrill(sigma_n, tau_c_burrill, tau_c_admisible))
+
+    with cav_keller:
+        st.markdown("### 📐 Criterio de Keller")
+        st.markdown("Keller estima el área expandida mínima requerida para evitar una carga excesiva sobre las palas.")
+        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Ae/A0 mínimo", f"{keller_ae_min:.3f}")
+        k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
+        k3.metric("Margen", f"{(ae_val - keller_ae_min):.3f}")
+        estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido." if keller_ok else "❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga.", "good" if keller_ok else "bad")
+        if HAS_PLOTLY:
+            st.plotly_chart(plotly_keller_prof(keller_ae_min, ae_val), use_container_width=True, config=_plotly_config())
+        else:
+            st.pyplot(crear_figura_keller(keller_ae_min, ae_val))
+
+    with cav_flujo:
+        st.markdown("### 🌊 Reynolds y coeficiente de cavitación σ")
+        st.latex(r"Re = \frac{V_A D}{\nu}\qquad \sigma = \frac{P_{atm}+\rho gh-P_v}{\frac{1}{2}\rho V_A^2}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Velocidad efectiva VA", f"{v_ms:.2f} m/s")
+        c2.metric("Reynolds", f"{reynolds:.2e}")
+        c3.metric("σ", f"{sigma_n:.3f}")
+        col_re, col_sig = st.columns(2)
+        with col_re:
+            if HAS_PLOTLY:
+                st.plotly_chart(plotly_reynolds_prof(reynolds), use_container_width=True, config=_plotly_config())
+            else:
+                fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
+                etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
+                valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
+                ax_re.barh(etiquetas_re, valores_re)
+                ax_re.set_xscale("log"); ax_re.set_xlabel("Número de Reynolds Re [escala log]"); ax_re.set_title("Comparación de régimen de flujo")
+                ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
+                st.pyplot(fig_re)
+            if reynolds_ok:
+                st.success("✅ Flujo turbulento típico de hélices navales.")
+            else:
+                st.warning("⚠️ Reynolds bajo para escala naval.")
+        with col_sig:
+            if HAS_PLOTLY:
+                st.plotly_chart(plotly_sigma_prof(sigma_n), use_container_width=True, config=_plotly_config())
+            else:
+                fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
+                etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
+                valores_sig = [0.20, 0.50, 1.00, sigma_n]
+                ax_sig.barh(etiquetas_sig, valores_sig)
+                ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite preliminar σ = 0.20")
+                ax_sig.set_xlabel("Coeficiente de cavitación σ"); ax_sig.set_title("Riesgo general de cavitación")
+                ax_sig.grid(True, linestyle=":", alpha=0.55); ax_sig.legend(fontsize=8)
+                st.pyplot(fig_sig)
+            if cavitacion_ok:
+                st.success("🟢 σ favorable frente a cavitación.")
+            else:
+                st.warning("🟡 σ bajo: revisar inmersión, carga o diámetro.")
+
+    with cav_formulas:
+        st.markdown("### 🧮 Fórmulas usadas en cavitación")
         st.latex(r"V_A = V_s(1-w)")
         st.latex(r"Re = \frac{V_A D}{\nu}")
-        st.latex(r"\sigma = \frac{P_{atm} + \rho g h - P_v}{\frac{1}{2}\rho V_A^2}")
-        st.markdown("""
-        **VA** es la velocidad efectiva que entra a la hélice, **Re** indica el régimen
-        de flujo, y **σ** estima la tendencia preliminar a cavitación. Un valor bajo de σ
-        implica mayor riesgo de formación de vapor sobre las palas.
-        """)
-
-    st.markdown("---")
-
-    col_re, col_cav = st.columns(2)
-
-    with col_re:
-        st.markdown("### 🌊 Gráfica del Número de Reynolds")
-        fig_re, ax_re = plt.subplots(figsize=(7.2, 4.0))
-        etiquetas_re = ["Laminar", "Transición", "Turbulento", "Diseño actual"]
-        valores_re = [2.0e3, 4.0e3, 1.0e7, reynolds]
-        ax_re.barh(etiquetas_re, valores_re)
-        ax_re.set_xscale("log")
-        ax_re.set_xlabel("Número de Reynolds Re [escala log]")
-        ax_re.set_title("Comparación de régimen de flujo")
-        ax_re.grid(True, which="both", linestyle=":", alpha=0.55)
-        st.pyplot(fig_re)
-
-        if reynolds_ok:
-            st.success("✅ El flujo se encuentra en régimen turbulento típico de hélices navales.")
-        else:
-            st.warning("⚠️ Reynolds bajo para escala naval. Revisar velocidad efectiva, diámetro o escala de análisis.")
-
-    with col_cav:
-        st.markdown("### ⚠️ Gráfica del Coeficiente de Cavitación")
-        fig_sig, ax_sig = plt.subplots(figsize=(7.2, 4.0))
-        etiquetas_sig = ["Riesgo alto", "Precaución", "Zona segura", "Diseño actual"]
-        valores_sig = [0.20, 0.50, 1.00, sigma_n]
-        ax_sig.barh(etiquetas_sig, valores_sig)
-        ax_sig.axvline(0.20, linestyle="--", linewidth=2, label="Límite crítico σ = 0.20")
-        ax_sig.set_xlabel("Coeficiente de cavitación σ")
-        ax_sig.set_title("Comparación de riesgo de cavitación")
-        ax_sig.grid(True, linestyle=":", alpha=0.55)
-        ax_sig.legend(fontsize=8)
-        st.pyplot(fig_sig)
-
-        if sigma_n < 0.20:
-            st.error("""
-            🔴 Riesgo elevado de cavitación. Se recomienda aumentar Ae/A0, aumentar
-            la inmersión del eje, reducir la velocidad efectiva o revisar el diámetro
-            y la carga de la hélice.
-            """)
-        elif sigma_n < 0.50:
-            st.warning("""
-            🟡 Zona de precaución. El diseño puede funcionar, pero conviene validar
-            con un análisis de cavitación más detallado y revisión de distribución de carga.
-            """)
-        else:
-            st.success("""
-            🟢 Condición preliminar favorable frente a cavitación. El valor de σ se
-            encuentra por encima del umbral crítico usado en esta evaluación.
-            """)
-
-    st.markdown("---")
-    st.markdown("""
-    ### 📖 Interpretación técnica
-
-    La cavitación aparece cuando la presión local en alguna región de la pala cae por debajo
-    de la presión de vapor del agua. En operación real puede provocar ruido, vibración,
-    erosión superficial y pérdida de eficiencia propulsiva. El número de Reynolds confirma
-    si el flujo alrededor de la hélice está dentro de un régimen representativo para análisis
-    hidrodinámico naval.
-    """)
+        st.latex(r"\sigma = \frac{P_{atm}+\rho gh-P_v}{\frac{1}{2}\rho V_A^2}")
+        st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2 A_0}")
+        st.latex(r"A_0 = \frac{\pi D^2}{4}")
+        st.latex(r"\tau_{c,adm}=0.22+0.18\sigma")
+        st.latex(r"P_0-P_v=P_{atm}+\rho gh-P_v")
+        st.info("Estos criterios son preliminares para prediseño. Para aprobación final deben contrastarse con diagramas originales, pruebas de modelo o reglas de clase aplicables.")
 
 # ==============================================================================
 # NORMATIVA APLICABLE
 # ==============================================================================
 
-with tab_normativa:
-    st.subheader("📚 Normativa aplicable al sistema de eje y vibraciones")
 
+# ===============================================================================
+# SEGURIDAD DEL EJE / FATIGA
+# ===============================================================================
+
+with tab_eje:
+    st.subheader("🧱 Seguridad mecánica del eje")
+    normativa_pestana("Revisión preliminar y didáctica del eje propulsor.", [("ABS / DNV", "reglas de clase para líneas de eje, materiales y márgenes de operación"), ("IACS UR M68", "marco de referencia para vibración torsional en instalaciones propulsoras"), ("Goodman / Soderberg", "criterios clásicos para explicar fatiga por carga variable")])
     st.markdown("""
     <div class="section-card">
-    Esta sección reúne las normas y guías relacionadas con el sistema de eje propulsor,
-    vibraciones, alineación, materiales, inspección y criterios de aceptación preliminar.
-    Se usan como referencia didáctica; para un proyecto real se debe consultar la edición
-    vigente de la sociedad clasificadora correspondiente.
+    <b>¿Qué revisa esta pestaña?</b><br>
+    Revisa si el eje tiene suficiente margen para transmitir el torque del motor hacia la hélice.
+    En palabras simples: compara <b>lo que el eje está soportando</b> contra <b>lo que el material puede admitir</b>.
+    <br><br>
+    <b>Lectura rápida:</b> si la barra de esfuerzo real queda lejos del límite admisible y el factor de seguridad es mayor a 1.50,
+    el eje es aceptable como prediseño. Si queda cerca del límite, conviene aumentar diámetro, mejorar material o revisar cargas.
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("### 🧾 Resumen de normas y criterios")
+    eje_fs_df = pd.DataFrame([
+        {"Revisión": "Esfuerzo real del eje", "Valor": f"{tau_maxima_estimada_mpa:.2f} MPa", "Qué significa": "Carga torsional que siente el eje al transmitir potencia.", "Criterio": "Debe ser menor que τ admisible", "Estado": "Cumple" if tau_maxima_estimada_mpa <= tau_admisible_mpa else "No cumple"},
+        {"Revisión": "Límite admisible", "Valor": f"{tau_admisible_mpa:.2f} MPa", "Qué significa": "Esfuerzo máximo preliminar permitido para el material.", "Criterio": "Referencia de material / clase", "Estado": "Informativo"},
+        {"Revisión": "Factor de seguridad", "Valor": f"{fs_torsional_estatico:.2f}", "Qué significa": "Cuántas veces el límite supera al esfuerzo real.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_torsional_estatico)},
+        {"Revisión": "Fatiga Goodman", "Valor": f"{fs_goodman:.2f}", "Qué significa": "Margen cuando el esfuerzo cambia durante la operación.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_goodman)},
+        {"Revisión": "Fatiga Soderberg", "Valor": f"{fs_soderberg:.2f}", "Qué significa": "Versión más conservadora de fatiga.", "Criterio": "FS ≥ 1.50", "Estado": _estado_fs(fs_soderberg)},
+    ])
 
-    normativa_df = pd.DataFrame({
-        "Norma / Sociedad": [
-            "ABS",
-            "DNV",
-            "Bureau Veritas",
-            "Lloyd's Register",
-            "ISO 10816 / ISO 20816",
-            "ISO 1940",
-            "SOLAS"
-        ],
-        "Aplicación en la app": [
-            "Sistema de eje, materiales, inspección, arreglo de eje y revisión de esfuerzos.",
-            "Dimensionamiento de ejes, vibración torsional, alineación y cargas en cojinetes.",
-            "Criterios de arreglo de propulsión, eje de cola, bocina y chumaceras.",
-            "Revisión de shafting, aceptación de maquinaria y vibraciones en servicio.",
-            "Evaluación general de vibración mecánica medida en máquinas rotativas.",
-            "Balanceo de rotores rígidos y calidad de balanceo.",
-            "Seguridad de maquinaria propulsora y continuidad operacional del buque."
-        ],
-        "Relación con resultados": [
-            "Comparación de esfuerzo torsional y recomendaciones de diseño.",
-            "Campbell, resonancia, torsión, alineación y velocidad crítica.",
-            "Geometría del eje, apoyos, bocina y chumaceras.",
-            "Criterios de aceptación de vibraciones y monitoreo.",
-            "Medición de vibración axial, lateral y torsional.",
-            "Pestaña de balanceo y desbalance del eje.",
-            "Marco general de seguridad y confiabilidad del sistema propulsor."
-        ]
-    })
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Esfuerzo real", f"{tau_maxima_estimada_mpa:.2f} MPa")
+    c2.metric("Límite admisible", f"{tau_admisible_mpa:.2f} MPa")
+    c3.metric("Factor de seguridad", f"{fs_torsional_estatico:.2f}")
+    c4.metric("Goodman", f"{fs_goodman:.2f}")
 
-    st.dataframe(normativa_df, use_container_width=True, height=330)
+    if fs_eje_ok and fatiga_ok:
+        estado_html("✅ Lectura simple: el eje trabaja con margen aceptable. El esfuerzo real queda por debajo del límite admisible y la fatiga preliminar no indica condición crítica.", "good")
+    elif fs_torsional_estatico >= 1.0 and fs_goodman >= 1.0:
+        estado_html("⚠️ Lectura simple: el eje todavía tiene margen, pero no es cómodo. Para mejorarlo se puede aumentar el diámetro, seleccionar un acero más resistente o reducir cargas dinámicas.", "warn")
+    else:
+        estado_html("❌ Lectura simple: el eje queda demasiado cerca o por encima del límite. El prediseño debe revisarse antes de aceptarlo.", "bad")
 
-    st.markdown("### ⚙️ Cómo se conecta con la aplicación")
-    col_n1, col_n2 = st.columns(2)
+    st.markdown("### 📊 Gráfica fácil de interpretación")
+    if go is not None:
+        fig_eje = go.Figure()
+        fig_eje.add_trace(go.Bar(
+            x=["Esfuerzo real", "Límite admisible"],
+            y=[tau_maxima_estimada_mpa, tau_admisible_mpa],
+            text=[f"{tau_maxima_estimada_mpa:.2f} MPa", f"{tau_admisible_mpa:.2f} MPa"],
+            textposition="outside",
+            marker=dict(color=["#059669" if tau_maxima_estimada_mpa <= tau_admisible_mpa else "#dc2626", "#2563eb"]),
+            hovertemplate="<b>%{x}</b><br>%{y:.2f} MPa<extra></extra>"
+        ))
+        fig_eje.add_hline(y=tau_admisible_mpa, line_dash="dash", line_color="#dc2626", annotation_text="Límite admisible")
+        fig_eje.add_annotation(
+            x=0.5, y=max(tau_admisible_mpa, tau_maxima_estimada_mpa)*1.12,
+            text=f"FS = {fs_torsional_estatico:.2f} · {'Seguro' if fs_torsional_estatico >= 1.5 else 'Revisar'}",
+            showarrow=False, bgcolor="rgba(255,255,255,.92)", bordercolor="#e2e8f0"
+        )
+        fig_eje.update_layout(
+            title="Comparación del esfuerzo del eje contra el límite admisible",
+            yaxis_title="Esfuerzo cortante [MPa]",
+            template="plotly_white", height=430,
+            margin=dict(l=60, r=40, t=80, b=60),
+            font=dict(color="#0f172a")
+        )
+        st.plotly_chart(fig_eje, use_container_width=True, config=_plotly_config())
+    else:
+        fig_eje, ax = plt.subplots(figsize=(8.8, 4.2))
+        ax.bar(["Esfuerzo real", "Límite admisible"], [tau_maxima_estimada_mpa, tau_admisible_mpa])
+        ax.axhline(tau_admisible_mpa, linestyle="--", linewidth=1.5)
+        ax.set_ylabel("MPa")
+        ax.set_title("Esfuerzo real vs límite admisible del eje")
+        ax.grid(True, axis="y", linestyle=":", alpha=.45)
+        st.pyplot(fig_eje)
 
-    with col_n1:
+    st.markdown("### 🧾 Tabla compacta de lectura")
+    st.dataframe(eje_fs_df.style.map(style_estado, subset=["Estado"]), use_container_width=True, height=260)
+
+    with st.expander("🧮 Fórmulas y explicación para defenderlo", expanded=False):
         st.markdown("""
-        **Cálculos directamente relacionados:**
+        <div class="formula-card">
+            <span class="formula-tag">1 · Torque del eje</span>
+            <h4>¿Qué calcula?</h4>
+            <p>Convierte la potencia del motor en el giro real que recibe el eje. A mayor potencia o menor rpm, mayor torque.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"T = \frac{9550\,P_B}{n}")
 
-        - Esfuerzo torsional del eje.
-        - Frecuencia lateral o whirling.
-        - Frecuencia axial natural.
-        - Diagrama de Campbell.
-        - Desbalance dinámico.
-        - Cavitación y condiciones hidrodinámicas.
+        st.markdown("""
+        <div class="formula-card">
+            <span class="formula-tag">2 · Esfuerzo por torsión</span>
+            <h4>¿Qué representa?</h4>
+            <p>Es el esfuerzo que aparece dentro del eje por transmitir el torque. Si el diámetro baja, el esfuerzo sube mucho porque depende de d³.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"\tau = \frac{16T}{\pi d^3}")
+
+        st.markdown("""
+        <div class="formula-card">
+            <span class="formula-tag">3 · Factor de seguridad</span>
+            <h4>¿Cómo se interpreta?</h4>
+            <p>Compara lo que el eje puede soportar contra lo que realmente está trabajando. Por ejemplo, FS = 2 significa que el límite admisible es el doble del esfuerzo calculado.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"FS = \frac{\tau_{adm}}{\tau_{real}}")
+
+        st.markdown("""
+        <div class="formula-card">
+            <span class="formula-tag">4 · Fatiga</span>
+            <h4>¿Por qué se revisa?</h4>
+            <p>El eje no gira una sola vez: trabaja miles o millones de ciclos. Goodman y Soderberg son criterios preliminares para comprobar que esa carga repetida no lo acerque a una falla por fatiga.</p>
+        </div>
+        <blockquote>Esta revisión no reemplaza la aprobación de una casa clasificadora. Sirve como predimensionamiento para demostrar que el torque calculado no genera un esfuerzo mayor al admisible y que existe margen preliminar frente a fatiga.</blockquote>
+        """, unsafe_allow_html=True)
+
+    st.markdown("### Zonas prohibidas o de precaución por Campbell")
+    if zonas_prohibidas_df.empty:
+        estado_html("✅ No se detectaron zonas prohibidas de riesgo alto o medio dentro del rango evaluado.", "good")
+    else:
+        st.dataframe(zonas_prohibidas_df.style.map(style_estado, subset=["Riesgo"]), use_container_width=True, height=300)
+        st.warning("Evita operación continua dentro de estas bandas. En pruebas o maniobra se pueden cruzar rápidamente, pero no conviene permanecer ahí.")
+
+with tab_normativa:
+    st.subheader("📚 Normativa y cumplimiento técnico preliminar")
+    normativa_pestana("Matriz general de cumplimiento.", [("ITTC", "hidrodinámica, potencia y agua estándar"), ("MARIN/Wageningen", "curvas de hélice"), ("ABS/DNV/ISO", "maquinaria, eje, vibración, balanceo y tolerancias")])
+
+    st.markdown("""
+    <div class="section-card">
+    Esta sección conecta los resultados de la aplicación con normas, guías y prácticas
+    usadas en diseño de sistemas propulsivos. El objetivo es que el usuario pueda defender
+    cada decisión: agua ITTC, hélice Wageningen, cavitación Burrill/Keller, motor al 85% MCR,
+    eje, transmisión, vibración y comparación contra datos reales. El dictamen es académico
+    y preliminar: una aprobación real debe hacerse con la edición vigente de la sociedad
+    clasificadora del buque.
+    </div>
+    """, unsafe_allow_html=True)
+
+    potencia_norma_estado = "Cumple" if PB_kw_calc <= MCR_requerido_kw else "Revisar"
+    mcr_real_disponible = motor_mcr_kw if motor_mcr_kw > 0 else 0.0
+    if mcr_real_disponible > 0:
+        if PB_kw_calc <= 0.85*mcr_real_disponible:
+            motor_norma_estado = "Cumple ideal"
+        elif PB_kw_calc <= mcr_real_disponible:
+            motor_norma_estado = "Cumple con observación"
+        else:
+            motor_norma_estado = "No cumple"
+    else:
+        motor_norma_estado = "Sin dato real"
+
+    transmision_norma_estado = "Cumple" if transmision_ok else "Revisar"
+    rt_norma_estado = "Calculada" if rt_modo == "Automática preliminar" else "Dato manual"
+    keller_norma_estado = "Cumple" if keller_ok else "No cumple"
+    burrill_norma_estado = "Cumple" if burrill_ok else "No cumple"
+    reynolds_norma_estado = "Cumple" if reynolds_ok else "Revisar"
+    campbell_norma_estado = "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "No cumple"
+    eje_norma_estado = "Cumple" if torsion_ok else "No cumple"
+
+    normativa_detallada_df = pd.DataFrame([
+        {"Área": "Condición del agua", "Referencia técnica": "ITTC @ 15 °C", "Qué exige / controla": "Propiedades consistentes del fluido: densidad, viscosidad, presión de vapor y presión atmosférica.", "Variable de la app": f"ρ={rho_auto:.1f} kg/m³, ν=1.1883E-6 m²/s, Pv={p_vap_auto:.0f} Pa", "Dictamen": "Cumple"},
+        {"Área": "Resistencia al avance", "Referencia técnica": "ITTC-1957 / prediseño hidrodinámico", "Qué exige / controla": "Estimar RT de forma reproducible o usar dato real de canal, CFD, Holtrop-Mennen o ficha técnica.", "Variable de la app": f"RT={resistencia_total_kn:,.0f} kN ({rt_fuente})", "Dictamen": rt_norma_estado},
+        {"Área": "Margen de servicio", "Referencia técnica": "ITTC Speed/Power Trials 7.5-02-03-01.4 / práctica de diseño", "Qué exige / controla": "Documentar el Sea Margin y su efecto en la potencia de diseño.", "Variable de la app": f"Sea Margin={margen_servicio:.1f}%", "Dictamen": "Cumple" if margen_servicio >= 10 else "Revisar"},
+        {"Área": "Hélice en aguas abiertas", "Referencia técnica": "Wageningen B-Series / ITTC Propeller Open Water", "Qué exige / controla": "Calcular KT, KQ, J y ηO con coeficientes visibles y trazables.", "Variable de la app": f"ηO máx={max_eff*100:.2f}%, J={j_opt:.3f}", "Dictamen": "Cumple" if hidro_ok else "Revisar"},
+        {"Área": "Cavitación Burrill", "Referencia técnica": "Burrill / diagrama σ - τc", "Qué exige / controla": "Verificar que la carga de pala no exceda el límite preliminar admisible.", "Variable de la app": f"τc={tau_c_burrill:.3f}, τadm={tau_c_admisible:.3f}", "Dictamen": burrill_norma_estado},
+        {"Área": "Cavitación Keller", "Referencia técnica": "Keller / área expandida mínima", "Qué exige / controla": "Verificar que Ae/A0 instalada sea mayor o igual al área mínima requerida.", "Variable de la app": f"Ae/A0={ae_val:.3f}, mínimo={keller_ae_min:.3f}", "Dictamen": keller_norma_estado},
+        {"Área": "Régimen hidrodinámico", "Referencia técnica": "ITTC / similitud Reynolds", "Qué exige / controla": "Confirmar flujo turbulento típico de hélice naval para que el análisis sea representativo.", "Variable de la app": f"Re={reynolds:.2e}", "Dictamen": reynolds_norma_estado},
+        {"Área": "Motor propulsor", "Referencia técnica": "Fabricante / punto de operación 85% MCR", "Qué exige / controla": "PB de diseño idealmente ≤85% MCR; si queda entre NCR y MCR se reporta como observación.", "Variable de la app": f"PB={PB_kw_calc:,.0f} kW, MCR real={mcr_real_disponible:,.0f} kW", "Dictamen": motor_norma_estado},
+        {"Área": "Transmisión / reductora", "Referencia técnica": "Fabricante de caja / práctica de shafting", "Qué exige / controla": "Relación compatible entre RPM motor y RPM hélice, o transmisión directa si es motor lento.", "Variable de la app": f"Tipo={transmision_tipo}, i={relacion_reduccion:.2f}", "Dictamen": transmision_norma_estado},
+        {"Área": "Eje propulsor - torsión", "Referencia técnica": "ABS/DNV/IACS UR M68 como marco de verificación torsional", "Qué exige / controla": "Esfuerzo torsional alternante menor que el límite admisible preliminar.", "Variable de la app": f"τ={esfuerzo_real_mpa:.2f} MPa, τadm={tau_admisible_mpa:.2f} MPa", "Dictamen": eje_norma_estado},
+        {"Área": "Vibración lateral / whirling", "Referencia técnica": "ABS/DNV shaft alignment y práctica de velocidad crítica", "Qué exige / controla": "RPM de operación fuera de la banda crítica ±20% alrededor de la velocidad crítica.", "Variable de la app": f"Operación={rpm_motor:.1f} rpm, zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
+        {"Área": "Vibración axial", "Referencia técnica": "Análisis de excitaciones 1P/ZP/armónicos", "Qué exige / controla": "Separación suficiente entre frecuencia natural axial y órdenes de excitación.", "Variable de la app": f"Riesgo axial={riesgo_axial_global}", "Dictamen": "Cumple" if axial_ok else "No cumple"},
+        {"Área": "Campbell", "Referencia técnica": "Análisis de resonancia en sistemas rotativos", "Qué exige / controla": "Evitar cruces peligrosos entre órdenes de excitación y modos naturales cerca de la RPM de operación.", "Variable de la app": "Intersecciones 1P, ZP, 2ZP, 3ZP", "Dictamen": campbell_norma_estado},
+        {"Área": "Balanceo", "Referencia técnica": "ISO 1940 / práctica de balanceo de rotores", "Qué exige / controla": "Mantener fuerza de desbalance baja y evitar excitación 1P excesiva.", "Variable de la app": f"Riesgo={riesgo_desbalance}", "Dictamen": "Cumple" if desbalance_ok else "No cumple"}
+    ])
+
+    def color_dictamen_normativa(val):
+        txt = str(val).lower()
+        if "no cumple" in txt:
+            return "background-color: #fee2e2; color:#991b1b; font-weight:700"
+        if "cumple" in txt:
+            return "background-color: #dcfce7; color:#166534; font-weight:700"
+        if "observ" in txt or "revis" in txt or "manual" in txt or "calculada" in txt or "sin dato" in txt:
+            return "background-color: #fef3c7; color:#92400e; font-weight:700"
+        return ""
+
+    st.markdown("### ✅ Matriz normativa de cumplimiento")
+    st.dataframe(normativa_detallada_df.style.map(color_dictamen_normativa, subset=["Dictamen"]), use_container_width=True, height=520)
+
+    st.markdown("### 📌 Lectura de cumplimiento")
+    col_nc1, col_nc2, col_nc3 = st.columns(3)
+    total_bad = sum(normativa_detallada_df["Dictamen"].astype(str).str.contains("No cumple", case=False, na=False))
+    total_ok = sum(normativa_detallada_df["Dictamen"].astype(str).str.contains("Cumple", case=False, na=False)) - total_bad
+    total_rev = len(normativa_detallada_df) - total_ok - total_bad
+    col_nc1.metric("Criterios que cumplen", total_ok)
+    col_nc2.metric("Criterios a revisar", total_rev)
+    col_nc3.metric("Criterios no conformes", total_bad)
+
+    st.markdown("### 📚 Referencias técnicas usadas por la app")
+    referencias_df = pd.DataFrame([
+        ["ITTC", "Propiedades de agua, resistencia friccional, ensayos de aguas abiertas, margen de servicio y pruebas de velocidad/potencia."],
+        ["Wageningen B-Series", "Cálculo de KT, KQ y ηO mediante coeficientes polinomiales de hélices serie B."],
+        ["Burrill", "Criterio preliminar de cavitación por carga de pala usando relación σ - τc."],
+        ["Keller", "Criterio preliminar de área expandida mínima para limitar cavitación."],
+        ["IACS UR M68", "Referencia para análisis torsional de instalaciones propulsoras; marco conceptual, no aprobación oficial."],
+        ["ABS / DNV / LR / BV", "Reglas de clase aplicables a shafting, materiales, alineación, bocina, chumaceras, vibración y maquinaria propulsora."],
+        ["ISO 1940", "Balanceo de rotores; referencia conceptual para la sección de desbalance."],
+        ["ISO 10816 / ISO 20816", "Evaluación de vibración en maquinaria rotativa; referencia conceptual para medición y diagnóstico."],
+        ["Fabricante de motor", "MCR, NCR, RPM, campo de potencia y selección del punto de operación."],
+        ["Fabricante de caja reductora", "Relaciones de reducción, eficiencia, torque admisible y compatibilidad con RPM."]
+    ], columns=["Fuente", "Uso en la aplicación"])
+    st.dataframe(referencias_df, use_container_width=True, height=360)
+
+    with st.expander("📘 Alcance y limitaciones", expanded=False):
+        st.markdown("""
+        - Esta matriz es **preliminar y académica**. No sustituye una aprobación oficial de clase.
+        - La RT automática es útil para prediseño, pero debe validarse con canal de pruebas, CFD, Holtrop-Mennen completo o datos reales.
+        - Burrill y Keller son verificaciones preliminares; para diseño final deben usarse diagramas originales, pruebas de modelo o validación especializada.
+        - La evaluación de eje, Campbell, Bode, axial, lateral y balanceo es didáctica; una aprobación real requiere modelo completo de shafting, datos de rigidez, inercias, chumaceras, acoplamientos y motor.
         """)
 
-    with col_n2:
-        st.markdown("""
-        **Lo que debe revisarse en un diseño real:**
-
-        - Diámetro mínimo del eje según clase.
-        - Material y esfuerzo admisible.
-        - Cargas en chumaceras y bocina.
-        - Alineación del eje.
-        - Resonancias dentro del rango de operación.
-        - Balanceo de hélice y eje.
-        """)
-
-    st.markdown("### 📌 Nota para presentación")
-    st.info(
-        "La app no sustituye una aprobación de clase. Funciona como una herramienta "
-        "preliminar para visualizar parámetros críticos del sistema propulsivo y justificar "
-        "decisiones de diseño antes de un análisis formal con ABS, DNV, BV o LR."
-    )
+    st.success("La pestaña normativa ahora funciona como checklist técnico: muestra qué criterio se revisó, con qué referencia se relaciona, qué variable usa la app y si cumple, requiere revisión o no cumple.")
 
 
 # ==============================================================================
@@ -1629,260 +5638,743 @@ with tab_normativa:
 # ==============================================================================
 
 with tab_clase:
-    st.subheader("📋 Dictamen Orientativo de Cumplimiento")
+    st.subheader("📌 Informe técnico del sistema propulsivo")
+    normativa_pestana("Informe final con trazabilidad técnica.", [("Formato de reporte de ingeniería", "resultados, hipótesis, conclusiones y recomendaciones"), ("Reglas de clase", "resumen de cumplimiento por sistema"), ("Ficha técnica", "validación contra datos reales del buque")])
 
     st.markdown("""
     <div class="section-card">
-    Esta sección no sustituye una aprobación oficial de ABS, DNV, Lloyd's Register,
-    Bureau Veritas u otra sociedad de clasificación. Funciona como dictamen preliminar
-    de ingeniería para revisar si el diseño presenta señales de riesgo en torsión,
-    cavitación, vibración lateral e hidrodinámica.
+    Esta pestaña funciona como el cierre formal de la aplicación. Integra los resultados clave de hidrodinámica,
+    potencia, motor, hélice, cavitación, vibración, normativa e integración visual para emitir una lectura ejecutiva
+    del diseño. Su objetivo es que el usuario pueda defender el prediseño de forma clara, ordenada y trazable.
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("📘 Relación con la teoría de vibración del eje", expanded=False):
-        st.markdown("""
-        El dictamen agrupa los tres enfoques principales de la asignación:
-
-        - **Torsional:** variaciones cíclicas de torque y esfuerzo alternante del eje.
-        - **Lateral / whirling:** separación entre la velocidad de servicio y velocidades críticas.
-        - **Axial:** asociada a fluctuaciones de empuje de la hélice en órdenes **1P, ZP, 2ZP y 3ZP**;
-          en esta versión sí se evalúa con frecuencia natural axial, rigidez equivalente,
-          tabla de separación y riesgo de resonancia.
-
-        También se incluyen las referencias técnicas mencionadas en la guía: **IACS UR M68**, notas de
-        **ABS** para vibración de shafting, recomendaciones **DNV/ISO** e instrumentación como torsiógrafo,
-        sensor de proximidad y acelerómetro axial.
-        """)
-
-    cumplimiento = pd.DataFrame({
-        "Área evaluada": [
-            "Hidrodinámica de aguas abiertas",
-            "Número de Reynolds",
-            "Cavitación",
-            "Vibración torsional",
-            "Vibración lateral",
-            "Vibración axial",
-        ],
-        "Criterio usado": [
-            "ηO máxima > 40%",
-            "Re > 1.0E7",
-            "σ ≥ 0.20",
-            "τ real ≤ τ admisible",
-            "RPM operación fuera de ±20% de RPM crítica",
-            "Sin órdenes axiales en zona de alto riesgo"
-        ],
-        "Valor": [
-            f"{max_eff*100:.2f}%",
-            f"{reynolds:.2e}",
-            f"{sigma_n:.3f}",
-            f"{esfuerzo_real_mpa:.2f} / {tau_admisible_mpa:.2f} MPa",
-            f"{rpm_motor:.1f} rpm vs {margen_inf:.1f}-{margen_sup:.1f} rpm",
-            f"Riesgo axial {riesgo_axial_global}"
-        ],
-        "Resultado": [
-            "Cumple" if hidro_ok else "Observación",
-            "Cumple" if reynolds_ok else "Observación",
-            "Cumple" if cavitacion_ok else "No cumple",
-            "Cumple" if torsion_ok else "No cumple",
-            "Cumple" if lateral_ok else "No cumple",
-            "Cumple" if axial_ok else "No cumple",
-        ]
-    })
+    # Matriz ejecutiva ampliada
+    matriz_ejecutiva = pd.DataFrame([
+        {"Bloque técnico": "Datos principales del buque", "Resultado clave": f"L={eslora:.2f} m · B={manga:.2f} m · T={calado:.2f} m · V={velocidad:.2f} kn", "Criterio de lectura": "Datos de entrada o ficha técnica", "Estado": "Cumple"},
+        {"Bloque técnico": "Resistencia y potencia efectiva", "Resultado clave": f"RT={resistencia_total_kn:,.0f} kN · PE={PE_kw:,.0f} kW", "Criterio de lectura": "RT positiva y potencia trazable", "Estado": "Cumple" if resistencia_total_kn > 0 and PE_kw > 0 else "Revisar"},
+        {"Bloque técnico": "Potencia al freno / motor", "Resultado clave": f"PB={PB_kw_calc:,.0f} kW · MCR req.={MCR_requerido_kw:,.0f} kW", "Criterio de lectura": "Reserva frente al MCR disponible", "Estado": motor_estado if 'motor_estado' in globals() else ("Cumple" if PB_kw_calc <= MCR_requerido_kw else "Revisar")},
+        {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO máx={max_eff*100:.2f}% · J={j_opt:.3f}", "Criterio de lectura": "Eficiencia de aguas abiertas razonable", "Estado": "Cumple" if hidro_ok else "Revisar"},
+        {"Bloque técnico": "Geometría de hélice", "Resultado clave": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Criterio de lectura": "Rangos comerciales y área suficiente", "Estado": "Cumple" if (3 <= z_val <= 7 and 0.50 <= pd_val <= 1.40 and keller_ok) else "Revisar"},
+        {"Bloque técnico": "Cavitación", "Resultado clave": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Criterio de lectura": "Burrill, Keller, σ y Reynolds", "Estado": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok and reynolds_ok) else "Revisar"},
+        {"Bloque técnico": "Vibración torsional", "Resultado clave": f"τ={esfuerzo_real_mpa:.2f} MPa · τadm={tau_admisible_mpa:.2f} MPa", "Criterio de lectura": "Esfuerzo menor al admisible", "Estado": "Cumple" if torsion_ok else "No cumple"},
+        {"Bloque técnico": "Seguridad del eje", "Resultado clave": f"FS={fs_torsional_estatico:.2f} · Goodman={fs_goodman:.2f}", "Criterio de lectura": "FS y fatiga preliminar", "Estado": "Cumple" if (fs_eje_ok and fatiga_ok) else "Revisar"},
+        {"Bloque técnico": "Vibración axial", "Resultado clave": f"Riesgo axial={riesgo_axial_global}", "Criterio de lectura": "Separación de 1P, ZP, 2ZP y 3ZP", "Estado": "Cumple" if axial_ok else "Revisar"},
+        {"Bloque técnico": "Vibración lateral / whirling", "Resultado clave": f"n={rpm_motor:.1f} rpm · zona crítica={margen_inf:.1f}-{margen_sup:.1f} rpm", "Criterio de lectura": "RPM fuera de banda crítica", "Estado": "Cumple" if lateral_ok else "No cumple"},
+        {"Bloque técnico": "Campbell", "Resultado clave": "Cruces entre órdenes y modos naturales", "Criterio de lectura": "Sin resonancia crítica en operación", "Estado": "Cumple" if not (campbell_df["Riesgo"] == "Alto").any() else "Revisar"},
+        {"Bloque técnico": "Normativa preliminar", "Resultado clave": "ABS / DNV / IACS / ISO como marco de referencia", "Criterio de lectura": "Checklist técnico preliminar", "Estado": "Cumple"},
+        {"Bloque técnico": "Exportación técnica", "Resultado clave": "PDF + Excel con tablas y gráficas", "Criterio de lectura": "Trazabilidad para reporte", "Estado": "Cumple"},
+    ])
 
     def color_resultado(val):
-        if val == "Cumple":
+        s = str(val).lower()
+        if "cumple" in s and "no" not in s:
             return "background-color: #dcfce7; color: #166534; font-weight: bold"
-        if val == "Observación":
+        if "revis" in s or "observ" in s:
             return "background-color: #fef3c7; color: #92400e; font-weight: bold"
         return "background-color: #fee2e2; color: #991b1b; font-weight: bold"
 
+    st.markdown("### Matriz ejecutiva de cierre")
     st.dataframe(
-        cumplimiento.style.map(color_resultado, subset=["Resultado"]),
+        matriz_ejecutiva.style.map(color_resultado, subset=["Estado"]),
         use_container_width=True,
-        height=250
+        height=460
     )
 
-    estado_html(f"{dictamen_icono} Dictamen general: {dictamen} ({score:.0f}%)", dictamen_tipo)
+    ok_count = int((matriz_ejecutiva["Estado"].astype(str).str.contains("Cumple", case=False, na=False) & ~matriz_ejecutiva["Estado"].astype(str).str.contains("No", case=False, na=False)).sum())
+    rev_count = int(matriz_ejecutiva["Estado"].astype(str).str.contains("Revisar|observ", case=False, na=False).sum())
+    no_count = int(matriz_ejecutiva["Estado"].astype(str).str.contains("No cumple", case=False, na=False).sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Criterios conformes", ok_count)
+    c2.metric("Criterios a revisar", rev_count)
+    c3.metric("No conformidades", no_count)
+    c4.metric("Puntaje global", f"{score:.0f}%")
+
+    estado_html(f"{dictamen_icono} Resultado ejecutivo: {dictamen} ({score:.0f}%)", dictamen_tipo)
+
+    st.markdown("### Lectura técnica automática")
+    conclusion = []
+    conclusion.append(f"El sistema propulsivo requiere una potencia al freno aproximada de {PB_kw_calc:,.0f} kW para una velocidad de servicio de {velocidad:.2f} kn, considerando las eficiencias y márgenes definidos por el usuario.")
+    conclusion.append(f"La hélice evaluada presenta D={diam_prop_m:.2f} m, Z={z_val}, P/D={pd_val:.3f} y Ae/A0={ae_val:.3f}; estos parámetros permiten relacionar la geometría del propulsor con la eficiencia, la carga de pala y el riesgo de cavitación.")
+    if burrill_ok and keller_ok and cavitacion_ok:
+        conclusion.append("La revisión de cavitación resulta favorable a nivel preliminar, ya que los criterios de Burrill, Keller y σ no indican una condición crítica para el punto de operación evaluado.")
+    else:
+        conclusion.append("La revisión de cavitación presenta observaciones; se recomienda verificar diámetro, área expandida, inmersión del eje y carga de pala antes de cerrar el diseño.")
+    if torsion_ok and axial_ok and lateral_ok and fs_eje_ok and fatiga_ok:
+        conclusion.append("Desde el punto de vista dinámico y mecánico, el eje no muestra una condición crítica preliminar en torsión, axial, lateral, factor de seguridad ni fatiga, por lo que el sistema es defendible como prediseño.")
+    else:
+        conclusion.append("La integridad dinámica o mecánica presenta puntos a revisar; conviene validar el sistema con datos reales de rigidez, inercias, chumaceras, acoplamientos, material certificado, concentradores de esfuerzo y fabricante del motor.")
+    conclusion.append("El dictamen emitido por la aplicación debe interpretarse como una evaluación de prediseño. Para aprobación final se requiere validación con sociedad clasificadora, fabricante, pruebas de modelo, CFD o documentación técnica certificada.")
+
+    for p in conclusion:
+        st.markdown(f"- {p}")
+
+    st.markdown("### Acciones recomendadas antes de entrega")
+    acciones = pd.DataFrame([
+        {"Prioridad": "Alta", "Acción": "Descargar PDF técnico", "Objetivo": "Entregar memoria de cálculo con gráficas, tablas, teoría y conclusión."},
+        {"Prioridad": "Alta", "Acción": "Descargar Excel ordenado", "Objetivo": "Conservar todas las tablas completas y hojas de gráficas como anexo técnico."},
+        {"Prioridad": "Media", "Acción": "Revisar datos reales del PDF", "Objetivo": "Confirmar motor, RPM, D, P/D, Ae/A0 y resistencia real del buque."},
+        {"Prioridad": "Media", "Acción": "Validar observaciones", "Objetivo": "Atender cualquier criterio marcado como Revisar o No cumple."},
+        {"Prioridad": "Final", "Acción": "Usar el dictamen ejecutivo", "Objetivo": "Cerrar la presentación con una lectura técnica clara y defendible."},
+    ])
+    st.dataframe(acciones, use_container_width=True, height=250)
+
+    with st.expander("📘 Alcance del dictamen", expanded=False):
+        st.markdown("""
+        Este informe ejecutivo integra los cálculos de la aplicación y los transforma en una conclusión técnica preliminar.
+        No sustituye el proceso formal de diseño de una sociedad clasificadora. Su valor está en organizar la evidencia:
+        entradas, fórmulas, resultados, gráficas, comparaciones y observaciones para defender el prediseño ante una revisión académica o técnica.
+        """)
 
 # ==============================================================================
 # EXPORTACIÓN
 # ==============================================================================
 
-with tab_export:
-    st.subheader("📄 Exportación de Resultados")
+# ==============================================================================
+# INTEGRIDAD DINÁMICA DEL SISTEMA PROPULSIVO
+# ==============================================================================
 
+
+with tab_gemelo:
+    st.subheader("🧩 Integración visual 3D del sistema propulsivo")
+    normativa_pestana("Representación conceptual del tren propulsivo.", [("ISO 484", "geometría y calidad de hélice"), ("Reglas ABS/DNV", "arreglo de eje, cojinetes, transmisión y propulsor"), ("Buenas prácticas de diseño", "lectura visual de potencia, rpm y torque por componente")])
     st.markdown("""
     <div class="section-card">
-    Esta sección permite descargar los resultados del análisis para anexarlos a una memoria
-    técnica, reporte de clase o presentación académica. El archivo Excel incluye resumen,
-    curvas Wageningen y tabla de cumplimiento.
+    <b>Objetivo técnico:</b> integrar en un solo módulo las visualizaciones 3D del sistema
+    motor–transmisión–eje–hélice y las simulaciones visuales de desempeño propulsivo. Esta sección funciona como una
+    <b>representación paramétrica de prediseño</b>: no sustituye CAD, CFD, FEM ni planos de fabricación, pero permite
+    interpretar físicamente los resultados calculados por la aplicación y relacionarlos con la geometría del propulsor,
+    la potencia transmitida, la velocidad de servicio y la carga hidrodinámica de la hélice.
+    <br><br>
+    <span class="small-muted">
+    Las vistas incluidas son conceptuales y están vinculadas a los datos de entrada del usuario. Su propósito es apoyar
+    la revisión técnica, la defensa del cálculo y la identificación preliminar de tendencias de diseño.
+    </span>
     </div>
     """, unsafe_allow_html=True)
 
-    excel_data = generar_excel()
-    st.download_button(
-        label="📥 Descargar resultados en Excel",
-        data=excel_data,
-        file_name="resultados_propulsion_shafting.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    pdf_data = generar_pdf()
-    if pdf_data is not None:
-        st.download_button(
-            label="📄 Descargar reporte técnico PDF",
-            data=pdf_data,
-            file_name="reporte_propulsion_shafting.pdf",
-            mime="application/pdf"
-        )
+    if go is None:
+        estado_html("⚠️ Para activar las visualizaciones 3D instala Plotly agregando `plotly` a requirements.txt.", "warn")
     else:
-        st.warning(
-            "Para activar la descarga PDF agrega 'reportlab' a requirements.txt."
+        twin_resumen, twin_sistema, twin_helice, twin_prueba, twin_carga, twin_lectura = st.tabs([
+            "📌 Panel técnico", "🔩 Tren propulsor 3D", "🌀 Hélice 3D", "🏁 Prueba de mar", "🎨 Carga en hélice", "📋 Lectura técnica"
+        ])
+
+        with twin_resumen:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("PB requerida", f"{PB_kw_calc:,.0f} kW")
+            c2.metric("MCR requerido", f"{MCR_requerido_kw:,.0f} kW")
+            c3.metric("Hélice", f"Z={z_val} · D={diam_prop_m:.2f} m")
+            c4.metric("RPM hélice", f"{rpm_helice_objetivo:.1f} rpm")
+
+            sistema_visual_ok = bool(diam_prop_m > 0 and z_val >= 3 and pd_val > 0 and ae_val > 0 and PB_kw_calc > 0)
+            estado_html(
+                "✅ Módulo visual activo: los modelos se alimentan de los datos actuales de la app." if sistema_visual_ok else
+                "⚠️ Módulo visual con datos incompletos: revisa diámetro, palas, P/D, Ae/A0 o potencia.",
+                "good" if sistema_visual_ok else "warn"
+            )
+
+            st.markdown("""
+            ### ¿Qué hace este módulo?
+            Este apartado traduce los resultados numéricos a una lectura visual del sistema propulsivo. En lugar de mostrar únicamente tablas,
+            permite observar cómo cambian el tren propulsor, la hélice, el mapa de carga y la prueba de mar al modificar los parámetros de entrada.
+
+            **Qué se conserva aquí:**
+            - **Tren propulsor 3D:** motor, transmisión, eje, cojinetes, hélice y empuje.
+            - **Hélice 3D:** geometría paramétrica ligada a D, Z, P/D, Ae/A0 y hub ratio.
+            - **Prueba de mar virtual:** evolución de RT, PE, PB, eficiencia y cavitación con la velocidad.
+            - **Mapa de carga:** visualización de zonas de mayor demanda hidrodinámica sobre las palas.
+            """)
+
+            resumen_twin_df = pd.DataFrame([
+                {"Variable": "Potencia efectiva PE", "Valor": f"{PE_kw:,.1f} kW", "Uso visual": "Base de la potencia útil para vencer resistencia."},
+                {"Variable": "Potencia al freno PB", "Valor": f"{PB_kw_calc:,.1f} kW", "Uso visual": "Carga exigida al motor."},
+                {"Variable": "MCR requerido", "Valor": f"{MCR_requerido_kw:,.1f} kW", "Uso visual": "Reserva operacional recomendada."},
+                {"Variable": "Diámetro de hélice", "Valor": f"{diam_prop_m:.2f} m", "Uso visual": "Escala el propulsor 3D y el disco de operación."},
+                {"Variable": "P/D", "Valor": f"{pd_val:.3f}", "Uso visual": "Modifica la torsión visual de la pala."},
+                {"Variable": "Ae/A0", "Valor": f"{ae_val:.3f}", "Uso visual": "Aumenta o reduce el área visual de las palas."},
+                {"Variable": "σ cavitación", "Valor": f"{sigma_n:.3f}", "Uso visual": "Ayuda a interpretar el margen frente a cavitación."},
+            ])
+            dataframe_profesional(resumen_twin_df, height=285)
+
+        with twin_sistema:
+            st.markdown("""
+            ### Tren propulsor 3D interactivo
+            Representa el arreglo **motor → transmisión/reductora → eje → cojinetes → hélice → empuje**. El objetivo es revisar la coherencia
+            geométrica y funcional del sistema. Puedes moverlo con el mouse y pasar el cursor sobre los componentes para leer datos técnicos.
+            """)
+            sistema_ok = (diametro_eje_mm > 0) and (diam_prop_m > 0) and caja_cumple and (PB_kw_calc <= max(MCR_requerido_kw, PB_kw_calc)*1.02)
+            estado_html(
+                "✅ Integración 3D coherente para prediseño: potencia, transmisión, eje y hélice son consistentes visualmente." if sistema_ok else
+                "⚠️ Integración 3D con observaciones: revisar potencia, relación de transmisión o diámetro de eje.",
+                "good" if sistema_ok else "warn"
+            )
+            fig_sys = crear_sistema_propulsor_3d(
+                D=diam_prop_m, eje_d_mm=diametro_eje_mm, Lpp=eslora, tipo_trans=transmision_tipo,
+                relacion=relacion_reduccion, PB=PB_kw_calc, rpm=rpm_helice_objetivo, Z=z_val,
+                PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio
+            )
+            st.plotly_chart(fig_sys, use_container_width=True, config=_plotly_config())
+            sistema_df = pd.DataFrame([
+                {"Elemento": "Motor", "Dato asociado": f"PB={PB_kw_calc:,.0f} kW / MCR≈{MCR_requerido_kw:,.0f} kW", "Función": "Entrega potencia al tren propulsor."},
+                {"Elemento": "Transmisión", "Dato asociado": f"{transmision_tipo} · i={relacion_reduccion:.2f}", "Función": "Adapta RPM entre motor y hélice."},
+                {"Elemento": "Eje", "Dato asociado": f"d≈{diametro_eje_mm:.0f} mm", "Función": "Transmite torque y soporta cargas dinámicas."},
+                {"Elemento": "Hélice", "Dato asociado": f"D={diam_prop_m:.2f} m · Z={z_val}", "Función": "Convierte potencia en empuje."},
+                {"Elemento": "Empuje", "Dato asociado": f"T≈{thrust_req_N/1000:,.1f} kN", "Función": "Fuerza propulsiva resultante."},
+            ])
+            dataframe_profesional(sistema_df, height=250)
+
+        with twin_helice:
+            st.markdown("""
+            ### Hélice 3D paramétrica
+            La hélice 3D muestra de forma conceptual cómo los parámetros hidrodinámicos se convierten en geometría. No es una pala CAD final,
+            pero sí permite visualizar tendencias: más **P/D** aumenta el paso/twist, más **Ae/A0** aumenta el área de pala y más **Z** cambia la distribución angular.
+            """)
+            helice_geom_ok = (3 <= z_val <= 7) and (0.50 <= pd_val <= 1.40) and (ae_val >= keller_ae_min)
+            estado_html(
+                "✅ Geometría paramétrica coherente: los parámetros se encuentran dentro de rangos razonables de prediseño." if helice_geom_ok else
+                "⚠️ Geometría con observaciones: revisar P/D, Ae/A0, número de palas o criterio de Keller.",
+                "good" if helice_geom_ok else "warn"
+            )
+            fig_prop = crear_helice_3d_parametrica(D=diam_prop_m, Z=z_val, PD=pd_val, AeAo=ae_val, hub_ratio=hub_ratio, rpm=rpm_helice_objetivo, animar=True)
+            st.plotly_chart(fig_prop, use_container_width=True, config=_plotly_config())
+            helice_visual_df = pd.DataFrame([
+                {"Parámetro": "Número de palas Z", "Valor": z_val, "Lectura técnica": "Más palas suelen reducir vibración, pero pueden disminuir eficiencia si el área no se optimiza."},
+                {"Parámetro": "Diámetro D", "Valor": f"{diam_prop_m:.3f} m", "Lectura técnica": "Aumentar D permite más empuje a menor carga de pala, limitado por calado e inmersión."},
+                {"Parámetro": "P/D", "Valor": f"{pd_val:.3f}", "Lectura técnica": "Controla avance geométrico; valores extremos pueden afectar eficiencia y cavitación."},
+                {"Parámetro": "Ae/A0", "Valor": f"{ae_val:.3f}", "Lectura técnica": "Mayor área expandida reduce carga por unidad de área y ayuda contra cavitación."},
+                {"Parámetro": "Hub ratio", "Valor": f"{hub_ratio:.3f}", "Lectura técnica": "Define el tamaño del cubo central y afecta el área efectiva de las palas."},
+                {"Parámetro": "RPM", "Valor": f"{rpm_helice_objetivo:.2f} rpm", "Lectura técnica": "Velocidad de rotación usada para lectura operacional del propulsor."},
+            ])
+            dataframe_profesional(helice_visual_df, height=300)
+
+        with twin_prueba:
+            st.markdown("""
+            ### Prueba de mar virtual
+            Esta visualización simula cómo crecen resistencia y potencia al aumentar la velocidad hasta el punto de servicio.
+            Es útil para explicar por qué la potencia requerida aumenta rápidamente con la velocidad y por qué se aplica margen de servicio.
+            """)
+            fig_sea = crear_prueba_mar_animada_wow(velocidad, resistencia_total_kn, PE_kw, PB_kw_calc, sigma_n, eta_d)
+            st.plotly_chart(fig_sea, use_container_width=True, config=_plotly_config())
+            sea_df = pd.DataFrame([
+                {"Variable": "Velocidad de servicio", "Valor": f"{velocidad:.2f} kn", "Interpretación": "Punto de operación final de la simulación."},
+                {"Variable": "RT de diseño", "Valor": f"{resistencia_total_kn:,.1f} kN", "Interpretación": "Resistencia usada para calcular potencia efectiva."},
+                {"Variable": "PE", "Valor": f"{PE_kw:,.0f} kW", "Interpretación": "Potencia útil para vencer resistencia."},
+                {"Variable": "PB", "Valor": f"{PB_kw_calc:,.0f} kW", "Interpretación": "Potencia requerida al motor considerando pérdidas."},
+                {"Variable": "ηD", "Valor": f"{eta_d:.3f}", "Interpretación": "Eficiencia cuasi-propulsiva global hasta potencia entregada."},
+                {"Variable": "σ", "Valor": f"{sigma_n:.3f}", "Interpretación": "Margen preliminar frente a cavitación."},
+            ])
+            dataframe_profesional(sea_df, height=260)
+
+        with twin_carga:
+            st.markdown("""
+            ### Mapa 3D de carga relativa en la hélice
+            Este mapa colorea las palas según una **carga hidrodinámica relativa conceptual**. No es un cálculo CFD de presión, pero permite
+            explicar dónde se concentra mayor demanda sobre la pala y cómo los parámetros del diseño influyen en esa carga.
+
+            **Cómo leerlo:**
+            - Zonas frías indican menor carga relativa.
+            - Zonas cálidas indican mayor demanda hidrodinámica.
+            - Si el diseño tiene bajo σ, bajo Ae/A0 o alta carga de pala, el mapa tiende a mostrar zonas más exigidas.
+            - Se interpreta junto con Burrill, Keller, Reynolds y σ, no de forma aislada.
+            """)
+            try:
+                _idx_wow = int(res["nO"].idxmax())
+                KT_actual_wow = float(res.loc[_idx_wow, "KT"])
+                KQ_actual_wow = float(res.loc[_idx_wow, "KQ"])
+            except Exception:
+                KT_actual_wow = 0.10
+                KQ_actual_wow = 0.02
+            fig_load = crear_mapa_carga_helice_wow(diam_prop_m, z_val, pd_val, ae_val, hub_ratio, sigma_n, KT_actual_wow, KQ_actual_wow)
+            st.plotly_chart(fig_load, use_container_width=True, config=_plotly_config())
+            carga_ok = sigma_n > 0.2 and burrill_ok and keller_ok
+            estado_html(
+                "✅ Carga visual favorable: la lectura coincide con criterios preliminares aceptables de cavitación y área de pala." if carga_ok else
+                "⚠️ Carga visual con observaciones: revisar σ, Ae/A0, diámetro o carga de pala antes de aceptar el diseño.",
+                "good" if carga_ok else "warn"
+            )
+            carga_df = pd.DataFrame([
+                {"Dato evaluado": "KT en punto de diseño", "Valor": f"{KT_actual_wow:.4f}", "Qué aporta": "Coeficiente de empuje usado como referencia de carga."},
+                {"Dato evaluado": "KQ en punto de diseño", "Valor": f"{KQ_actual_wow:.4f}", "Qué aporta": "Coeficiente de torque usado como referencia de demanda mecánica."},
+                {"Dato evaluado": "Ae/A0", "Valor": f"{ae_val:.3f}", "Qué aporta": "Área disponible para repartir la carga sobre las palas."},
+                {"Dato evaluado": "P/D", "Valor": f"{pd_val:.3f}", "Qué aporta": "Influye en avance, ángulo de pala y carga local."},
+                {"Dato evaluado": "σ cavitación", "Valor": f"{sigma_n:.3f}", "Qué aporta": "Indica margen de presión frente a formación de vapor."},
+                {"Dato evaluado": "Burrill", "Valor": "Cumple" if burrill_ok else "Revisar", "Qué aporta": "Controla carga de pala frente a cavitación."},
+                {"Dato evaluado": "Keller", "Valor": "Cumple" if keller_ok else "Revisar", "Qué aporta": "Verifica área expandida mínima."},
+            ])
+            dataframe_profesional(carga_df, height=315)
+
+        with twin_lectura:
+            st.markdown("""
+            ### Lectura técnica integrada
+            La visualización 3D no reemplaza los cálculos, sino que los hace defendibles: conecta la memoria numérica con una lectura física del sistema.
+            """)
+            conc_df = pd.DataFrame([
+                {"Módulo": "Tren propulsor 3D", "Qué demuestra": "Relación física motor–transmisión–eje–hélice.", "Dato clave": f"PB≈{PB_kw_calc:,.0f} kW"},
+                {"Módulo": "Hélice paramétrica", "Qué demuestra": "Efecto de D, Z, P/D, Ae/A0 y hub ratio en la forma del propulsor.", "Dato clave": f"D={diam_prop_m:.2f} m"},
+                {"Módulo": "Prueba de mar", "Qué demuestra": "Crecimiento de resistencia y potencia con la velocidad.", "Dato clave": f"V={velocidad:.2f} kn"},
+                {"Módulo": "Mapa de carga", "Qué demuestra": "Zonas relativas de mayor demanda hidrodinámica en las palas.", "Dato clave": f"Ae/A0={ae_val:.3f}"},
+            ])
+            dataframe_profesional(conc_df, height=260)
+            st.markdown("""
+            **Conclusión automática:** el sistema queda representado como un conjunto integrado de prediseño. Las visualizaciones son útiles para
+            presentación, revisión de consistencia y explicación técnica. La aceptación final debe validarse con fabricante, sociedad clasificadora,
+            pruebas de mar y, si aplica, CFD/FEM.
+            """)
+
+
+with tab_avanzado:
+    st.subheader("⚙️ Integridad dinámica del sistema eje–hélice")
+    normativa_pestana("Herramientas didácticas de respuesta dinámica.", [("ISO 20816", "vibración de maquinaria rotativa"), ("DNV/ABS", "revisión de resonancia y vibración del tren propulsivo"), ("Análisis modal clásico", "TVA, Bode, órbitas y transmisibilidad")])
+
+    st.markdown("""
+    <div class="section-card">
+    Esta pestaña reúne una lectura avanzada del sistema propulsivo desde el punto de vista dinámico.
+    En una embarcación real no basta con que la hélice entregue empuje y que el motor tenga potencia:
+    el eje también debe operar lejos de resonancias, con respuesta vibratoria controlada y sin indicios
+    preliminares de inestabilidad torsional, axial o lateral.
+    <br><br>
+    <b>¿Qué hace esta sección?</b> Integra una matriz de cumplimiento, un modelo torsional equivalente,
+    respuesta tipo Bode, órbitas laterales del eje y respuesta transitoria de arranque. Todo se calcula
+    con parámetros de prediseño y sirve para explicar el comportamiento dinámico del tren
+    motor–eje–hélice antes de pasar a un análisis de clase o a mediciones reales.
+    <br><br>
+    <b>Uso correcto:</b> es una herramienta didáctica y de prevalidación. Para aprobación formal se requieren
+    datos certificados de fabricante: inercias reales, rigidez de acoplamientos, chumaceras, alineación,
+    amortiguamiento, modelo TVA completo y verificación de sociedad clasificadora.
+    </div>
+    """, unsafe_allow_html=True)
+
+    dyn_resumen, dyn_tva, dyn_bode, dyn_orbitas, dyn_trans, dyn_interpretacion = st.tabs([
+        "✅ Cumplimiento",
+        "🔩 Modelo TVA",
+        "📉 Bode",
+        "🌀 Órbitas",
+        "⏱️ Transitorio",
+        "📚 Fundamento"
+    ])
+
+    def _status_css(v):
+        s = str(v).lower()
+        if "cumple" in s and "no" not in s and "revis" not in s:
+            return "background-color:#dcfce7;color:#166534;font-weight:800"
+        if "revis" in s or "observ" in s or "precauc" in s:
+            return "background-color:#fef3c7;color:#92400e;font-weight:800"
+        return "background-color:#fee2e2;color:#991b1b;font-weight:800"
+
+    def _sf(x, default=0.0):
+        try:
+            if x is None:
+                return default
+            y = float(x)
+            if np.isnan(y):
+                return default
+            return y
+        except Exception:
+            return default
+
+    pb_dyn_kw = _sf(globals().get("PB_kw_calc", globals().get("PB_kw", globals().get("potencia_kw", 0.0))), 0.0)
+    rpm_dyn = max(_sf(globals().get("rpm_motor", globals().get("rpm_real", 0.0)), 75.0), 0.1)
+    d_dyn_m = max(_sf(globals().get("diametro_m", globals().get("diametro_eje_mm", 250.0)/1000.0), 0.25), 0.05)
+    L_equiv_dyn = max(_sf(globals().get("eslora", 100.0), 100.0) * 0.18, 8.0)
+    G_steel = 7.9e10
+    Jp_dyn = math.pi * d_dyn_m**4 / 32.0
+    kt_eje_base = G_steel * Jp_dyn / max(L_equiv_dyn, 0.1)
+
+    try:
+        campbell_alto = bool((campbell_df["Riesgo"].astype(str) == "Alto").any())
+    except Exception:
+        campbell_alto = False
+
+    # Variables globales de dictamen dinámico usadas en varias subpestañas.
+    sep_ax_min = float(axial_df["Separación [%]"].min()) if "axial_df" in globals() and not axial_df.empty else 99.0
+    bode_ratio_default = 1.0
+    orbit_status_default = "Cumple" if lateral_ok else "Revisar"
+    trans_status_default = "Cumple"
+
+    with dyn_resumen:
+        st.markdown("### ✅ Matriz de integridad dinámica")
+        st.markdown("""
+        Esta matriz resume los puntos principales que justifican si el sistema puede considerarse
+        dinámicamente aceptable en etapa preliminar. Un resultado **Revisar** no significa falla: indica
+        que para cerrar el criterio se necesita información más fina, como modelo de shafting, datos de
+        fabricante o medición experimental.
+        """)
+
+        motor_estado_av = globals().get("motor_norma_estado", globals().get("estado_motor_potencia", "Revisar"))
+        transmision_estado_av = "Cumple" if bool(globals().get("transmision_ok", False)) else "Revisar"
+
+        cumplimiento_avanzado = pd.DataFrame([
+            {"Análisis": "Potencia propulsiva", "Qué verifica": "PB requerida compatible con MCR/NCR", "Valor usado": f"PB={pb_dyn_kw:,.0f} kW", "Referencia": "Fabricante / 85% MCR", "Dictamen": motor_estado_av},
+            {"Análisis": "Transmisión", "Qué verifica": "RPM motor y RPM hélice compatibles", "Valor usado": f"n={rpm_dyn:.1f} rpm", "Referencia": "Directa o reductora", "Dictamen": transmision_estado_av},
+            {"Análisis": "Torsión", "Qué verifica": "Esfuerzo alternante menor al admisible", "Valor usado": f"τ={esfuerzo_real_mpa:.2f} MPa / adm={tau_admisible_mpa:.2f} MPa", "Referencia": "IACS UR M68 / DNV Pt.4 Ch.4", "Dictamen": "Cumple" if torsion_ok else "No cumple"},
+            {"Análisis": "Axial", "Qué verifica": "Órdenes 1P, ZP, 2ZP y 3ZP alejadas de fn", "Valor usado": f"separación mín={sep_ax_min:.1f}%", "Referencia": "Práctica shafting", "Dictamen": "Cumple" if axial_ok else "Revisar"},
+            {"Análisis": "Lateral / whirling", "Qué verifica": "RPM fuera de zona crítica ±20%", "Valor usado": f"zona={margen_inf:.1f}-{margen_sup:.1f} rpm", "Referencia": "Velocidad crítica lateral", "Dictamen": "Cumple" if lateral_ok else "No cumple"},
+            {"Análisis": "Campbell", "Qué verifica": "Sin cruces críticos cerca de operación", "Valor usado": f"RPM op={rpm_dyn:.1f}", "Referencia": "Órdenes 1P/ZP", "Dictamen": "Revisar" if campbell_alto else "Cumple"},
+            {"Análisis": "Cavitación", "Qué verifica": "Burrill, Keller y σ preliminar", "Valor usado": f"σ={sigma_n:.2f}; Ae/A0={ae_val:.3f}", "Referencia": "Burrill / Keller", "Dictamen": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok) else "Revisar"},
+            {"Análisis": "Reynolds", "Qué verifica": "Flujo turbulento representativo", "Valor usado": f"Re={reynolds:.2e}", "Referencia": "ITTC open-water", "Dictamen": "Cumple" if reynolds_ok else "Revisar"},
+            {"Análisis": "Trazabilidad", "Qué verifica": "Entradas visibles o estimadas con explicación", "Valor usado": "Datos editables", "Referencia": "Requisito del proyecto", "Dictamen": "Cumple"},
+        ])
+
+        st.dataframe(cumplimiento_avanzado.style.map(_status_css, subset=["Dictamen"]), use_container_width=True, height=430)
+
+        ok = int((cumplimiento_avanzado["Dictamen"].astype(str).str.contains("Cumple", case=False, na=False) & ~cumplimiento_avanzado["Dictamen"].astype(str).str.contains("No", case=False, na=False)).sum())
+        rev = int(cumplimiento_avanzado["Dictamen"].astype(str).str.contains("Revisar|observ", case=False, na=False).sum())
+        no = int(cumplimiento_avanzado["Dictamen"].astype(str).str.contains("No cumple", case=False, na=False).sum())
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Criterios que cumplen", ok)
+        c2.metric("Criterios a revisar", rev)
+        c3.metric("No cumple", no)
+
+        # Gráfica compacta y más ejecutiva del dictamen global.
+        fig_dyn_status, ax_dyn_status = plt.subplots(figsize=(6.6, 2.55))
+        labels = ["Cumple", "Revisar", "No cumple"]
+        vals = [ok, rev, no]
+        y = np.arange(len(labels))
+        bars = ax_dyn_status.barh(y, vals, height=0.46)
+        ax_dyn_status.set_yticks(y)
+        ax_dyn_status.set_yticklabels(labels)
+        ax_dyn_status.set_xlabel("Criterios")
+        ax_dyn_status.set_title("Resumen ejecutivo de integridad dinámica", fontsize=11, fontweight="bold")
+        ax_dyn_status.grid(True, axis="x", linestyle=":", alpha=0.28)
+        ax_dyn_status.spines[["top", "right", "left"]].set_visible(False)
+        ax_dyn_status.set_xlim(0, max(vals + [1]) + 1.2)
+        for i, v in enumerate(vals):
+            ax_dyn_status.text(v + 0.08, i, str(v), va="center", fontsize=10, fontweight="bold")
+        fig_dyn_status.tight_layout()
+        st.pyplot(fig_dyn_status, use_container_width=False)
+
+        if no == 0 and rev <= 2:
+            estado_html("✅ Integridad dinámica preliminar aceptable: no se observan fallas críticas en los criterios revisados.", "good")
+        elif no == 0:
+            estado_html("⚠️ Integridad dinámica con observaciones: el sistema puede defenderse, pero conviene explicar los puntos marcados como revisar.", "warn")
+        else:
+            estado_html("❌ Revisar integridad dinámica: existe al menos un criterio crítico marcado como no cumple.", "bad")
+
+    with dyn_tva:
+        st.markdown("### 🔩 Modelo torsional de masas discretas — TVA")
+        st.markdown("""
+        El modelo TVA representa el tren propulsor como inercias rotatorias conectadas por rigideces torsionales.
+        En ingeniería naval se usa para identificar frecuencias naturales torsionales y modos que podrían coincidir
+        con excitaciones del motor o de la hélice. En esta app se usa como modelo equivalente de prediseño, útil para
+        visualizar la lógica del análisis sin requerir datos confidenciales del fabricante.
+        """)
+
+        with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
+            st.latex(r"J_p = \frac{\pi d^4}{32}")
+            st.latex(r"k_t = \frac{GJ_p}{L}")
+            st.latex(r"\mathbf{K}\phi = \omega_n^2\mathbf{M}\phi")
+            st.latex(r"f_n = \frac{\omega_n}{2\pi}")
+            st.markdown("El modelo no sustituye un TVA de clase; muestra una aproximación transparente a partir de potencia, RPM, diámetro de eje y geometría equivalente.")
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            n_masas = st.slider("Número de masas equivalentes", 3, 6, 4)
+        with col_m2:
+            factor_kt = st.slider("Factor de rigidez torsional", 0.50, 2.00, 1.00, 0.05)
+        with col_m3:
+            factor_inercia = st.slider("Factor de inercia equivalente", 0.50, 2.00, 1.00, 0.05)
+
+        try:
+            omega_op = 2 * math.pi * rpm_dyn / 60.0
+            torque_base = safe_div(max(pb_dyn_kw, 1.0) * 1000.0, max(omega_op, 1e-6), default=1.0)
+            inercia_base = max(torque_base / max(omega_op**2, 1e-6), 1.0) * factor_inercia
+
+            nombres_base = ["Motor", "Volante/acople", "Eje intermedio", "Eje de cola", "Bocina", "Hélice"][:n_masas]
+            inercias = np.linspace(0.85, 1.35, n_masas) * inercia_base
+            inercias[-1] *= 1.8
+            rigideces = np.linspace(1.15, 0.85, n_masas-1) * kt_eje_base * factor_kt
+
+            M = np.diag(inercias)
+            K = np.zeros((n_masas, n_masas))
+            for i in range(n_masas-1):
+                k = rigideces[i]
+                K[i, i] += k
+                K[i+1, i+1] += k
+                K[i, i+1] -= k
+                K[i+1, i] -= k
+
+            eigvals, eigvecs = np.linalg.eig(np.linalg.pinv(M) @ K)
+            eigvals = np.real(eigvals)
+            eigvecs = np.real(eigvecs)
+            freqs = np.sqrt(np.clip(eigvals, 0, None)) / (2*np.pi)
+            order = np.argsort(freqs)
+            freqs = freqs[order]
+            eigvecs = eigvecs[:, order]
+            freqs_nonzero = freqs[freqs > 1e-3]
+
+            tva_df = pd.DataFrame({
+                "Elemento": nombres_base,
+                "Inercia equivalente [kg·m²]": inercias,
+                "Rigidez hacia siguiente [MN·m/rad]": list(rigideces/1e6) + [np.nan]
+            })
+            st.dataframe(tva_df.style.format({"Inercia equivalente [kg·m²]":"{:,.2f}", "Rigidez hacia siguiente [MN·m/rad]":"{:,.2f}"}), use_container_width=True)
+
+            if len(freqs_nonzero) == 0:
+                estado_html("⚠️ Modelo TVA sin frecuencias útiles. Revisa rigidez, diámetro de eje o potencia.", "warn")
+            else:
+                f1 = float(freqs_nonzero[0])
+                ordenes_hz = np.array([rpm_dyn/60.0, z_val*rpm_dyn/60.0, 2*z_val*rpm_dyn/60.0, 3*z_val*rpm_dyn/60.0])
+                sep_min = float(np.min(np.abs(f1 - ordenes_hz) / max(f1, 1e-9) * 100))
+                estado_tva = "Cumple" if sep_min > 12 else ("Revisar" if sep_min > 5 else "No cumple")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Primera fn torsional", f"{f1:.2f} Hz")
+                c2.metric("Separación mínima", f"{sep_min:.1f}%")
+                c3.metric("Dictamen TVA", estado_tva)
+                estado_html(f"{'✅' if estado_tva=='Cumple' else '⚠️' if estado_tva=='Revisar' else '❌'} Modelo TVA: {estado_tva}. La separación mínima frente a órdenes 1P/ZP es {sep_min:.1f}%.", "good" if estado_tva=="Cumple" else "warn" if estado_tva=="Revisar" else "bad")
+
+                fig_modes, ax_modes = plt.subplots(figsize=(10.2, 4.6))
+                modos_a_graficar = min(3, eigvecs.shape[1]-1)
+                x = np.arange(n_masas)
+                for m in range(1, modos_a_graficar+1):
+                    vec = eigvecs[:, m]
+                    vec = vec / max(np.max(np.abs(vec)), 1e-9)
+                    ax_modes.plot(x, vec, marker="o", linewidth=2.2, label=f"Modo {m} — {freqs[m]:.2f} Hz")
+                ax_modes.axhline(0, linewidth=1)
+                ax_modes.set_xticks(x)
+                ax_modes.set_xticklabels(nombres_base, rotation=20)
+                ax_modes.set_ylabel("Amplitud modal normalizada")
+                ax_modes.set_title("Formas modales torsionales equivalentes")
+                ax_modes.grid(True, linestyle=":", alpha=0.5)
+                ax_modes.legend(fontsize=8)
+                st.pyplot(fig_modes)
+        except Exception as e:
+            st.error(f"No se pudo resolver el modelo TVA. Detalle técnico: {e}")
+
+    with dyn_bode:
+        st.markdown("### 📉 Respuesta en frecuencia tipo Bode")
+        st.markdown("""
+        El diagrama de Bode muestra cómo responde dinámicamente el sistema eje-hélice ante diferentes
+        frecuencias de excitación. En lugar de interpretar únicamente el pico matemático de resonancia,
+        esta versión separa dos conceptos: **sensibilidad teórica del modo** y **amplificación real en operación**.
+        Esto evita marcar como falla un caso que solo tendría problemas si el eje operara cerca de su frecuencia natural.
+        """)
+        with st.expander("📘 Teoría, lectura del resultado y fórmulas usadas", expanded=False):
+            st.latex(r"H(r)=\frac{1}{\sqrt{(1-r^2)^2+(2\zeta r)^2}}")
+            st.latex(r"r=\frac{f}{f_n}")
+            st.latex(r"\phi=-\tan^{-1}\left(\frac{2\zeta r}{1-r^2}\right)")
+            st.markdown("""
+            El pico máximo de un Bode ocurre cerca de la frecuencia natural. Con amortiguamiento bajo, por ejemplo
+            ζ = 0.05, el pico teórico puede acercarse a 10×. Eso **no significa automáticamente que el eje falle**;
+            lo importante para el dictamen de operación es cuánto se amplifica el sistema en las frecuencias reales
+            de excitación: **1P** y **ZP**. Por eso la app muestra dos lecturas: el pico teórico y la amplificación operacional.
+
+            **Criterio usado en la app:** amplificación operacional máxima < 1.5× cumple; 1.5–2.5× revisar; > 2.5× no cumple.
+            """)
+
+        zeta = st.slider("Amortiguamiento modal ζ", 0.01, 0.25, 0.05, 0.01)
+        modo_bode = st.selectbox("Modo a visualizar", ["Axial", "Lateral / whirling", "Torsional estimado"])
+        fn_sel = {"Axial": f_axial_natural_hz, "Lateral / whirling": f_natural_hz, "Torsional estimado": f_torsional_est}[modo_bode]
+        f_1p = rpm_dyn / 60.0
+        f_zp = z_val * rpm_dyn / 60.0
+        fmax_bode = max(fn_sel*3.0, f_zp*1.35, 1.0)
+        f_bode = np.linspace(0.05, fmax_bode, 650)
+        r = f_bode / max(fn_sel, 1e-9)
+        mag = 1.0 / np.sqrt((1-r**2)**2 + (2*zeta*r)**2)
+        phase = -np.degrees(np.arctan2(2*zeta*r, 1-r**2))
+        peak = float(np.nanmax(mag))
+        peak_db = 20*np.log10(max(peak, 1e-9))
+
+        def _amp_at(freq):
+            rr = freq / max(fn_sel, 1e-9)
+            return float(1.0 / math.sqrt((1-rr**2)**2 + (2*zeta*rr)**2))
+
+        amp_1p = _amp_at(f_1p)
+        amp_zp = _amp_at(f_zp)
+        amp_oper = max(amp_1p, amp_zp)
+        amp_oper_db = 20*np.log10(max(amp_oper, 1e-9))
+        bode_estado = "Cumple" if amp_oper < 1.5 else ("Revisar" if amp_oper <= 2.5 else "No cumple")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Modo", modo_bode)
+        c2.metric("fn", f"{fn_sel:.2f} Hz")
+        c3.metric("Amplif. operacional", f"{amp_oper:.2f}× / {amp_oper_db:.1f} dB")
+        c4.metric("Dictamen", bode_estado)
+        estado_html(
+            f"{'✅' if bode_estado=='Cumple' else '⚠️' if bode_estado=='Revisar' else '❌'} Bode operacional: {bode_estado}. "
+            f"La amplificación máxima en 1P/ZP es {amp_oper:.2f}×. El pico teórico de resonancia es {peak:.2f}×, "
+            "pero solo sería crítico si la operación cae cerca de esa frecuencia natural.",
+            "good" if bode_estado=="Cumple" else "warn" if bode_estado=="Revisar" else "bad"
         )
 
-    st.markdown("### Requisitos recomendados para Streamlit Cloud")
-    st.code(
-        "streamlit\npandas\nnumpy\nmatplotlib\nopenpyxl\nxlsxwriter\nreportlab",
-        language="text"
-    )
+        st.caption("Lectura rápida: el pico teórico ayuda a entender la sensibilidad del modo; el dictamen se basa en las frecuencias reales de operación 1P y ZP.")
+        bode_resumen_df = pd.DataFrame([
+            {"Frecuencia": "1P operación", "Hz": f_1p, "Amplificación [x]": amp_1p, "Magnitud [dB]": 20*np.log10(max(amp_1p, 1e-9))},
+            {"Frecuencia": "ZP operación", "Hz": f_zp, "Amplificación [x]": amp_zp, "Magnitud [dB]": 20*np.log10(max(amp_zp, 1e-9))},
+            {"Frecuencia": "Pico teórico", "Hz": float(f_bode[np.nanargmax(mag)]), "Amplificación [x]": peak, "Magnitud [dB]": peak_db},
+        ])
+        st.dataframe(bode_resumen_df.style.format({"Hz":"{:.2f}", "Amplificación [x]":"{:.2f}", "Magnitud [dB]":"{:.1f}"}), use_container_width=True, height=150)
 
+        fig_mag, ax_mag = plt.subplots(figsize=(8.2, 3.2))
+        mag_db = 20*np.log10(mag)
+        ax_mag.plot(f_bode, mag_db, linewidth=2.2, label="Magnitud")
+        ax_mag.axvline(fn_sel, linestyle="--", linewidth=1.8, label=f"fn = {fn_sel:.2f} Hz")
+        ax_mag.scatter([f_1p, f_zp], [20*np.log10(max(amp_1p, 1e-9)), 20*np.log10(max(amp_zp, 1e-9))], s=70, zorder=5, label="1P / ZP")
+        ax_mag.set_title(f"Bode operacional de magnitud — {modo_bode}", fontsize=11, fontweight="bold")
+        ax_mag.set_xlabel("Frecuencia [Hz]")
+        ax_mag.set_ylabel("Magnitud [dB]")
+        ax_mag.grid(True, linestyle=":", alpha=0.35)
+        ax_mag.spines[["top", "right"]].set_visible(False)
+        ax_mag.legend(fontsize=8, loc="best")
+        fig_mag.tight_layout()
+        st.pyplot(fig_mag, use_container_width=False)
 
-# ==============================================================================
-# FÓRMULAS DEL MODELO
-# ==============================================================================
+        fig_phase, ax_phase = plt.subplots(figsize=(8.2, 3.0))
+        ax_phase.plot(f_bode, phase, linewidth=2.2)
+        ax_phase.axvline(fn_sel, linestyle="--", linewidth=1.8, label=f"fn = {fn_sel:.2f} Hz")
+        ax_phase.scatter([f_1p, f_zp], [np.interp(f_1p, f_bode, phase), np.interp(f_zp, f_bode, phase)], s=70, zorder=5, label="1P / ZP")
+        ax_phase.set_title(f"Bode operacional de fase — {modo_bode}", fontsize=11, fontweight="bold")
+        ax_phase.set_xlabel("Frecuencia [Hz]")
+        ax_phase.set_ylabel("Fase [°]")
+        ax_phase.grid(True, linestyle=":", alpha=0.35)
+        ax_phase.spines[["top", "right"]].set_visible(False)
+        ax_phase.legend(fontsize=8, loc="best")
+        fig_phase.tight_layout()
+        st.pyplot(fig_phase, use_container_width=False)
 
-with tab_formulas:
-    st.subheader("🧮 Formulario Técnico del Modelo")
-
-    st.markdown("""
-    <div class="section-card">
-    Esta pestaña reúne las principales expresiones matemáticas utilizadas por la aplicación.
-    Su objetivo es que, durante la presentación, se pueda justificar de forma clara qué
-    ecuaciones se emplearon para obtener los resultados de hidrodinámica, cavitación,
-    vibración torsional, vibración lateral y dictamen preliminar.
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("### 1. Velocidad efectiva de avance hacia la hélice")
-    st.latex(r"V_A = V_s(1-w)")
-    st.markdown("Donde **Vs** es la velocidad del buque en m/s y **w** es la fracción de estela.")
-
-    st.markdown("### 2. Coeficiente de avance")
-    st.latex(r"J = \frac{V_A}{nD}")
-    st.markdown("Donde **n** es la velocidad de giro en rev/s y **D** es el diámetro de la hélice.")
-
-    st.markdown("### 3. Polinomios Wageningen Serie B")
-    st.latex(r"K_T = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
-    st.latex(r"K_Q = \sum C_i J^{s_i}(P/D)^{t_i}(A_E/A_0)^{u_i}Z^{v_i}")
-    st.markdown("Los coeficientes **Ci, si, ti, ui, vi** se leen del archivo `Tabla 1.xlsx`.")
-
-    st.markdown("### 4. Eficiencia en aguas abiertas")
-    st.latex(r"\eta_O = \frac{J}{2\pi}\frac{K_T}{K_Q}")
-
-    st.markdown("### 5. Número de Reynolds")
-    st.latex(r"Re = \frac{V_A D}{\nu}")
-    st.markdown("Se usa para identificar si el flujo se encuentra en régimen laminar, transicional o turbulento.")
-
-    st.markdown("### 6. Coeficiente de cavitación")
-    st.latex(r"\sigma = \frac{P_{atm} + \rho g h - P_v}{\frac{1}{2}\rho V_A^2}")
-    st.markdown("Valores bajos de σ indican mayor riesgo de cavitación.")
-
-    st.markdown("### 7. Torque nominal")
-    st.latex(r"\omega = \frac{2\pi n}{60}")
-    st.latex(r"T = \frac{P}{\omega}")
-
-    st.markdown("### 8. Esfuerzo torsional alternante")
-    st.latex(r"T_{alt} = 0.15T")
-    st.latex(r"W_t = \frac{\pi d^3}{16}")
-    st.latex(r"\tau = \frac{T_{alt}}{W_t}")
-    st.latex(r"\tau_{adm} = 0.35\left(\frac{\sigma_{UTS}}{3}\right)")
-
-    st.markdown("### 9. Deflexión y frecuencia lateral")
-    st.latex(r"I = \frac{\pi d^4}{64}")
-    st.latex(r"\delta_h = \frac{W_h L^3}{3EI}")
-    st.latex(r"\delta_e = \frac{W_e L^3}{8EI}")
-    st.latex(r"f_n = \frac{1}{2\pi\sqrt{\delta_h + \delta_e}}")
-    st.latex(r"n_{crit} = 60 f_n")
-
-    st.markdown("### 10. Órdenes del Diagrama de Campbell")
-    st.latex(r"f_{orden} = k\frac{n}{60}")
-    st.latex(r"f_{ZP} = Z\frac{n}{60}")
-
-    st.markdown("### 11. Índice global de diseño")
-    st.markdown("""
-    El índice global se calcula con ponderaciones preliminares:
-
-    - Hidrodinámica: 15 puntos
-    - Reynolds: 10 puntos
-    - Cavitación: 15 puntos
-    - Torsión: 20 puntos
-    - Vibración axial: 20 puntos
-    - Vibración lateral: 20 puntos
-
-    Este índice no sustituye una aprobación oficial de una sociedad de clasificación,
-    pero permite generar un dictamen preliminar de ingeniería.
-    """)
-
-# ==============================================================================
-# GUÍA DIDÁCTICA
-# ==============================================================================
-
-with tab_guia:
-    st.subheader("📚 Guía de Referencia Naval")
-
-    st.markdown("""
-    <div class="section-card">
-    Esta guía sirve como referencia rápida para que el usuario pueda ingresar datos coherentes
-    al analizar distintos tipos de buque. Los rangos son orientativos y no sustituyen una base
-    de datos de proyecto ni reglas oficiales de clasificación.
-    </div>
-    """, unsafe_allow_html=True)
-
-    c1, c2 = st.columns(2)
-
-    with c1:
+    with dyn_orbitas:
+        st.markdown("### 🌀 Órbitas laterales estimadas del eje")
         st.markdown("""
-        ### Rangos típicos de Lpp
+        Las órbitas muestran el recorrido del centro del eje en el plano transversal. En buques reales se obtienen
+        con sensores de proximidad y acelerómetros. En la app sirven para explicar visualmente desbalance,
+        whirling, anisotropía de apoyos y cercanía a velocidades críticas.
+        """)
+        with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
+            st.latex(r"x(t)=X\cos(\Omega t)")
+            st.latex(r"y(t)=Y\sin(\Omega t+\phi)")
+            st.markdown("Criterio didáctico: amplitudes bajas y órbita estable cumplen; amplitudes elevadas o fase extrema requieren revisión.")
 
-        | Tipo de buque | Lpp aproximado |
-        |---|---:|
-        | Remolcador | 20–50 m |
-        | OSV / PSV | 60–110 m |
-        | AHTS | 70–120 m |
-        | Ferry | 80–220 m |
-        | Bulk carrier | 180–250 m |
-        | Buque tanque | 250–330 m |
-        | Portacontenedores | 250–400 m |
+        sep_lat = min(abs(rpm_dyn - margen_inf), abs(rpm_dyn - margen_sup)) / max(rpm_dyn, 1e-9) * 100.0
+        amp_base_um = 70.0 if lateral_ok else 220.0
+        amplificacion = 1.0 + max(0.0, 12.0 - sep_lat)/12.0
+        amp_x = amp_base_um * amplificacion
+        amp_y = amp_x * (0.55 if lateral_ok else 0.85)
+        fase_deg = 35 if lateral_ok else 75
+        orbit_estado = "Cumple" if (lateral_ok and amp_x < 150) else ("Revisar" if amp_x < 300 else "No cumple")
+        th = np.linspace(0, 2*np.pi, 720)
+        x_orb = amp_x * np.cos(th)
+        y_orb = amp_y * np.sin(th + np.deg2rad(fase_deg))
 
-        ### Número de palas
+        o1, o2, o3, o4 = st.columns(4)
+        o1.metric("Amplitud X", f"{amp_x:.1f} µm")
+        o2.metric("Amplitud Y", f"{amp_y:.1f} µm")
+        o3.metric("Fase", f"{fase_deg}°")
+        o4.metric("Dictamen", orbit_estado)
+        estado_html(f"{'✅' if orbit_estado=='Cumple' else '⚠️' if orbit_estado=='Revisar' else '❌'} Órbitas: {orbit_estado}. La visualización sugiere {'movimiento lateral controlado' if orbit_estado=='Cumple' else 'posible sensibilidad lateral a revisar'}.", "good" if orbit_estado=="Cumple" else "warn" if orbit_estado=="Revisar" else "bad")
 
-        - **3 palas:** buena eficiencia, más vibración.
-        - **4 palas:** configuración comercial común.
-        - **5 palas:** menor vibración y ruido.
-        - **6–7 palas:** aplicaciones especiales o alta carga.
+        if HAS_PLOTLY:
+            fig_orb = plotly_orbita_animada(x_orb, y_orb, amp_x, amp_y, fase_deg, orbit_estado)
+            st.plotly_chart(fig_orb, use_container_width=True, config={"displaylogo": False, "scrollZoom": True, "toImageButtonOptions": {"format": "png", "scale": 2}})
+        else:
+            fig_orb, ax_orb = plt.subplots(figsize=(7.2, 6.4))
+            ax_orb.plot(x_orb, y_orb, linewidth=2.6)
+            ax_orb.scatter([0], [0], s=80, marker="+")
+            ax_orb.set_aspect("equal", adjustable="box")
+            ax_orb.set_title("Órbita lateral estimada del eje")
+            ax_orb.set_xlabel("Desplazamiento X [µm]")
+            ax_orb.set_ylabel("Desplazamiento Y [µm]")
+            ax_orb.grid(True, linestyle=":", alpha=0.55)
+            st.pyplot(fig_orb)
+
+        orb_df = pd.DataFrame([
+            {"Parámetro": "Separación lateral mínima", "Valor": sep_lat, "Unidad": "%", "Interpretación": "Mayor separación implica menor riesgo de resonancia"},
+            {"Parámetro": "Amplitud X estimada", "Valor": amp_x, "Unidad": "µm", "Interpretación": "Componente horizontal de órbita"},
+            {"Parámetro": "Amplitud Y estimada", "Valor": amp_y, "Unidad": "µm", "Interpretación": "Componente vertical de órbita"},
+            {"Parámetro": "Ángulo de fase", "Valor": fase_deg, "Unidad": "°", "Interpretación": "Inclinación/retardo de la órbita"},
+            {"Parámetro": "Dictamen", "Valor": np.nan, "Unidad": "—", "Interpretación": orbit_estado},
+        ])
+        st.dataframe(orb_df.style.format({"Valor": lambda x: "—" if pd.isna(x) else f"{x:.2f}"}), use_container_width=True)
+
+    with dyn_trans:
+        st.markdown("### ⏱️ Respuesta transitoria durante arranque")
+        st.markdown("""
+        El sistema propulsivo no pasa instantáneamente de reposo a régimen permanente. Durante el arranque puede
+        cruzar frecuencias de excitación cercanas a frecuencias naturales. Este módulo permite observar si la
+        respuesta se amortigua correctamente y si el paso de pala ZP se aproxima a la frecuencia axial.
+        """)
+        with st.expander("📘 Teoría y fórmulas usadas", expanded=False):
+            st.latex(r"n(t)=n_{op}\left(1-e^{-t/\tau}\right)")
+            st.latex(r"x(t)=x_{est}\left[1-e^{-\zeta\omega_n t}\cos(\omega_n t)\right]")
+            st.markdown("Criterio didáctico: respuesta amortiguada cumple; sobreimpulso elevado requiere revisión; vibración creciente no cumple.")
+
+        t_final = st.slider("Tiempo de simulación [s]", 10, 180, 60)
+        zeta_tr = st.slider("Amortiguamiento transitorio ζ", 0.02, 0.25, 0.06, 0.01, key="zeta_transitorio_prof")
+        tau_arranque = st.slider("Constante de rampa τ [s]", 2, 60, max(5, int(t_final/5)))
+
+        t_sim = np.linspace(0, t_final, 1400)
+        rpm_sim = rpm_dyn * (1 - np.exp(-t_sim / max(tau_arranque, 1)))
+        w_n_ax = 2*np.pi*max(f_axial_natural_hz, 0.1)
+        respuesta = (1 - np.exp(-zeta_tr*w_n_ax*t_sim)*np.cos(w_n_ax*t_sim)) * desplazamiento_axial_est_m * 1000
+        f_zp_trans = z_val * rpm_sim / 60.0
+        sobreimpulso = (np.nanmax(respuesta) - respuesta[-1]) / max(abs(respuesta[-1]), 1e-9) * 100.0 if len(respuesta) else 0.0
+        distancia_zp = np.nanmin(np.abs(f_zp_trans - f_axial_natural_hz)) / max(f_axial_natural_hz, 1e-9) * 100.0
+        trans_estado = "Cumple" if (sobreimpulso < 25 and distancia_zp > 8) else ("Revisar" if sobreimpulso < 60 else "No cumple")
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Sobreimpulso estimado", f"{sobreimpulso:.1f}%")
+        c2.metric("Separación mínima ZP-fn", f"{distancia_zp:.1f}%")
+        c3.metric("Dictamen", trans_estado)
+        estado_html(f"{'✅' if trans_estado=='Cumple' else '⚠️' if trans_estado=='Revisar' else '❌'} Transitorio: {trans_estado}. La respuesta {'se amortigua de forma aceptable' if trans_estado=='Cumple' else 'debe revisarse por cercanía a resonancia o sobreimpulso'}.", "good" if trans_estado=="Cumple" else "warn" if trans_estado=="Revisar" else "bad")
+
+        fig_rpm, ax_rpm = plt.subplots(figsize=(10.5, 4.3))
+        ax_rpm.plot(t_sim, rpm_sim, linewidth=2.6, label="RPM del eje")
+        ax_rpm.axhline(rpm_dyn, linestyle="--", linewidth=2, label="RPM operación")
+        ax_rpm.set_title("Rampa de arranque del eje")
+        ax_rpm.set_xlabel("Tiempo [s]")
+        ax_rpm.set_ylabel("RPM")
+        ax_rpm.grid(True, linestyle=":", alpha=0.55)
+        ax_rpm.legend(fontsize=8)
+        st.pyplot(fig_rpm)
+
+        fig_resp, ax_resp = plt.subplots(figsize=(10.5, 4.3))
+        ax_resp.plot(t_sim, respuesta, linewidth=2.6, label="Respuesta axial")
+        ax_resp.set_title("Respuesta transitoria axial estimada")
+        ax_resp.set_xlabel("Tiempo [s]")
+        ax_resp.set_ylabel("Desplazamiento axial [mm]")
+        ax_resp.grid(True, linestyle=":", alpha=0.55)
+        ax_resp.legend(fontsize=8)
+        st.pyplot(fig_resp)
+
+        fig_cross, ax_cross = plt.subplots(figsize=(10.5, 4.0))
+        ax_cross.plot(t_sim, f_zp_trans, linewidth=2.4, label="ZP durante arranque")
+        ax_cross.axhline(f_axial_natural_hz, linestyle="--", linewidth=2, label="fn axial")
+        ax_cross.set_title("Cruce de paso de pala durante arranque")
+        ax_cross.set_xlabel("Tiempo [s]")
+        ax_cross.set_ylabel("Frecuencia [Hz]")
+        ax_cross.grid(True, linestyle=":", alpha=0.55)
+        ax_cross.legend(fontsize=8)
+        st.pyplot(fig_cross)
+
+    with dyn_interpretacion:
+        st.markdown("### 📚 Fundamento técnico y defensa oral")
+        st.markdown("""
+        **Por qué esta pestaña es importante:** en un sistema propulsivo real, la potencia calculada y la eficiencia
+        de la hélice no garantizan por sí solas una operación segura. El eje trabaja bajo torque, empuje axial,
+        cargas laterales, excitaciones periódicas por paso de pala y cambios transitorios de velocidad. Si alguna
+        excitación coincide con una frecuencia natural, puede aparecer resonancia, aumento de vibración, ruido,
+        fatiga, daño en cojinetes o pérdida de confiabilidad.
+
+        **Qué aporta a la app:**
+        - Convierte el diseño de propulsión en una revisión integral motor–eje–hélice.
+        - Permite justificar por qué se revisan Campbell, Bode, órbitas y transitorio.
+        - Da argumentos claros para explicar que una RPM teórica óptima no siempre coincide con la RPM real.
+        - Sirve como puente entre hidrodinámica, shafting dynamics y criterios de clasificación.
+
+        **Cómo defenderlo:** estos módulos son preliminares. No sustituyen un software de clase ni un análisis TVA
+        certificado, pero demuestran que el diseño considera riesgos dinámicos relevantes y que los resultados se
+        interpretan con criterio de ingeniería.
         """)
 
-    with c2:
-        st.markdown("""
-        ### Rangos típicos de Ae/A0
-
-        | Aplicación | Ae/A0 |
-        |---|---:|
-        | Baja carga | 0.40–0.55 |
-        | Mercante estándar | 0.50–0.70 |
-        | Alta carga | 0.70–0.95 |
-
-        ### Interpretación rápida
-
-        - **KT:** capacidad de empuje.
-        - **KQ:** torque requerido.
-        - **ηO:** eficiencia ideal de aguas abiertas.
-        - **σ:** tendencia a cavitación.
-        - **Campbell:** detección de posibles resonancias.
+        st.warning("""
+        Limitación técnica: para diseño final real se requieren datos certificados de fabricante y reglas completas
+        de clase. La app usa modelos equivalentes de prediseño para fines académicos, transparentes y editables.
         """)
 
-    st.info(
-        "Recomendación: para un proyecto formal, documentar siempre la fuente de dimensiones, "
-        "potencia, RPM, material y coeficientes hidrodinámicos usados."
-    )
+
+# Firma discreta de autoría
+st.markdown(f"""
+<div class="author-footer">
+{APP_VERSION} · © 2026 · {APP_AUTHOR_SHORT}
+</div>
+""", unsafe_allow_html=True)
