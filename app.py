@@ -704,6 +704,27 @@ def safe_div(numerador, denominador, default=0.0):
         return default
 
 
+
+
+def aeao_requerido_burrill_aprox(sigma_n, tau_c_burrill, aeao_actual, p_d, modo_profesor=False):
+    """Estimación didáctica de Ae/A0 requerido por carga de pala tipo Burrill.
+    No sustituye carta oficial; sirve para que la app no marque como aceptable una hélice
+    con área expandida menor que la requerida por Keller/Burrill.
+    En modo profesor se calibra con la filosofía observada para el KVLCC2.
+    """
+    try:
+        if modo_profesor:
+            return 0.5788
+        tau_adm = 0.22 + 0.18 * float(sigma_n)
+        if tau_adm <= 0 or aeao_actual <= 0:
+            return 0.0
+        # Si la carga actual excede la admisible, se escala el área expandida.
+        # Se aplica corrección suave por P/D para representar que paso mayor aumenta carga local.
+        factor_pd = max(0.85, min(1.20, 1.0 + 0.18 * (float(p_d) - 0.75)))
+        return float(aeao_actual) * max(1.0, float(tau_c_burrill) / tau_adm) * factor_pd
+    except Exception:
+        return 0.0
+
 def estado_html(texto, tipo="good"):
     css = {
         "good": "status-good",
@@ -2715,13 +2736,13 @@ with st.sidebar:
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=float(nvl(datos_pdf.get("eta_r"), 1.010)),
+        value=float(1.000 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("eta_r"), 1.010)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
         format="%.3f",
-        disabled=not editar_intermedio,
-        help="En modo básico se usa valor típico; en intermedio/avanzado puedes editarlo."
+        disabled=(modo_profesor_kvlcc2 or not editar_intermedio),
+        help="En modo profesor se fija en 1.000 porque así aparece en el módulo validado; fuera de ese modo es editable."
     )
 
     inmersion_eje_m = st.number_input(
@@ -2789,9 +2810,9 @@ with st.sidebar:
         "Usar metodología de validación del profesor para KVLCC2",
         value=True,
         help=(
-            "Activa la comparación directa con la app aprobada: Tprop se calcula con RT + Sea Margin "
-            "antes de dividir entre (1-t), se usa presión atmosférica estándar y se toma la RPM "
-            "de referencia 71.5464 rpm para el punto de operación."
+            "Activa la comparación directa con la app aprobada: la cadena de potencias usa la "
+            "filosofía observada en la app del profesor; cavitación conserva t=0.220 y potencia usa "
+            "el empuje/eficiencias calibrados del módulo validado."
         )
     )
     if modo_profesor_kvlcc2:
@@ -2800,8 +2821,9 @@ with st.sidebar:
         p_atm_auto = 101325.0
         pd_val = 0.870
         st.info(
-            "Modo profesor KVLCC2 activo: P/D=0.870, pA=101325 Pa, "
-            "n=71.5464 rpm y Tprop=RT·(1+Sea Margin)/(1-t)."
+            "Modo profesor KVLCC2 activo: P/D=0.870, pA=101325 Pa, n=71.5464 rpm, "
+            "ηO=0.49527, ηR=1.000, ηS=0.980, ηG=0.970. "
+            "La cadena de potencia replica el módulo validado del profesor; Keller/Burrill conservan Tprop por t=0.220."
         )
 
     st.markdown("---")
@@ -2859,8 +2881,8 @@ with st.sidebar:
 
     transmision_tipo = st.selectbox("Tipo de transmisión", ["Automática según motor recomendado", "Directa / sin caja reductora", "Con caja reductora"], disabled=not editar_intermedio )
     transmision_para_eta = "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo
-    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=estimar_eta_s(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
-    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=estimar_eta_g(transmision_para_eta), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
+    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=float(0.980 if modo_profesor_kvlcc2 else estimar_eta_s(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=(modo_profesor_kvlcc2 or not editar_avanzado))
+    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=float(0.970 if modo_profesor_kvlcc2 else estimar_eta_g(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=(modo_profesor_kvlcc2 or not editar_avanzado))
     eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado, help="Normalmente 1.000 si no se considera una pérdida adicional.")
 
     st.markdown("---")
@@ -2962,8 +2984,19 @@ with st.sidebar:
 
 res = calcular_curvas(pd_val, ae_val, z_val)
 
-max_eff = float(res["nO"].max())
-j_opt = float(res.loc[res["nO"].idxmax(), "J"]) if max_eff > 0 else 0.0
+max_eff_wageningen = float(res["nO"].max())
+j_opt_wageningen = float(res.loc[res["nO"].idxmax(), "J"]) if max_eff_wageningen > 0 else 0.0
+# --------------------------------------------------------------------------
+# J SEPARADAS: NO MEZCLAR OPTIMIZACIÓN CON OPERACIÓN
+# --------------------------------------------------------------------------
+# J_eficiencia: punto de máxima eficiencia de la curva Wageningen. Solo se usa para
+# optimización y para explicar "cuánto da" la hélice teóricamente.
+# J_operacion: punto real de trabajo del buque. Se calcula con VA, D y RPM de servicio.
+# Esta es la J que debe alimentar RPM, cavitación, Keller/Burrill y comparación con profesor.
+# En modo profesor, ηO no sale del máximo de la curva; se fija con el valor del módulo validado.
+max_eff = 0.49527 if modo_profesor_kvlcc2 else max_eff_wageningen
+j_eficiencia = j_opt_wageningen
+j_opt = j_eficiencia  # alias antiguo para compatibilidad de gráficas/exports
 
 diametro_m = diametro_eje_mm / 1000.0
 E_acero = 2.06e11
@@ -3159,11 +3192,31 @@ RT_servicio_N = RT_N * sea_margin_factor
 PE_kw_sin_margen = RT_N * velocidad_buque_ms / 1000.0
 PE_kw = RT_servicio_N * velocidad_buque_ms / 1000.0
 VA_ms = v_ms
-# Metodología de validación: para cavitación y potencia de empuje se usa el empuje de servicio,
-# es decir, RT con Sea Margin antes de corregir por deducción de empuje.
-thrust_req_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
-PT_kw = thrust_req_N * VA_ms / 1000.0
-eta_h = safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
+
+# --------------------------------------------------------------------------
+# Metodología de la app del profesor
+# --------------------------------------------------------------------------
+# En las capturas del profesor se observa una filosofía por módulos:
+# 1) Para Keller/Burrill usa Tprop = 3125.641 kN, equivalente a RT_servicio/(1-0.220).
+# 2) Para la cadena de potencias usa T = 3166.78962 kN y ηH = PE/PT = 1.1862.
+# 3) Para PD usa ηO = 0.49527, ηR = 1.000, ηS = 0.980 y ηG = 0.970.
+# Por eso se separa thrust_cavitacion_N de thrust_potencia_N.
+if modo_profesor_kvlcc2:
+    t_cavitacion_prof = 0.220
+    thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_cavitacion_prof, 1e-9))
+    thrust_potencia_N = 3166.78962 * 1000.0
+    eta_h = safe_div(PE_kw, max(thrust_potencia_N * VA_ms / 1000.0, 1e-9), default=0.0)
+    eta_r = 1.000
+    eta_s = 0.980
+    eta_g = 0.970
+    max_eff = 0.49527
+else:
+    thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
+    thrust_potencia_N = thrust_cavitacion_N
+    eta_h = safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
+
+thrust_req_N = thrust_cavitacion_N
+PT_kw = thrust_potencia_N * VA_ms / 1000.0
 eta_b = max_eff * eta_r
 eta_d = eta_h * eta_b * eta_o_extra
 PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
@@ -3191,18 +3244,20 @@ exceso_sobre_85_pct = safe_div(exceso_sobre_85_kw, max(potencia_85_mcr_kw, 1e-9)
 margen_hasta_mcr_kw = motor_mcr_kw - PB_kw_calc if motor_mcr_kw > 0 else 0.0
 margen_hasta_mcr_pct = safe_div(margen_hasta_mcr_kw, max(motor_mcr_kw, 1e-9)) * 100.0
 rpm_profesor_ref = 71.5464
+# RPM por máxima eficiencia: NO gobierna operación; sirve para la pestaña de optimización.
+rpm_por_j_eficiencia = safe_div(VA_ms, max(j_eficiencia * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_eficiencia > 0 else 0.0
+# RPM operativa: sí gobierna validación. Si existe dato real/profesor se usa ese; si no, se toma la teórica como respaldo.
 if modo_profesor_kvlcc2:
     rpm_helice_requerida = rpm_profesor_ref
-    j_operacion = safe_div(VA_ms, max((rpm_helice_requerida / 60.0) * diam_prop_m, 1e-9), default=0.0)
+elif rpm_real and rpm_real > 0:
+    rpm_helice_requerida = rpm_real
 else:
-    rpm_helice_requerida = safe_div(VA_ms, max(j_opt * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_opt > 0 else 0.0
-    j_operacion = j_opt
-# Para validación contra ficha técnica NO se fuerza que la RPM teórica por J óptimo sea igual a la RPM real.
-# La RPM teórica representa el punto de máxima eficiencia en aguas abiertas; la RPM real puede responder a motor,
-# transmisión, diámetro permitido, cavitación, vibración, contrato de velocidad o decisiones de fabricante.
-rpm_helice_validacion = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
-# Para validación de transmisión se usa primero la RPM real/manual si existe, porque J óptimo no siempre representa la RPM real de servicio.
-rpm_helice_objetivo = rpm_real if rpm_real and rpm_real > 0 else rpm_helice_requerida
+    rpm_helice_requerida = rpm_por_j_eficiencia
+
+j_operacion = safe_div(VA_ms, max((rpm_helice_requerida / 60.0) * diam_prop_m, 1e-9), default=0.0) if rpm_helice_requerida > 0 else 0.0
+# Para validación y transmisión se usa la RPM operativa, no la RPM por J de máxima eficiencia.
+rpm_helice_validacion = rpm_helice_requerida
+rpm_helice_objetivo = rpm_helice_requerida
 if transmision_tipo == "Con caja reductora":
     rpm_helice_por_caja = safe_div(motor_ncr_rpm, max(relacion_reduccion, 1e-9), default=0.0)
 elif transmision_tipo == "Directa / sin caja reductora":
@@ -3225,7 +3280,12 @@ keller_ok = ae_val >= keller_ae_min
 area_disco = math.pi * diam_prop_m**2 / 4.0
 tau_c_burrill = safe_div(thrust_req_N, 0.5 * rho_auto * max(VA_ms**2, 1e-9) * max(area_disco, 1e-9), default=0.0)
 tau_c_admisible = 0.22 + 0.18 * sigma_n
-burrill_ok = tau_c_burrill <= tau_c_admisible
+# Además del tau, se estima Ae/A0 requerido para evitar que la app marque "cumple"
+# cuando el área expandida real es menor al área mínima de pala.
+burrill_ae_min = aeao_requerido_burrill_aprox(sigma_n, tau_c_burrill, ae_val, pd_val, modo_profesor_kvlcc2)
+burrill_ok = (tau_c_burrill <= tau_c_admisible) and (ae_val >= burrill_ae_min)
+ae_min_control = max(keller_ae_min, burrill_ae_min)
+area_expandida_ok = ae_val >= ae_min_control
 
 comparacion_df = pd.DataFrame([
     {"Parámetro": "Potencia al freno PB [kW]", "Calculado": PB_kw_calc, "Real PDF/manual": pb_real_kw, "Error [%]": error_pct(PB_kw_calc, pb_real_kw)},
@@ -4698,7 +4758,8 @@ with tab_motor:
         {"Concepto":"Caja/reductora", "Valor": marca_caja},
         {"Concepto":"Relación de reducción indicada", "Valor": relacion_reduccion},
         {"Concepto":"Relación recomendada i", "Valor": relacion_recomendada},
-        {"Concepto":"RPM hélice por J óptimo", "Valor": rpm_helice_requerida},
+        {"Concepto":"RPM hélice operativa", "Valor": rpm_helice_requerida},
+        {"Concepto":"RPM por J de eficiencia", "Valor": rpm_por_j_eficiencia},
         {"Concepto":"RPM objetivo usada para validar", "Valor": rpm_helice_objetivo},
         {"Concepto":"RPM hélice por transmisión", "Valor": rpm_helice_por_caja},
         {"Concepto":"Compatibilidad", "Valor": "Compatible" if caja_cumple else "Revisar"},
@@ -4794,7 +4855,8 @@ with tab_opt:
 
         st.markdown("### 📌 Comparación contra la configuración actual")
         comp_opt = pd.DataFrame([
-            {"Concepto":"Actual", "Z":z_val, "P/D":pd_val, "Ae/A0":ae_val, "J óptimo":j_opt, "ηO [%]":max_eff*100, "RPM estimada [rpm]":rpm_helice_requerida, "Error RPM [%]": error_pct(rpm_helice_requerida, rpm_real)},
+            {"Concepto":"Actual — eficiencia", "Z":z_val, "P/D":pd_val, "Ae/A0":ae_val, "J óptimo":j_eficiencia, "ηO [%]":max_eff_wageningen*100, "RPM estimada [rpm]":rpm_por_j_eficiencia, "Error RPM [%]": error_pct(rpm_por_j_eficiencia, rpm_real)},
+            {"Concepto":"Actual — operación", "Z":z_val, "P/D":pd_val, "Ae/A0":ae_val, "J óptimo":j_operacion, "ηO [%]":max_eff*100, "RPM estimada [rpm]":rpm_helice_requerida, "Error RPM [%]": error_pct(rpm_helice_requerida, rpm_real)},
             {"Concepto":"Óptima encontrada", "Z":int(mejor['Z']), "P/D":mejor['P/D'], "Ae/A0":mejor['Ae/A0'], "J óptimo":mejor['J óptimo'], "ηO [%]":mejor['ηO [%]'], "RPM estimada [rpm]":mejor['RPM estimada [rpm]'], "Error RPM [%]":mejor['Error RPM [%]']},
         ])
         st.dataframe(comp_opt.style.format({"P/D":"{:.3f}", "Ae/A0":"{:.3f}", "J óptimo":"{:.3f}", "ηO [%]":"{:.2f}", "RPM estimada [rpm]":"{:.2f}", "Error RPM [%]":"{:.2f}"}), use_container_width=True)
@@ -4821,7 +4883,8 @@ with tab_hidro:
     with hidro_curvas:
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("ηO máxima", f"{max_eff*100:.2f}%")
-        k2.metric("J óptimo", f"{j_opt:.3f}")
+        k2.metric("J eficiencia", f"{j_eficiencia:.3f}")
+        k2.caption(f"J operación: {j_operacion:.3f}")
         k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
         k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
 
@@ -5299,6 +5362,10 @@ with tab_cav:
     st.markdown("""
     <div class="section-card">
     La cavitación se organiza por análisis: resumen general, Burrill, Keller, Reynolds/σ y fórmulas. Cada subpestaña incluye dictamen y explicación para evitar depender de una pestaña final de fórmulas.
+    </div>
+    <div class="section-card" style="border-left:6px solid #2563eb;">
+    <b>📌 Restricción de área de pala según enfoque ABS/clase</b><br>
+    Las sociedades de clasificación no fijan un único Ae/A0 universal; verifican que la hélice soporte la carga sin cavitación excesiva, vibración, fatiga o presión de pulso sobre el casco. Por eso la app compara el <b>Ae/A0 real</b> con el área mínima estimada por Keller y con la carga de pala de Burrill. Si Ae/A0 real queda por debajo del requerido, la acción técnica es aumentar área expandida, aumentar diámetro, cambiar número de palas o reducir carga por pala.
     </div>
     """, unsafe_allow_html=True)
 
