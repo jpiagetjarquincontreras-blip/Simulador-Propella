@@ -3599,6 +3599,16 @@ burrill_ok = (tau_c_burrill <= tau_c_admisible) and (ae_val >= burrill_ae_min)
 ae_min_control = max(keller_ae_min, burrill_ae_min)
 area_expandida_ok = ae_val >= ae_min_control
 
+# Área expandida física requerida [m²].
+# A0 es el área del disco de la hélice; Ae = (Ae/A0)·A0.
+area_expandida_real_m2 = ae_val * area_disco
+area_expandida_req_keller_m2 = keller_ae_min * area_disco
+area_expandida_req_burrill_m2 = burrill_ae_min * area_disco
+area_expandida_req_recomendada_m2 = ae_min_control * area_disco
+deficit_area_keller_m2 = max(area_expandida_req_keller_m2 - area_expandida_real_m2, 0.0)
+deficit_area_burrill_m2 = max(area_expandida_req_burrill_m2 - area_expandida_real_m2, 0.0)
+deficit_area_recomendada_m2 = max(area_expandida_req_recomendada_m2 - area_expandida_real_m2, 0.0)
+
 # Condición conservadora de integridad: si el área de pala real no alcanza el mínimo,
 # la app no debe vender el punto como óptimo. Calcula una carga/potencia segura aproximada
 # proporcional al área disponible y una geometría mínima recomendada.
@@ -5809,11 +5819,20 @@ with tab_cav:
         st.markdown("### 🫧 Criterio de Burrill")
         st.markdown("Burrill compara la carga de pala τc contra un límite admisible dependiente de σ. Es útil para detectar si la hélice está demasiado cargada.")
         st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2A_0}")
-        b1, b2, b3 = st.columns(3)
+        b1, b2, b3, b4 = st.columns(4)
         b1.metric("τc calculado", f"{tau_c_burrill:.3f}")
         b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
-        b3.metric("Margen", f"{(tau_c_admisible - tau_c_burrill):.3f}")
-        estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala es elevada.", "good" if burrill_ok else "warn")
+        b3.metric("Ae/A0 mín. Burrill", f"{burrill_ae_min:.3f}")
+        b4.metric("Ae requerida", f"{area_expandida_req_burrill_m2:.2f} m²")
+        burrill_area_df = pd.DataFrame([
+            {"Parámetro": "Área de disco A0", "Valor": area_disco, "Unidad": "m²", "Lectura": "Área circular barrida por la hélice."},
+            {"Parámetro": "Área expandida actual Ae", "Valor": area_expandida_real_m2, "Unidad": "m²", "Lectura": f"Sale de Ae/A0 actual = {ae_val:.3f}."},
+            {"Parámetro": "Área mínima requerida por Burrill", "Valor": area_expandida_req_burrill_m2, "Unidad": "m²", "Lectura": f"Equivale a Ae/A0 mín. = {burrill_ae_min:.3f}."},
+            {"Parámetro": "Déficit de área", "Valor": deficit_area_burrill_m2, "Unidad": "m²", "Lectura": "Si es mayor que cero, falta área de pala para este criterio."},
+        ])
+        st.markdown("#### Área requerida mínima por Burrill")
+        dataframe_profesional(burrill_area_df, height=220)
+        estado_html("✅ Cumple Burrill preliminar: la carga de pala y el área expandida quedan dentro del criterio." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala o el área expandida no son suficientes.", "good" if burrill_ok else "warn")
         if HAS_PLOTLY:
             st.plotly_chart(plotly_burrill_prof(sigma_n, tau_c_burrill, tau_c_admisible), use_container_width=True, config=_plotly_config())
         else:
@@ -5823,10 +5842,19 @@ with tab_cav:
         st.markdown("### 📐 Criterio de Keller")
         st.markdown("Keller estima el área expandida mínima requerida para evitar una carga excesiva sobre las palas.")
         st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
-        k1, k2, k3 = st.columns(3)
+        k1, k2, k3, k4 = st.columns(4)
         k1.metric("Ae/A0 mínimo", f"{keller_ae_min:.3f}")
         k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
-        k3.metric("Margen", f"{(ae_val - keller_ae_min):.3f}")
+        k3.metric("Ae requerida", f"{area_expandida_req_keller_m2:.2f} m²")
+        k4.metric("Déficit", f"{deficit_area_keller_m2:.2f} m²")
+        keller_area_df = pd.DataFrame([
+            {"Parámetro": "Área de disco A0", "Valor": area_disco, "Unidad": "m²", "Lectura": "Área circular barrida por la hélice."},
+            {"Parámetro": "Área expandida actual Ae", "Valor": area_expandida_real_m2, "Unidad": "m²", "Lectura": f"Sale de Ae/A0 actual = {ae_val:.3f}."},
+            {"Parámetro": "Área mínima requerida por Keller", "Valor": area_expandida_req_keller_m2, "Unidad": "m²", "Lectura": f"Equivale a Ae/A0 mín. = {keller_ae_min:.3f}."},
+            {"Parámetro": "Déficit de área", "Valor": deficit_area_keller_m2, "Unidad": "m²", "Lectura": "Si es mayor que cero, falta área de pala para este criterio."},
+        ])
+        st.markdown("#### Área requerida mínima por Keller")
+        dataframe_profesional(keller_area_df, height=220)
         estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido." if keller_ok else "❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga.", "good" if keller_ok else "bad")
         if HAS_PLOTLY:
             st.plotly_chart(plotly_keller_prof(keller_ae_min, ae_val), use_container_width=True, config=_plotly_config())
@@ -5919,7 +5947,7 @@ with tab_helice_dictamen:
     c1.metric("Ae/A0 real", f"{ae_val:.3f}")
     c2.metric("Ae/A0 Keller", f"{keller_ae_min:.3f}")
     c3.metric("Ae/A0 Burrill", f"{burrill_ae_min:.3f}")
-    c4.metric("Ae/A0 recomendado", f"{ae_recomendado:.3f}")
+    c4.metric("Ae req. recomendada", f"{area_expandida_req_recomendada_m2:.2f} m²")
 
     if area_expandida_ok:
         estado_html("✅ La relación Ae/A0 actual cubre el mínimo requerido por Keller y Burrill.", "good")
@@ -5932,24 +5960,33 @@ with tab_helice_dictamen:
     dictamen_area_df = pd.DataFrame([
         {
             "Criterio": "Keller",
-            "Valor requerido": keller_ae_min,
-            "Valor real": ae_val,
+            "Ae/A0 requerido": keller_ae_min,
+            "Ae/A0 real": ae_val,
+            "Área requerida [m²]": area_expandida_req_keller_m2,
+            "Área real [m²]": area_expandida_real_m2,
+            "Déficit [m²]": deficit_area_keller_m2,
             "Margen [%]": margen_keller_pct,
             "Dictamen": "Cumple" if keller_ok else "No cumple",
             "Lectura técnica": "Área expandida mínima para distribuir carga y reducir cavitación."
         },
         {
             "Criterio": "Burrill",
-            "Valor requerido": burrill_ae_min,
-            "Valor real": ae_val,
+            "Ae/A0 requerido": burrill_ae_min,
+            "Ae/A0 real": ae_val,
+            "Área requerida [m²]": area_expandida_req_burrill_m2,
+            "Área real [m²]": area_expandida_real_m2,
+            "Déficit [m²]": deficit_area_burrill_m2,
             "Margen [%]": margen_burrill_pct,
             "Dictamen": "Cumple" if burrill_ok else "No cumple",
             "Lectura técnica": "Carga de pala admisible según σ, τc y área efectiva."
         },
         {
             "Criterio": "Recomendación final",
-            "Valor requerido": ae_recomendado,
-            "Valor real": ae_val,
+            "Ae/A0 requerido": ae_min_requerido_sin_actual,
+            "Ae/A0 real": ae_val,
+            "Área requerida [m²]": area_expandida_req_recomendada_m2,
+            "Área real [m²]": area_expandida_real_m2,
+            "Déficit [m²]": deficit_area_recomendada_m2,
             "Margen [%]": incremento_ae_pct,
             "Dictamen": dictamen_area_global,
             "Lectura técnica": "Debe tomarse el mayor entre Keller y Burrill; si el valor real es menor, la hélice es frágil frente a cavitación."
@@ -5958,7 +5995,14 @@ with tab_helice_dictamen:
     st.markdown("### 📐 Área expandida y cavitación")
     st.dataframe(
         dictamen_area_df.style
-        .format({"Valor requerido": "{:.4f}", "Valor real": "{:.4f}", "Margen [%]": lambda x: "—" if pd.isna(x) else f"{x:.2f}%"})
+        .format({
+            "Ae/A0 requerido": "{:.4f}",
+            "Ae/A0 real": "{:.4f}",
+            "Área requerida [m²]": "{:.2f}",
+            "Área real [m²]": "{:.2f}",
+            "Déficit [m²]": "{:.2f}",
+            "Margen [%]": lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
+        })
         .map(style_estado, subset=["Dictamen"]),
         use_container_width=True,
         height=250
