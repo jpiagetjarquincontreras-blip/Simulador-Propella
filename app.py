@@ -1,4 +1,4 @@
-import streamlit as st
+
 import pandas as pd
 import numpy as np
 import math
@@ -2388,10 +2388,14 @@ def estimar_deduccion_empuje(w):
     return float(min(max(0.55 * w, 0.06), 0.32))
 
 def estimar_eta_s(tipo_transmision="Directa / sin caja reductora"):
-    return 0.990 if str(tipo_transmision).startswith("Directa") else 0.985
+    # Valor conservador típico de línea de eje. Se usa 0.980 para no sobreestimar
+    # la potencia disponible; coincide mejor con metodologías docentes/clase.
+    return 0.980 if str(tipo_transmision).startswith("Directa") else 0.980
 
 def estimar_eta_g(tipo_transmision="Directa / sin caja reductora"):
-    return 1.000 if str(tipo_transmision).startswith("Directa") else 0.975
+    # Aun en transmisión directa puede existir pérdida por acoplamientos/elementos
+    # mecánicos. 0.970 evita que PB quede artificialmente igual a PS.
+    return 0.970 if str(tipo_transmision).startswith("Directa") else 0.970
 
 def estimar_coeficientes_forma(tipo_buque, cb=None):
     """
@@ -2753,21 +2757,16 @@ with st.sidebar:
         help="En modo básico/intermedio se estima a partir de w. Activa modo avanzado o validación para editarla."
     )
 
-    # Metodología única universal:
-    # La app no muestra modos especiales ni fija resultados para un barco específico.
-    # Si el usuario captura datos reales de operación (RPM, Tprop, ηO, P/D, Ae/A0),
-    # esos datos se usan como condición de operación; si no, la app estima valores preliminares.
+    # Metodología única universal sin modos especiales visibles.
+    # La app usa condiciones reales de operación cuando el usuario las ingresa;
+    # si no existen, estima una condición preliminar conservadora.
     modo_profesor_kvlcc2 = False
     modo_validacion_profesor_generica = False
     usar_filosofia_profesor = False
-    st.info(
-        "Metodología única universal: la app calcula con los datos del buque ingresado/PDF y con datos de operación conocidos cuando existan. "
-        "No usa un modo especial para un caso fijo; por eso sirve para este buque y para otros."
-    )
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=float(nvl(datos_pdf.get("eta_r"), 1.010)),
+        value=float(nvl(datos_pdf.get("eta_r"), 1.000)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
@@ -2917,25 +2916,26 @@ with st.sidebar:
 
     eta_o_fuente = st.selectbox(
         "Fuente de ηO para la cadena de potencia",
-        ["Wageningen por máxima eficiencia", "ηO de operación/conocida"],
-        index=1,
+        ["Wageningen en punto de operación", "ηO conocida/manual", "Wageningen por máxima eficiencia (solo exploratorio)"],
+        index=0,
         disabled=False,
         help=(
-            "Para una app realista conviene usar ηO de operación cuando se conoce por ensayo, ficha o curva en el punto de trabajo. "
-            "La ηO máxima solo sirve para explorar el máximo teórico, no para asegurar que la hélice sea segura."
+            "Método universal: por defecto la app toma ηO de la curva Wageningen en el J de operación real. "
+            "Si tienes un dato validado por ensayo, ficha o clase, puedes ingresarlo manualmente. "
+            "La máxima eficiencia queda solo como referencia de optimización, no como condición obligatoria."
         )
     )
     eta_o_manual = st.number_input(
-        "ηO de operación/conocida [-]",
-        value=float(nvl(datos_pdf.get("eta_o"), 0.55)),
-        min_value=0.20,
+        "ηO conocida/manual [-]",
+        value=float(nvl(datos_pdf.get("eta_o"), 0.0)),
+        min_value=0.0,
         max_value=0.90,
         step=0.001,
         format="%.5f",
-        disabled=eta_o_fuente == "Wageningen por máxima eficiencia",
-        help="Usa este campo cuando quieras usar datos de ensayo, curva abierta a punto de operación o ficha validada."
+        disabled=eta_o_fuente != "ηO conocida/manual",
+        help="Déjalo en 0 si no cuentas con una ηO validada. La app no usa valores fijos de un barco específico."
     )
-    usar_eta_o_manual = (eta_o_fuente == "ηO de operación/conocida")
+    usar_eta_o_manual = (eta_o_fuente == "ηO conocida/manual" and eta_o_manual > 0)
 
     priorizar_integridad_helice = st.checkbox(
         "Priorizar integridad de hélice antes que máxima eficiencia",
@@ -3056,7 +3056,9 @@ j_opt_wageningen = float(res.loc[res["nO"].idxmax(), "J"]) if max_eff_wageningen
 # J_operacion: punto real de trabajo del buque. Se calcula con VA, D y RPM de servicio.
 # Esta es la J que debe alimentar RPM, cavitación, Keller/Burrill y comparación con la referencia.
 # Si se conoce ηO de operación, no se usa el máximo de la curva para la cadena de potencia.
-max_eff = float(eta_o_manual) if usar_eta_o_manual else max_eff_wageningen
+# Valor provisional; se redefine después de calcular J_operación.
+# No se fija ningún valor de profesor ni de buque específico.
+max_eff = max_eff_wageningen
 j_eficiencia = j_opt_wageningen
 j_opt = j_eficiencia  # alias antiguo para compatibilidad de gráficas/exports
 
@@ -3256,6 +3258,33 @@ PE_kw = RT_servicio_N * velocidad_buque_ms / 1000.0
 VA_ms = v_ms
 
 # --------------------------------------------------------------------------
+# RPM Y J DE OPERACIÓN ANTES DE LA CADENA DE POTENCIA
+# --------------------------------------------------------------------------
+# Si existe RPM real/conocida, esa gobierna el punto de operación. Si no existe,
+# se usa la RPM de máxima eficiencia solo como respaldo de prediseño.
+rpm_por_j_eficiencia = safe_div(VA_ms, max(j_eficiencia * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_eficiencia > 0 else 0.0
+if rpm_real and rpm_real > 0:
+    rpm_helice_requerida = rpm_real
+else:
+    rpm_helice_requerida = rpm_por_j_eficiencia
+
+j_operacion = safe_div(VA_ms, max((rpm_helice_requerida / 60.0) * diam_prop_m, 1e-9), default=0.0) if rpm_helice_requerida > 0 else 0.0
+
+# ηO de operación universal: se toma de la curva Wageningen en el J real de operación.
+# Solo se reemplaza si el usuario ingresa una ηO conocida/manual distinta de cero.
+try:
+    eta_o_wageningen_operacion = float(np.interp(j_operacion, res["J"], res["nO"])) if j_operacion > 0 else max_eff_wageningen
+except Exception:
+    eta_o_wageningen_operacion = max_eff_wageningen
+
+if usar_eta_o_manual:
+    max_eff = float(eta_o_manual)
+elif eta_o_fuente == "Wageningen por máxima eficiencia (solo exploratorio)":
+    max_eff = max_eff_wageningen
+else:
+    max_eff = eta_o_wageningen_operacion
+
+# --------------------------------------------------------------------------
 # Metodología única universal
 # --------------------------------------------------------------------------
 # La cavitación siempre se evalúa con el empuje de servicio derivado de RT, margen
@@ -3293,16 +3322,7 @@ exceso_sobre_85_kw = max(PB_kw_calc - potencia_85_mcr_kw, 0.0)
 exceso_sobre_85_pct = safe_div(exceso_sobre_85_kw, max(potencia_85_mcr_kw, 1e-9)) * 100.0
 margen_hasta_mcr_kw = motor_mcr_kw - PB_kw_calc if motor_mcr_kw > 0 else 0.0
 margen_hasta_mcr_pct = safe_div(margen_hasta_mcr_kw, max(motor_mcr_kw, 1e-9)) * 100.0
-# RPM por máxima eficiencia: NO gobierna operación; sirve solo para optimización.
-rpm_por_j_eficiencia = safe_div(VA_ms, max(j_eficiencia * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_eficiencia > 0 else 0.0
-# RPM operativa: si existe dato real de servicio se usa ese; si no, se toma la teórica como respaldo.
-if rpm_real and rpm_real > 0:
-    rpm_helice_requerida = rpm_real
-else:
-    rpm_helice_requerida = rpm_por_j_eficiencia
-
-j_operacion = safe_div(VA_ms, max((rpm_helice_requerida / 60.0) * diam_prop_m, 1e-9), default=0.0) if rpm_helice_requerida > 0 else 0.0
-# Para validación y transmisión se usa la RPM operativa, no la RPM por J de máxima eficiencia.
+# Para validación y transmisión se usa la RPM operativa ya calculada, no la RPM por J de máxima eficiencia.
 rpm_helice_validacion = rpm_helice_requerida
 rpm_helice_objetivo = rpm_helice_requerida
 if transmision_tipo == "Con caja reductora":
