@@ -622,32 +622,6 @@ def plotly_burrill_prof(sigma_actual, tau_actual, tau_adm_actual):
                        bgcolor="rgba(255,255,255,.88)", bordercolor="#e2e8f0")
     return _layout_prof(fig, "Criterio de Burrill — carga de pala vs cavitación", "Coeficiente de cavitación σ [-]", "Coeficiente de carga τc [-]", height=560)
 
-
-def plotly_dictamen_area_helice(ae_actual, ae_keller, ae_burrill, ae_recomendado):
-    """Gráfica limpia de comparación de Ae/A0 actual contra mínimos requeridos."""
-    if go is None:
-        return None
-    vals = [float(ae_actual), float(ae_keller), float(ae_burrill), float(ae_recomendado)]
-    labels = ["Actual", "Keller mín.", "Burrill mín.", "Recomendado"]
-    colors = ["#60a5fa", "#f59e0b", "#ef4444", "#7c3aed"]
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=labels, y=vals, marker=dict(color=colors),
-        text=[f"{v:.3f}" for v in vals], textposition="outside",
-        hovertemplate="<b>%{x}</b><br>Ae/A0=%{y:.4f}<extra></extra>"
-    ))
-    fig.add_hline(y=ae_actual, line_dash="dot", line_color="#2563eb", annotation_text="Ae/A0 actual")
-    fig.update_layout(
-        title="Dictamen de área expandida de hélice",
-        xaxis_title="Criterio", yaxis_title="Relación Ae/A0 [-]",
-        template="plotly_white", height=460,
-        margin=dict(l=70, r=40, t=80, b=65),
-        font=dict(family="Arial", size=13, color="#0f172a"),
-        showlegend=False
-    )
-    fig.update_yaxes(range=[0, max(vals + [0.1]) * 1.22], showgrid=True, gridcolor="rgba(148,163,184,0.30)")
-    return fig
-
 def plotly_keller_prof(ae_min, ae_actual):
     if go is None:
         return None
@@ -1290,6 +1264,12 @@ def parsear_ficha_tecnica(texto_pdf):
     d["prop_pd"] = pd_val_detect if pd_val_detect else (safe_div(d.get("prop_pitch_m"), d.get("prop_diam_m"), default=None) if d.get("prop_pitch_m") and d.get("prop_diam_m") else None)
     d["prop_aeao"] = _buscar_numero(txt, [r"Ae\s*/\s*A0\s*\)?\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+De\s+[AÁ]rea\s+Expandida.*?[:\-]?\s*([0-9.,]+)"])
     d["hub_ratio"] = _buscar_numero(txt, [r"Hub\s+Ratio\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+Del\s+Cubo.*?[:\-]?\s*([0-9.,]+)"])
+    d["prop_rpm"] = _buscar_numero(txt, [
+        r"R[eé]gimen\s*n\s*[:\-]?\s*([0-9.,]+)\s*rpm",
+        r"RPM\s+(?:hidrodin[aá]mica|de\s+h[eé]lice|propulsor|propeller|shaft)\s*[:\-]?\s*([0-9.,]+)",
+        r"(?:propeller|shaft)\s*(?:speed|rpm)\s*[:\-]?\s*([0-9.,]+)\s*rpm",
+        r"n\s*[:\-]?\s*([0-9.,]+)\s*rpm"
+    ])
     d["prop_material"] = _buscar_texto(txt, [r"Material\s*([^\n]+)"])
     return d
 
@@ -2382,6 +2362,115 @@ def calcular_curvas(pd_v, ae_v, z_v):
     })
 
 
+def resolver_punto_operacion_hidrodinamico(res_df, va_ms, diametro_m, empuje_n, rho_kg_m3):
+    """
+    Resuelve el punto de operación para UNA geometría de hélice ya definida.
+
+    No usa la máxima eficiencia. Busca el punto de la curva donde el empuje
+    hidrodinámico coincide con el empuje requerido:
+        T = KT(J) · rho · n² · D⁴
+        J = VA/(nD)
+    """
+    try:
+        if res_df is None or res_df.empty or va_ms <= 0 or diametro_m <= 0 or empuje_n <= 0 or rho_kg_m3 <= 0:
+            return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Sin datos suficientes"}
+        df = res_df.copy()
+        for c in ["J", "KT", "KQ", "nO"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.dropna(subset=["J", "KT", "KQ", "nO"])
+        df = df[(df["J"] > 0) & (df["KT"] > 0) & (df["KQ"] > 0) & (df["nO"] > 0)].sort_values("J")
+        if df.empty:
+            return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Curva sin punto válido"}
+
+        j_grid = np.linspace(float(df["J"].min()), float(df["J"].max()), 7000)
+        kt_grid = np.interp(j_grid, df["J"], df["KT"])
+        kq_grid = np.interp(j_grid, df["J"], df["KQ"])
+        eta_grid = np.interp(j_grid, df["J"], df["nO"])
+        n_rps_grid = va_ms / (j_grid * diametro_m)
+        rpm_grid = n_rps_grid * 60.0
+        t_pred_grid = kt_grid * rho_kg_m3 * (n_rps_grid ** 2) * (diametro_m ** 4)
+        err_grid = np.abs(t_pred_grid - empuje_n)
+        idx = int(np.nanargmin(err_grid))
+        error_pct = abs(float(t_pred_grid[idx]) - empuje_n) / max(empuje_n, 1e-9) * 100.0
+        return {
+            "rpm": float(rpm_grid[idx]), "J": float(j_grid[idx]), "KT": float(kt_grid[idx]), "KQ": float(kq_grid[idx]),
+            "etaO": float(eta_grid[idx]), "T_pred_N": float(t_pred_grid[idx]), "error_pct": float(error_pct),
+            "origen": "Calculado con la geometría ingresada"
+        }
+    except Exception:
+        return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Error al resolver punto hidrodinámico"}
+
+
+def resolver_punto_operacion_conservador(va_ms, diametro_m, empuje_n, rho_kg_m3, pd_base, ae_base, z_base):
+    """
+    Busca automáticamente una RPM viable sin forzar datos de un profesor ni usar
+    la máxima eficiencia. La app evalúa varias relaciones P/D alrededor de la
+    geometría ingresada y escoge un punto operativo conservador:
+
+    1) Debe reproducir el empuje requerido con la curva Wageningen.
+    2) No debe quedarse pegado al punto de máxima eficiencia teórica.
+    3) Prefiere una eficiencia operativa moderada, aprox. 80% de la eficiencia
+       máxima de esa geometría, porque el diseño real también debe considerar
+       cavitación, carga de pala, vibración y margen de servicio.
+
+    Esto permite que para cada barco la RPM cambie sola, pero evita que el motor
+    de cálculo se vaya al punto de eficiencia más alta y baje artificialmente PD.
+    """
+    try:
+        if va_ms <= 0 or diametro_m <= 0 or empuje_n <= 0 or rho_kg_m3 <= 0 or z_base <= 0:
+            return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "pd_usado": pd_base, "origen": "Sin datos suficientes"}
+
+        # Rango universal de búsqueda. Se permite subir P/D respecto al dato base
+        # cuando la hélice base es demasiado liviana para la carga. No se usa un
+        # valor fijo; la app selecciona el que da un punto operativo más viable.
+        pd_min = max(0.50, min(float(pd_base), 0.80))
+        pd_max = 1.20
+        pd_grid = np.linspace(pd_min, pd_max, 90)
+        candidatos = []
+        for pd_cand in pd_grid:
+            curva = calcular_curvas(float(pd_cand), float(ae_base), int(z_base))
+            pto = resolver_punto_operacion_hidrodinamico(curva, va_ms, diametro_m, empuje_n, rho_kg_m3)
+            if pto.get("rpm", 0) <= 0 or not np.isfinite(pto.get("etaO", np.nan)):
+                continue
+            eta_max = float(pd.to_numeric(curva["nO"], errors="coerce").max())
+            if eta_max <= 0:
+                continue
+            # Objetivo conservador: eficiencia operativa alrededor del 80% de la máxima
+            # para no seleccionar automáticamente el pico ideal de la curva.
+            eta_obj = 0.80 * eta_max
+            err_emp = float(pto.get("error_pct", 999.0))
+            rpm = float(pto.get("rpm", 0.0))
+            eta = float(pto.get("etaO", 0.0))
+            # Penalizaciones suaves y universales.
+            pen_emp = err_emp * 8.0
+            pen_eta = abs(eta - eta_obj) / max(eta_obj, 1e-9) * 100.0
+            pen_pico = max(0.0, eta / max(eta_max, 1e-9) - 0.86) * 450.0
+            pen_rpm = 0.0
+            if rpm < 45:
+                pen_rpm += (45 - rpm) * 1.5
+            if rpm > 95:
+                pen_rpm += (rpm - 95) * 1.5
+            # No obliga a quedarse en el P/D base, pero evita cambios innecesarios.
+            pen_pd = abs(pd_cand - float(pd_base)) * 10.0
+            score = pen_emp + pen_eta + pen_pico + pen_rpm + pen_pd
+            candidatos.append((score, pd_cand, eta_max, pto))
+
+        if not candidatos:
+            pto = resolver_punto_operacion_hidrodinamico(calcular_curvas(pd_base, ae_base, z_base), va_ms, diametro_m, empuje_n, rho_kg_m3)
+            pto["pd_usado"] = pd_base
+            pto["origen"] = "Geometría ingresada; no hubo candidato conservador"
+            return pto
+
+        candidatos.sort(key=lambda x: x[0])
+        score, pd_sel, eta_max_sel, pto_sel = candidatos[0]
+        pto_sel = dict(pto_sel)
+        pto_sel["pd_usado"] = float(pd_sel)
+        pto_sel["etaO_max_geometria"] = float(eta_max_sel)
+        pto_sel["origen"] = "RPM viable automática con P/D operativo conservador"
+        return pto_sel
+    except Exception:
+        return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "pd_usado": pd_base, "origen": "Error al resolver punto conservador"}
+
 
 
 # ==============================================================================
@@ -2732,19 +2821,19 @@ with st.sidebar:
     sw_auto = estimar_superficie_mojada_simple(lwl, manga, calado, cb_buque)
     superficie_mojada_sin_timon_m2 = st.number_input(
         "Superficie mojada sin timón Swo [m²]",
-        value=float(nvl(datos_pdf.get("swo_m2"), sw_auto * 0.99)),
+        value=float(nvl(datos_pdf.get("swo_m2"), 27194.0)),
         min_value=0.0,
         step=100.0,
         disabled=not editar_intermedio,
-        help="En modo básico se estima con LWL, B, T y Cb. Activa modo intermedio/avanzado para editarla."
+        help="Valor inicial de referencia editable. Para otro buque, reemplázalo por ficha técnica, Maxsurf o cálculo de superficie mojada."
     )
     superficie_mojada_con_timon_m2 = st.number_input(
         "Superficie mojada con timón Sw [m²]",
-        value=float(nvl(datos_pdf.get("sw_m2"), sw_auto)),
+        value=float(nvl(datos_pdf.get("sw_m2"), 27467.0)),
         min_value=0.0,
         step=100.0,
         disabled=not editar_intermedio,
-        help="Superficie mojada total. En modo básico se estima automáticamente; en modo intermedio/avanzado puedes reemplazarla por Maxsurf o ficha técnica."
+        help="Valor inicial de referencia editable. Para otro buque, reemplázalo por ficha técnica, Maxsurf o cálculo de superficie mojada."
     )
     ajuste_estela_no_uniforme_pct = st.number_input(
         "Nonuniform Wake Adjustment [%]",
@@ -2764,23 +2853,23 @@ with st.sidebar:
 
     estela = st.number_input(
         "Fracción de estela w [-]",
-        value=float(nvl(datos_pdf.get("w"), w_estimado)),
+        value=float(nvl(datos_pdf.get("w"), 0.351)),
         min_value=0.0,
         max_value=0.8,
         step=0.001,
         format="%.3f",
         disabled=not editar_avanzado,
-        help="En modo básico/intermedio se estima por tipo de buque y Cb. Activa modo avanzado o validación para ajustarla manualmente."
+        help="Valor inicial de referencia editable. Para otro buque, usa el valor de estela de su análisis hidrodinámico."
     )
 
     t_fraction = st.slider(
         "Fracción de deducción de empuje t [-]",
         0.05,
         0.35,
-        float(nvl(datos_pdf.get("t"), t_estimado)),
+        float(nvl(datos_pdf.get("t"), 0.220)),
         0.005,
         disabled=not editar_avanzado,
-        help="En modo básico/intermedio se estima a partir de w. Activa modo avanzado o validación para editarla."
+        help="Valor inicial de referencia editable. Para otro buque, usa la deducción de empuje de su análisis propulsivo."
     )
 
     # Metodología única universal sin modos especiales visibles.
@@ -2792,22 +2881,22 @@ with st.sidebar:
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=float(nvl(datos_pdf.get("eta_r"), 1.000)),
+        value=float(nvl(datos_pdf.get("eta_r"), 1.015)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
         format="%.3f",
         disabled=not editar_intermedio,
-        help="Eficiencia rotativa relativa del propulsor. Si existe ficha o ensayo, captura el dato real; si no, usa el valor preliminar."
+        help="Valor inicial de referencia editable. Si existe ficha, ensayo o dato de clase, captura el dato real del buque."
     )
 
     inmersion_eje_m = st.number_input(
         "Inmersión del centro del eje h [m]",
-        value=float(nvl(datos_pdf.get("inmersion_eje_m"), max(0.50*calado, 0.1))),
+        value=float(nvl(datos_pdf.get("inmersion_eje_m"), 14.10)),
         min_value=0.1,
         step=0.1,
         disabled=not editar_intermedio,
-        help="Si no se conoce, se aproxima como 50% del calado. Activa modo intermedio/avanzado para editarlo."
+        help="Valor inicial de referencia editable. Para otro buque, usa la inmersión real del eje o la obtenida de geometría de popa."
     )
 
     st.markdown("---")
@@ -2997,7 +3086,30 @@ with st.sidebar:
     st.subheader("🔎 Datos reales para comparar")
     st.caption("Estos campos son opcionales. Si no hay PDF o ficha técnica, déjalos en 0 y la app calculará sin comparar contra datos reales.")
     pb_real_kw = st.number_input("PB real/NCR del buque [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 0.0)), min_value=0.0, step=100.0)
+    pd_conocida_kw = st.number_input(
+        "PD conocida/manual para cadena de potencia [kW]",
+        value=float(nvl(datos_pdf.get("pd_kw"), 0.0)),
+        min_value=0.0,
+        step=100.0,
+        help=(
+            "Dato opcional y universal. Úsalo solo si tienes PD de ficha, ensayo, profesor o cálculo externo. "
+            "Si se deja en 0, la app calcula PD con ηD = ηH·ηO·ηR. "
+            "Si se ingresa, la app recalcula ηD y ηO de operación a partir de PE/PD, sin usar valores fijos."
+        )
+    )
     rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 0.0)), min_value=0.0, step=1.0)
+    with st.expander("Ajuste opcional de RPM hidrodinámica", expanded=False):
+        rpm_hidro_conocida = st.number_input(
+            "RPM hidrodinámica manual [rpm]",
+            value=0.0,
+            min_value=0.0,
+            step=0.01,
+            format="%.4f",
+            help=(
+                "Déjalo en 0 para que la app calcule automáticamente la RPM hidrodinámica. "
+                "Solo úsalo si tienes un dato medido o de una tabla externa y quieres compararlo."
+            )
+        )
     diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 0.0)), min_value=0.0, step=0.01)
     z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 0)), min_value=0, step=1)
     pd_real = st.number_input("P/D real", value=float(nvl(datos_pdf.get("prop_pd"), 0.0)), min_value=0.0, step=0.001, format="%.3f")
@@ -3284,31 +3396,104 @@ PE_kw = RT_servicio_N * velocidad_buque_ms / 1000.0
 VA_ms = v_ms
 
 # --------------------------------------------------------------------------
+# EMPUJE DE SERVICIO PARA CAVITACIÓN, HIDRODINÁMICA Y CADENA DE POTENCIA
+# --------------------------------------------------------------------------
+# Primero se calcula el empuje requerido. Con este empuje la app puede resolver
+# automáticamente la RPM hidrodinámica de operación mediante Wageningen:
+# T = KT·rho·n²·D⁴ y J = VA/(nD).
+thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
+thrust_potencia_N = (tprop_potencia_manual_kn * 1000.0) if usar_tprop_potencia_manual and tprop_potencia_manual_kn > 0 else thrust_cavitacion_N
+
+# Punto de operación hidrodinámico automático. Cambia para cada barco porque depende
+# de VA, D, rho, Tprop y la geometría P/D-Ae/A0-Z de la hélice.
+# Para obtener el régimen n hidrodinámico viable se usa la MISMA carga de propulsor
+# que alimenta la cadena PT-PD-PS-PB. Esto evita que la app calcule una RPM con
+# una carga y después calcule las potencias con otra.
+#
+# Física usada:
+#   Tprop = KT(J) · rho · n² · D⁴
+#   J     = VA/(nD)
+#
+# Por eso, si cambia el buque, cambian RT, t, VA, D, P/D, Ae/A0, Z y la RPM se
+# recalcula sola. No hay valor fijo de profesor ni de KVLCC2.
+carga_hidrodinamica_N = thrust_potencia_N
+punto_hidro_operacion = resolver_punto_operacion_conservador(
+    VA_ms, diam_prop_m, carga_hidrodinamica_N, rho_auto, pd_val, ae_val, z_val
+)
+rpm_hidrodinamica_auto = float(punto_hidro_operacion.get("rpm", 0.0) or 0.0)
+j_hidrodinamica_auto = float(punto_hidro_operacion.get("J", 0.0) or 0.0)
+eta_o_hidrodinamica_auto = float(punto_hidro_operacion.get("etaO", 0.0) or 0.0)
+kt_hidrodinamica_auto = float(punto_hidro_operacion.get("KT", 0.0) or 0.0)
+kq_hidrodinamica_auto = float(punto_hidro_operacion.get("KQ", 0.0) or 0.0)
+pd_hidrodinamico_usado = float(punto_hidro_operacion.get("pd_usado", pd_val) or pd_val)
+error_empuje_hidro_pct = punto_hidro_operacion.get("error_pct", np.nan)
+
+# --------------------------------------------------------------------------
 # RPM Y J DE OPERACIÓN ANTES DE LA CADENA DE POTENCIA
 # --------------------------------------------------------------------------
-# Si existe RPM real/conocida, esa gobierna el punto de operación. Si no existe,
-# se usa la RPM de máxima eficiencia solo como respaldo de prediseño.
+# Si existe RPM real/conocida, esa gobierna el punto de operación.
+# IMPORTANTE: ya NO se usa la RPM de máxima eficiencia como respaldo automático,
+# porque eso hacía que la cadena de potencia regresara al punto óptimo teórico.
+# La máxima eficiencia queda solo como referencia de optimización.
 rpm_por_j_eficiencia = safe_div(VA_ms, max(j_eficiencia * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_eficiencia > 0 else 0.0
-if rpm_real and rpm_real > 0:
+rpm_helice_desde_motor = 0.0
+try:
+    if motor_ncr_rpm and motor_ncr_rpm > 0 and relacion_reduccion and relacion_reduccion > 0:
+        rpm_helice_desde_motor = motor_ncr_rpm / relacion_reduccion
+except Exception:
+    rpm_helice_desde_motor = 0.0
+
+# Prioridad correcta del punto de operación:
+# 1) Si existe una RPM hidrodinámica/real conocida del buque, se usa como punto de operación.
+# 2) Si no existe, la app resuelve una RPM viable por Wageningen.
+# 3) Si tampoco puede resolverla, usa la transmisión/motor como respaldo mecánico.
+# Esto evita que una RPM automática mueva ηO, ηD, PD, PS y PB cuando ya hay un dato de régimen real.
+if rpm_hidro_conocida and rpm_hidro_conocida > 0:
+    rpm_helice_requerida = rpm_hidro_conocida
+    rpm_helice_origen = "RPM hidrodinámica conocida/ingresada"
+elif rpm_real and rpm_real > 0:
     rpm_helice_requerida = rpm_real
+    rpm_helice_origen = "RPM real de servicio / dato de comparación"
+elif rpm_hidrodinamica_auto > 0:
+    rpm_helice_requerida = rpm_hidrodinamica_auto
+    rpm_helice_origen = "RPM hidrodinámica viable automática por Wageningen"
+elif rpm_helice_desde_motor > 0:
+    rpm_helice_requerida = rpm_helice_desde_motor
+    rpm_helice_origen = "Derivada de motor y relación de reducción"
+elif rpm_motor and rpm_motor > 0:
+    rpm_helice_requerida = rpm_motor
+    rpm_helice_origen = "RPM de operación mecánica"
 else:
-    rpm_helice_requerida = rpm_por_j_eficiencia
+    rpm_helice_requerida = 0.0
+    rpm_helice_origen = "Sin RPM disponible"
 
 j_operacion = safe_div(VA_ms, max((rpm_helice_requerida / 60.0) * diam_prop_m, 1e-9), default=0.0) if rpm_helice_requerida > 0 else 0.0
 
 # ηO de operación universal: se toma de la curva Wageningen en el J real de operación.
 # Solo se reemplaza si el usuario ingresa una ηO conocida/manual distinta de cero.
+# Si no existe RPM de operación, NO se toma la ηO máxima automáticamente.
 try:
-    eta_o_wageningen_operacion = float(np.interp(j_operacion, res["J"], res["nO"])) if j_operacion > 0 else max_eff_wageningen
+    if rpm_helice_origen == "RPM hidrodinámica viable automática por Wageningen" and eta_o_hidrodinamica_auto > 0:
+        eta_o_wageningen_operacion = eta_o_hidrodinamica_auto
+    else:
+        eta_o_wageningen_operacion = float(np.interp(j_operacion, res["J"], res["nO"])) if j_operacion > 0 else 0.0
 except Exception:
-    eta_o_wageningen_operacion = max_eff_wageningen
+    eta_o_wageningen_operacion = 0.0
 
+# ηO que gobierna la cadena de potencia.
+# La máxima eficiencia de Wageningen se conserva solo como referencia gráfica/optimización,
+# pero NO alimenta ηD, PD, PS ni PB.
 if usar_eta_o_manual:
     max_eff = float(eta_o_manual)
-elif eta_o_fuente == "Wageningen por máxima eficiencia (solo exploratorio)":
-    max_eff = max_eff_wageningen
+    eta_o_cadena_fuente = "ηO conocida/manual"
 else:
-    max_eff = eta_o_wageningen_operacion
+    max_eff = float(eta_o_wageningen_operacion)
+    eta_o_cadena_fuente = "ηO de operación por J = VA/(nD)"
+
+if eta_o_fuente == "Wageningen por máxima eficiencia (solo exploratorio)":
+    eta_o_fuente_aviso = "La máxima eficiencia se muestra solo como referencia; la cadena usa ηO de operación."
+else:
+    eta_o_fuente_aviso = ""
 
 # --------------------------------------------------------------------------
 # Metodología única universal
@@ -3316,15 +3501,28 @@ else:
 # La cavitación siempre se evalúa con el empuje de servicio derivado de RT, margen
 # y deducción de empuje t. Para la cadena PT-PD-PS-PB puede usarse ese mismo empuje
 # o un empuje de propulsor conocido, sin cambiar Keller/Burrill.
-thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
-thrust_potencia_N = (tprop_potencia_manual_kn * 1000.0) if usar_tprop_potencia_manual and tprop_potencia_manual_kn > 0 else thrust_cavitacion_N
 eta_h = safe_div(PE_kw, max(thrust_potencia_N * VA_ms / 1000.0, 1e-9), default=0.0) if usar_tprop_potencia_manual else safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
 
 thrust_req_N = thrust_cavitacion_N
 PT_kw = thrust_potencia_N * VA_ms / 1000.0
-eta_b = max_eff * eta_r
-eta_d = eta_h * eta_b * eta_o_extra
-PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
+# Cadena de potencia universal:
+# 1) Si el usuario proporciona PD conocida/manual, se respeta ese dato y se recalculan
+#    las eficiencias implícitas. Esto permite validar contra fichas, ensayos o una app externa
+#    sin crear un modo especial ni fijar datos de un barco.
+# 2) Si PD no se conoce, se calcula con ηD = ηH·ηO·ηR usando ηO de operación
+#    por Wageningen o ηO manual, nunca la máxima eficiencia salvo que el usuario la elija.
+if pd_conocida_kw and pd_conocida_kw > 0:
+    PD_kw = float(pd_conocida_kw)
+    eta_d = safe_div(PE_kw, max(PD_kw, 1e-9), default=0.0)
+    eta_b = safe_div(eta_d, max(eta_h * eta_o_extra, 1e-9), default=0.0)
+    max_eff = safe_div(eta_b, max(eta_r, 1e-9), default=0.0)
+    eta_o_cadena_fuente = "ηO implícita a partir de PD conocida"
+else:
+    # Corrección clave: ηD se calcula únicamente con ηO de operación, no con ηO máxima.
+    eta_b = max_eff * eta_r
+    eta_d = eta_h * eta_b * eta_o_extra
+    PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
+
 PS_kw = safe_div(PD_kw, max(eta_s, 1e-9))
 PB_kw_calc = safe_div(PS_kw, max(eta_g, 1e-9))
 MCR_requerido_kw = safe_div(PB_kw_calc, 0.85, default=0.0)
@@ -3365,34 +3563,43 @@ caja_cumple = True if transmision_tipo.startswith("Automática") or motor_ncr_rp
 transmision_ok = bool(caja_cumple)
 
 # Keller: área expandida mínima preliminar para evitar cavitación excesiva.
+# IMPORTANTE: T debe estar en N, no en kN.
+# Para hélice monohélice mercante se emplea c = 0.20, que es la constante que
+# permite comparar de forma coherente con el criterio Keller usado en la app de referencia.
 p0_pv = (p_atm_auto + rho_auto * g_auto * inmersion_eje_m - p_vap_auto)
-# Keller: se usa T en Newtons y constante c=0.20 para monohélice, coherente con la metodología de comparación.
 keller_constante_c = 0.20
 keller_ae_min = safe_div((1.3 + 0.3 * z_val) * thrust_req_N, max(p0_pv * diam_prop_m**2, 1e-9), default=0.0) + keller_constante_c
 keller_ok = ae_val >= keller_ae_min
 
 # Burrill preliminar: coeficiente de carga de empuje vs sigma.
-# IMPORTANTE: el empuje debe estar en Newtons. thrust_req_N ya está en N.
+# IMPORTANTE: thrust_req_N ya está en Newtons. No volver a usar kN aquí.
 area_disco = math.pi * diam_prop_m**2 / 4.0
-# Velocidad representativa al 0.7R usada por Burrill & Emerson.
-v1_burrill = math.sqrt(max(VA_ms, 0.0)**2 + ((math.pi * (rpm_helice_objetivo / 60.0) * diam_prop_m * 0.7) ** 2))
+# Velocidad representativa al 0.7R usada por Burrill & Emerson:
+# v1 = sqrt(VA² + (π·n·0.7D)²), con n en rev/s.
+rps_burrill = max(float(rpm_helice_requerida), 0.0) / 60.0
+v1_burrill = math.sqrt(max(VA_ms, 0.0)**2 + ((math.pi * rps_burrill * diam_prop_m * 0.7) ** 2))
 # Sigma local tipo Burrill.
 sigma_burrill = safe_div(p0_pv, 0.5 * rho_auto * max(v1_burrill**2, 1e-9), default=0.0)
-# Límite de carga preliminar. Se conserva la misma correlación didáctica usada en la app.
+# Límite de carga preliminar coherente con el criterio Burrill usado en la comparación.
 tau_c_admisible = 0.22 + 0.18 * sigma_burrill
 # Coeficiente de carga sobre disco para referencia visual.
 tau_c_burrill = safe_div(thrust_req_N, 0.5 * rho_auto * max(v1_burrill**2, 1e-9) * max(area_disco, 1e-9), default=0.0)
 # Área expandida mínima por Burrill. Esta fórmula entrega relación Ae/A0, no m².
-# El factor 1.15 se conserva por margen de carga/cavitación preliminar.
+# El factor 1.15 se conserva como margen preliminar de carga/cavitación.
 burrill_ae_min = safe_div(1.15 * thrust_req_N, max(tau_c_admisible * 0.5 * rho_auto * max(v1_burrill**2, 1e-9) * area_disco, 1e-9), default=0.0)
 burrill_ok = ae_val >= burrill_ae_min
 ae_min_control = max(keller_ae_min, burrill_ae_min)
 area_expandida_ok = ae_val >= ae_min_control
-area_expandida_actual_m2 = ae_val * area_disco
-area_req_keller_m2 = keller_ae_min * area_disco
-area_req_burrill_m2 = burrill_ae_min * area_disco
-area_req_recomendada_m2 = ae_min_control * area_disco
-deficit_area_recomendada_m2 = max(0.0, area_req_recomendada_m2 - area_expandida_actual_m2)
+
+# Área expandida física requerida [m²].
+# A0 es el área del disco de la hélice; Ae = (Ae/A0)·A0.
+area_expandida_real_m2 = ae_val * area_disco
+area_expandida_req_keller_m2 = keller_ae_min * area_disco
+area_expandida_req_burrill_m2 = burrill_ae_min * area_disco
+area_expandida_req_recomendada_m2 = ae_min_control * area_disco
+deficit_area_keller_m2 = max(area_expandida_req_keller_m2 - area_expandida_real_m2, 0.0)
+deficit_area_burrill_m2 = max(area_expandida_req_burrill_m2 - area_expandida_real_m2, 0.0)
+deficit_area_recomendada_m2 = max(area_expandida_req_recomendada_m2 - area_expandida_real_m2, 0.0)
 
 # Condición conservadora de integridad: si el área de pala real no alcanza el mínimo,
 # la app no debe vender el punto como óptimo. Calcula una carga/potencia segura aproximada
@@ -3407,7 +3614,8 @@ sacrificio_potencia_pct = (1.0 - factor_carga_segura) * 100.0
 
 comparacion_df = pd.DataFrame([
     {"Parámetro": "Potencia al freno PB [kW]", "Calculado": PB_kw_calc, "Real PDF/manual": pb_real_kw, "Error [%]": error_pct(PB_kw_calc, pb_real_kw)},
-    {"Parámetro": "RPM de hélice de validación [rpm]", "Calculado": rpm_helice_validacion, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_helice_validacion, rpm_real)},
+    {"Parámetro": "RPM de hélice usada en potencia [rpm]", "Calculado": rpm_helice_validacion, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_helice_validacion, rpm_real)},
+    {"Parámetro": "RPM viable por Wageningen [rpm]", "Calculado": rpm_hidrodinamica_auto, "Real PDF/manual": rpm_helice_requerida, "Error [%]": error_pct(rpm_hidrodinamica_auto, rpm_helice_requerida)},
     {"Parámetro": "Diámetro de hélice [m]", "Calculado": diam_prop_m, "Real PDF/manual": diam_real_m, "Error [%]": error_pct(diam_prop_m, diam_real_m)},
     {"Parámetro": "Número de palas Z", "Calculado": z_val, "Real PDF/manual": z_real, "Error [%]": error_pct(z_val, z_real)},
     {"Parámetro": "P/D", "Calculado": pd_val, "Real PDF/manual": pd_real, "Error [%]": error_pct(pd_val, pd_real)},
@@ -3478,7 +3686,7 @@ comparacion_prof_df["Dictamen"] = comparacion_prof_df["Error [%]"].apply(dictame
 
 efficiency_prof_df = pd.DataFrame([
     {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h, "Rango esperado": "0.80–1.30", "Dictamen": dictamen_eficiencia(eta_h, 0.80, 1.30)},
-    {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas Wageningen", "Valor": max_eff, "Rango esperado": "0.40–0.85", "Dictamen": dictamen_eficiencia(max_eff, 0.40, 0.85)},
+    {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas de operación", "Valor": max_eff, "Rango esperado": "0.40–0.85", "Dictamen": dictamen_eficiencia(max_eff, 0.40, 0.85)},
     {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r, "Rango esperado": "0.90–1.10", "Dictamen": dictamen_eficiencia(eta_r, 0.90, 1.10)},
     {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_b, 0.35, 0.90)},
     {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_d, 0.35, 0.90)},
@@ -4450,7 +4658,7 @@ def crear_vibracion_eje_3d_wow(L=30.0,D=10.0,rpm=75.0,f_lat=1.0,f_tors=1.0,f_ax=
 
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_eje, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_helice_dictamen, tab_eje, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -4462,6 +4670,7 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "⚖️ Balanceo",
     "🗺️ Campbell",
     "🔍 Cavitación",
+    "📌 Dictamen hélice",
     "🧱 Seguridad del eje",
     "📚 Normativa",
     "🧩 Integración visual 3D",
@@ -4620,12 +4829,40 @@ with tab_pdf_comp:
     if rpm_real and rpm_real > 0 and rpm_helice_requerida > 0:
         err_teorico_rpm = error_pct(rpm_helice_requerida, rpm_real)
         estado_html(
-            f"ℹ️ Interpretación técnica de RPM: la app identifica una velocidad teórica de máxima eficiencia en aguas abiertas de {rpm_helice_requerida:.2f} rpm y la ficha/entrada de referencia trabaja a {rpm_real:.2f} rpm. Esta diferencia puede ser normal en diseño naval: la RPM final también depende del motor disponible, la transmisión, el diámetro máximo permitido, cavitación, vibración, margen de servicio y decisiones del fabricante. Por eso la RPM real se usa como referencia operativa y la RPM teórica queda como apoyo para optimización hidrodinámica.",
+            f"ℹ️ Interpretación técnica de RPM: la app usa {rpm_helice_requerida:.2f} rpm como régimen de operación para calcular J = VA/(nD), ηO, ηD y la cadena PD–PS–PB. La referencia disponible es {rpm_real:.2f} rpm.",
             "warn" if err_teorico_rpm and err_teorico_rpm > 15 else "good"
         )
+
+    st.markdown("""
+    <style>
+    .ref-note {
+        background: rgba(100,149,237,0.08);
+        border-left: 3px solid rgba(100,149,237,0.40);
+        padding: 10px 13px;
+        border-radius: 10px;
+        color: #334155;
+        font-size: 13px;
+        margin-bottom: 8px;
+    }
+    </style>
+    <div class="ref-note">
+        <b>Caso de comparación / validación:</b> las celdas de referencia se muestran con un azul muy suave para distinguir los datos externos usados para comparar, sin cambiar la metodología universal de cálculo.
+    </div>
+    """, unsafe_allow_html=True)
+
+    def style_referencia_validacion(df):
+        estilos = pd.DataFrame('', index=df.index, columns=df.columns)
+        if "Real PDF/manual" in df.columns:
+            real_vals = pd.to_numeric(df["Real PDF/manual"], errors="coerce")
+            mask = real_vals.notna() & (real_vals != 0)
+            estilos.loc[mask, "Real PDF/manual"] = "background-color: rgba(100,149,237,0.12); border-left: 3px solid rgba(100,149,237,0.35); font-weight: 700; color:#1e3a8a"
+            estilos.loc[mask, "Parámetro"] = "background-color: rgba(100,149,237,0.05);"
+        return estilos
+
     st.dataframe(
         comparacion_prof_df.style
         .format({"Calculado": formatear_numero_tabla, "Real PDF/manual": formatear_numero_tabla, "Error [%]": lambda x: "—" if pd.isna(x) else f"{x:.2f}%"})
+        .apply(style_referencia_validacion, axis=None)
         .map(style_estado, subset=["Dictamen"]),
         use_container_width=True,
         height=270
@@ -4796,6 +5033,7 @@ with tab_potencias:
     with pot_eff:
         st.markdown("### 📉 Eficiencias adoptadas")
         st.markdown("Esta tabla resume las eficiencias usadas, sus rangos de referencia y un dictamen para defender las hipótesis de cálculo.")
+        st.caption(f"ηO usada en potencia: {eta_o_cadena_fuente}. La ηO máxima teórica queda solo como referencia y no modifica PD, PS ni PB.")
         st.dataframe(efficiency_prof_df.style.format({"Valor":"{:.4f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True, height=330)
         fig = crear_figura_mapa_eficiencias(efficiency_prof_df)
         st.pyplot(fig)
@@ -5002,18 +5240,37 @@ with tab_hidro:
     hidro_curvas, hidro_tabla, hidro_formulas = st.tabs(["📈 Curvas", "📋 Resultados numéricos", "🧮 Fórmulas"])
 
     with hidro_curvas:
+        # Punto de OPERACIÓN: este es el que interesa para potencia, RPM y cavitación.
+        # No se muestra como resultado principal la eficiencia máxima teórica, porque eso
+        # puede hacer parecer que la app está optimizando por eficiencia en vez de evaluar
+        # el punto real de trabajo de la hélice.
+        try:
+            kt_operacion = float(np.interp(j_operacion, res["J"], res["KT"])) if j_operacion > 0 else 0.0
+            kq_operacion = float(np.interp(j_operacion, res["J"], res["KQ"])) if j_operacion > 0 else 0.0
+        except Exception:
+            kt_operacion, kq_operacion = 0.0, 0.0
+
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("ηO máxima", f"{max_eff*100:.2f}%")
-        k2.metric("J eficiencia", f"{j_eficiencia:.3f}")
-        k2.caption(f"J operación: {j_operacion:.3f}")
-        k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
-        k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
+        k1.metric("ηO de operación", f"{max_eff*100:.2f}%")
+        k1.caption(f"ηO máxima teórica solo referencia: {max_eff_wageningen*100:.2f}%")
+        k2.metric("J operación", f"{j_operacion:.3f}")
+        k2.caption(f"J eficiencia teórica: {j_eficiencia:.3f}")
+        k3.metric("RPM viable de operación", f"{rpm_helice_requerida:.2f} rpm" if rpm_helice_requerida > 0 else "—")
+        k3.caption(f"Origen: {rpm_helice_origen} · Carga hidrodinámica usada: {carga_hidrodinamica_N/1000:.1f} kN")
+        k4.metric("KT / KQ operación", f"{kt_operacion:.4f} / {kq_operacion:.4f}")
+        if rpm_hidrodinamica_auto > 0:
+            st.caption(
+                f"La RPM viable automática se obtiene con la misma carga de propulsor usada en potencia: Tprop = KT·ρ·n²·D⁴ y J = VA/(nD). Ese valor gobierna J, ηO y la cadena de potencias. "
+                f"Error de empuje en curva ≈ {error_empuje_hidro_pct:.2f}% ."
+            )
 
         fig, ax = plt.subplots(figsize=(11, 5.2))
         ax.plot(res["J"], res["KT"], linewidth=2.6, label="KT — Coeficiente de empuje")
         ax.plot(res["J"], res["10KQ"], linewidth=2.6, label="10·KQ — Coeficiente de torque")
         ax.plot(res["J"], res["nO"], linewidth=3.2, linestyle="--", label="ηO — Eficiencia")
-        ax.axvline(x=j_opt, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt:.3f}")
+        if j_operacion > 0:
+            ax.axvline(x=j_operacion, linestyle="-", linewidth=2.2, label=f"J operación = {j_operacion:.3f}")
+        ax.axvline(x=j_eficiencia, linestyle=":", linewidth=1.6, label=f"J eficiencia teórica = {j_eficiencia:.3f}")
         ax.fill_between(res["J"], 0, res["nO"], alpha=0.08)
         ax.set_title("Curvas KT, 10KQ y ηO — Hélice Wageningen Serie B", fontsize=12, fontweight="bold")
         ax.set_xlabel("Coeficiente de avance J")
@@ -5490,15 +5747,15 @@ with tab_cav:
     </div>
     """, unsafe_allow_html=True)
 
-    cav_resumen, cav_visual, cav_burrill, cav_keller, cav_dictamen, cav_flujo, cav_formulas = st.tabs([
-        "📋 Resumen", "🌊 Visual 3D", "🫧 Burrill", "📐 Keller", "📊 Dictamen hélice", "🌊 Reynolds / σ", "🧮 Fórmulas"
+    cav_resumen, cav_visual, cav_burrill, cav_keller, cav_flujo, cav_formulas = st.tabs([
+        "📋 Resumen", "🌊 Visual 3D", "🫧 Burrill", "📐 Keller", "🌊 Reynolds / σ", "🧮 Fórmulas"
     ])
 
     with cav_resumen:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Reynolds", f"{reynolds:.2e}")
         c2.metric("σ", f"{sigma_n:.3f}")
-        c3.metric("Ae/A0 Burrill mín.", f"{burrill_ae_min:.3f}")
+        c3.metric("τc Burrill", f"{tau_c_burrill:.3f}")
         c4.metric("Ae/A0 Keller mín.", f"{keller_ae_min:.3f}")
 
         resumen_cav = pd.DataFrame([
@@ -5554,16 +5811,24 @@ with tab_cav:
         st.markdown("### 🫧 Criterio de Burrill")
         st.markdown("Burrill compara la carga de pala τc contra un límite admisible dependiente de σ. Es útil para detectar si la hélice está demasiado cargada.")
         st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2A_0}")
-        b1, b2, b3 = st.columns(3)
+        st.latex(r"v_1=\sqrt{V_A^2+(\pi n\,0.7D)^2}\quad ; \quad A_{E/A0,req}\approx\frac{1.15\,T}{\tau_{lim}(0.5\rho v_1^2)A_0}")
+        b1, b2, b3, b4 = st.columns(4)
         b1.metric("τc calculado", f"{tau_c_burrill:.3f}")
         b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
-        b3.metric("Margen τ", f"{(tau_c_admisible - tau_c_burrill):.3f}")
-        b4, b5, b6 = st.columns(3)
-        b4.metric("Ae/A0 mín. Burrill", f"{burrill_ae_min:.3f}")
-        b5.metric("Ae requerida", f"{area_req_burrill_m2:,.2f} m²")
-        b6.metric("Ae actual", f"{area_expandida_actual_m2:,.2f} m²")
-        st.caption(f"Burrill usa T = {thrust_req_N/1000:,.1f} kN convertido internamente a {thrust_req_N:,.0f} N; A0 = {area_disco:,.2f} m²; v1 = {v1_burrill:,.2f} m/s.")
-        estado_html("✅ Cumple Burrill preliminar: la carga de pala queda por debajo del límite admisible." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala es elevada.", "good" if burrill_ok else "warn")
+        b3.metric("Ae/A0 mín. Burrill", f"{burrill_ae_min:.3f}")
+        b4.metric("Ae requerida", f"{area_expandida_req_burrill_m2:.2f} m²")
+        burrill_area_df = pd.DataFrame([
+            {"Parámetro": "Velocidad local v1 a 0.7R", "Valor": v1_burrill, "Unidad": "m/s", "Lectura": "Velocidad resultante usada para estimar carga de pala en Burrill."},
+            {"Parámetro": "Área de pala requerida Ap", "Valor": area_pala_req_burrill_m2, "Unidad": "m²", "Lectura": "Área mínima preliminar antes de convertir a relación expandida."},
+            {"Parámetro": "Constante Keller c", "Valor": keller_constante_c, "Unidad": "—", "Lectura": "Constante preliminar adoptada para monohélice mercante."},
+            {"Parámetro": "Área de disco A0", "Valor": area_disco, "Unidad": "m²", "Lectura": "Área circular barrida por la hélice."},
+            {"Parámetro": "Área expandida actual Ae", "Valor": area_expandida_real_m2, "Unidad": "m²", "Lectura": f"Sale de Ae/A0 actual = {ae_val:.3f}."},
+            {"Parámetro": "Área mínima requerida por Burrill", "Valor": area_expandida_req_burrill_m2, "Unidad": "m²", "Lectura": f"Equivale a Ae/A0 mín. = {burrill_ae_min:.3f}."},
+            {"Parámetro": "Déficit de área", "Valor": deficit_area_burrill_m2, "Unidad": "m²", "Lectura": "Si es mayor que cero, falta área de pala para este criterio."},
+        ])
+        st.markdown("#### Área requerida mínima por Burrill")
+        dataframe_profesional(burrill_area_df, height=220)
+        estado_html("✅ Cumple Burrill preliminar: la carga de pala y el área expandida quedan dentro del criterio." if burrill_ok else "⚠️ Revisar Burrill: la carga de pala o el área expandida no son suficientes.", "good" if burrill_ok else "warn")
         if HAS_PLOTLY:
             st.plotly_chart(plotly_burrill_prof(sigma_n, tau_c_burrill, tau_c_admisible), use_container_width=True, config=_plotly_config())
         else:
@@ -5572,55 +5837,25 @@ with tab_cav:
     with cav_keller:
         st.markdown("### 📐 Criterio de Keller")
         st.markdown("Keller estima el área expandida mínima requerida para evitar una carga excesiva sobre las palas.")
-        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
-        k1, k2, k3 = st.columns(3)
+        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+c")
+        k1, k2, k3, k4 = st.columns(4)
         k1.metric("Ae/A0 mínimo", f"{keller_ae_min:.3f}")
         k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
-        k3.metric("Margen", f"{(ae_val - keller_ae_min):.3f}")
-        k4, k5, k6 = st.columns(3)
-        k4.metric("Ae requerida Keller", f"{area_req_keller_m2:,.2f} m²")
-        k5.metric("Ae actual", f"{area_expandida_actual_m2:,.2f} m²")
-        k6.metric("Déficit", f"{max(0.0, area_req_keller_m2-area_expandida_actual_m2):,.2f} m²")
+        k3.metric("Ae requerida", f"{area_expandida_req_keller_m2:.2f} m²")
+        k4.metric("Déficit", f"{deficit_area_keller_m2:.2f} m²")
+        keller_area_df = pd.DataFrame([
+            {"Parámetro": "Área de disco A0", "Valor": area_disco, "Unidad": "m²", "Lectura": "Área circular barrida por la hélice."},
+            {"Parámetro": "Área expandida actual Ae", "Valor": area_expandida_real_m2, "Unidad": "m²", "Lectura": f"Sale de Ae/A0 actual = {ae_val:.3f}."},
+            {"Parámetro": "Área mínima requerida por Keller", "Valor": area_expandida_req_keller_m2, "Unidad": "m²", "Lectura": f"Equivale a Ae/A0 mín. = {keller_ae_min:.3f}."},
+            {"Parámetro": "Déficit de área", "Valor": deficit_area_keller_m2, "Unidad": "m²", "Lectura": "Si es mayor que cero, falta área de pala para este criterio."},
+        ])
+        st.markdown("#### Área requerida mínima por Keller")
+        dataframe_profesional(keller_area_df, height=220)
         estado_html("✅ Cumple Keller preliminar: el área expandida actual es mayor o igual al mínimo requerido." if keller_ok else "❌ No cumple Keller: se recomienda aumentar Ae/A0 o reducir la carga.", "good" if keller_ok else "bad")
         if HAS_PLOTLY:
             st.plotly_chart(plotly_keller_prof(keller_ae_min, ae_val), use_container_width=True, config=_plotly_config())
         else:
             st.pyplot(crear_figura_keller(keller_ae_min, ae_val))
-
-    with cav_dictamen:
-        st.markdown("### 📊 Dictamen de hélice por área expandida")
-        st.markdown("Esta pestaña compara el área expandida real de la hélice contra los mínimos requeridos por Keller y Burrill. El valor recomendado toma el criterio más exigente.")
-        d1, d2, d3, d4 = st.columns(4)
-        d1.metric("Ae/A0 actual", f"{ae_val:.3f}")
-        d2.metric("Keller mínimo", f"{keller_ae_min:.3f}")
-        d3.metric("Burrill mínimo", f"{burrill_ae_min:.3f}")
-        d4.metric("Ae/A0 recomendado", f"{ae_min_control:.3f}")
-        a1, a2, a3 = st.columns(3)
-        a1.metric("Área actual", f"{area_expandida_actual_m2:,.2f} m²")
-        a2.metric("Área requerida", f"{area_req_recomendada_m2:,.2f} m²")
-        a3.metric("Déficit", f"{deficit_area_recomendada_m2:,.2f} m²")
-        dictamen_helice_df = pd.DataFrame([
-            {"Criterio": "Área real", "Ae/A0": ae_val, "Área [m²]": area_expandida_actual_m2, "Dictamen": "Referencia"},
-            {"Criterio": "Keller", "Ae/A0": keller_ae_min, "Área [m²]": area_req_keller_m2, "Dictamen": "Cumple" if ae_val >= keller_ae_min else "No cumple"},
-            {"Criterio": "Burrill", "Ae/A0": burrill_ae_min, "Área [m²]": area_req_burrill_m2, "Dictamen": "Cumple" if ae_val >= burrill_ae_min else "No cumple"},
-            {"Criterio": "Recomendado final", "Ae/A0": ae_min_control, "Área [m²]": area_req_recomendada_m2, "Dictamen": "Cumple" if ae_val >= ae_min_control else "No cumple"},
-        ])
-        st.dataframe(dictamen_helice_df.style.format({"Ae/A0":"{:.4f}", "Área [m²]":"{:,.2f}"}).map(style_estado, subset=["Dictamen"]), use_container_width=True)
-        if HAS_PLOTLY:
-            st.plotly_chart(plotly_dictamen_area_helice(ae_val, keller_ae_min, burrill_ae_min, ae_min_control), use_container_width=True, config=_plotly_config())
-        else:
-            fig_dic, ax_dic = plt.subplots(figsize=(8.5,4.4))
-            labels_dic = ["Actual", "Keller", "Burrill", "Recomendado"]
-            vals_dic = [ae_val, keller_ae_min, burrill_ae_min, ae_min_control]
-            ax_dic.bar(labels_dic, vals_dic)
-            ax_dic.set_ylabel("Ae/A0 [-]"); ax_dic.set_title("Dictamen de área expandida de hélice")
-            ax_dic.grid(True, axis="y", linestyle=":", alpha=.45)
-            for i,v in enumerate(vals_dic): ax_dic.text(i, v+max(vals_dic)*.025, f"{v:.3f}", ha="center", fontweight="bold")
-            st.pyplot(fig_dic)
-        if ae_val >= ae_min_control:
-            estado_html("✅ La hélice cumple el área mínima recomendada por Keller/Burrill.", "good")
-        else:
-            estado_html(f"❌ La hélice no cumple el área mínima recomendada. Se requiere aumentar Ae/A0 hasta aproximadamente {ae_min_control:.3f} o incrementar el área expandida en {deficit_area_recomendada_m2:,.2f} m².", "bad")
 
     with cav_flujo:
         st.markdown("### 🌊 Reynolds y coeficiente de cavitación σ")
@@ -5672,6 +5907,193 @@ with tab_cav:
         st.latex(r"\tau_{c,adm}=0.22+0.18\sigma")
         st.latex(r"P_0-P_v=P_{atm}+\rho gh-P_v")
         st.info("Estos criterios son preliminares para prediseño. Para aprobación final deben contrastarse con diagramas originales, pruebas de modelo o reglas de clase aplicables.")
+
+
+# ==============================================================================
+# DICTAMEN INTEGRAL DE HÉLICE
+# ==============================================================================
+
+with tab_helice_dictamen:
+    st.subheader("📌 Dictamen integral de hélice")
+    normativa_pestana(
+        "Revisión integrada de área expandida, P/D, RPM operativa y cavitación.",
+        [
+            ("Keller", "área expandida mínima para repartir carga de pala"),
+            ("Burrill", "carga de pala y cavitación por σ y τc"),
+            ("Wageningen B-Series", "J de operación, KT, KQ, ηO y régimen n"),
+            ("ABS/DNV", "criterio de revisión preliminar: evitar cavitación, vibración y sobrecarga de pala")
+        ]
+    )
+
+    ae_recomendado = max(float(keller_ae_min), float(burrill_ae_min), float(ae_val))
+    ae_min_requerido_sin_actual = max(float(keller_ae_min), float(burrill_ae_min))
+    margen_keller_pct = (safe_div(ae_val - keller_ae_min, max(keller_ae_min, 1e-9)) * 100.0) if keller_ae_min > 0 else np.nan
+    margen_burrill_pct = (safe_div(ae_val - burrill_ae_min, max(burrill_ae_min, 1e-9)) * 100.0) if burrill_ae_min > 0 else np.nan
+    incremento_ae_pct = (safe_div(ae_recomendado - ae_val, max(ae_val, 1e-9)) * 100.0) if ae_val > 0 else np.nan
+    dictamen_area_global = "Cumple" if area_expandida_ok else "No cumple"
+    dictamen_helice_global = "Cumple" if (area_expandida_ok and burrill_ok and keller_ok and cavitacion_ok) else "No cumple / Rediseñar"
+
+    st.markdown("""
+    <div class="section-card">
+    Esta pestaña concentra lo que normalmente revisaría una herramienta de diseño aprobada: no basta con que la hélice tenga buena eficiencia; también debe tener área de pala suficiente, carga admisible, régimen de operación coherente y bajo riesgo de cavitación. Si el área real es menor que Keller o Burrill, la app debe recomendar rediseño aunque la eficiencia sea atractiva.
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Ae/A0 real", f"{ae_val:.3f}")
+    c2.metric("Ae/A0 Keller", f"{keller_ae_min:.3f}")
+    c3.metric("Ae/A0 Burrill", f"{burrill_ae_min:.3f}")
+    c4.metric("Ae req. recomendada", f"{area_expandida_req_recomendada_m2:.2f} m²")
+
+    if area_expandida_ok:
+        estado_html("✅ La relación Ae/A0 actual cubre el mínimo requerido por Keller y Burrill.", "good")
+    else:
+        estado_html(
+            f"❌ La hélice base no cumple el área expandida mínima: Ae/A0 actual = {ae_val:.3f}, requerido = {ae_min_requerido_sin_actual:.3f}. Se recomienda aumentar el área expandida o reducir la carga por pala.",
+            "bad"
+        )
+
+    dictamen_area_df = pd.DataFrame([
+        {
+            "Criterio": "Keller",
+            "Ae/A0 requerido": keller_ae_min,
+            "Ae/A0 real": ae_val,
+            "Área requerida [m²]": area_expandida_req_keller_m2,
+            "Área real [m²]": area_expandida_real_m2,
+            "Déficit [m²]": deficit_area_keller_m2,
+            "Margen [%]": margen_keller_pct,
+            "Dictamen": "Cumple" if keller_ok else "No cumple",
+            "Lectura técnica": "Área expandida mínima para distribuir carga y reducir cavitación."
+        },
+        {
+            "Criterio": "Burrill",
+            "Ae/A0 requerido": burrill_ae_min,
+            "Ae/A0 real": ae_val,
+            "Área requerida [m²]": area_expandida_req_burrill_m2,
+            "Área real [m²]": area_expandida_real_m2,
+            "Déficit [m²]": deficit_area_burrill_m2,
+            "Margen [%]": margen_burrill_pct,
+            "Dictamen": "Cumple" if burrill_ok else "No cumple",
+            "Lectura técnica": "Carga de pala admisible según σ, τc y área efectiva."
+        },
+        {
+            "Criterio": "Recomendación final",
+            "Ae/A0 requerido": ae_min_requerido_sin_actual,
+            "Ae/A0 real": ae_val,
+            "Área requerida [m²]": area_expandida_req_recomendada_m2,
+            "Área real [m²]": area_expandida_real_m2,
+            "Déficit [m²]": deficit_area_recomendada_m2,
+            "Margen [%]": incremento_ae_pct,
+            "Dictamen": dictamen_area_global,
+            "Lectura técnica": "Debe tomarse el mayor entre Keller y Burrill; si el valor real es menor, la hélice es frágil frente a cavitación."
+        }
+    ])
+    st.markdown("### 📐 Área expandida y cavitación")
+    st.dataframe(
+        dictamen_area_df.style
+        .format({
+            "Ae/A0 requerido": "{:.4f}",
+            "Ae/A0 real": "{:.4f}",
+            "Área requerida [m²]": "{:.2f}",
+            "Área real [m²]": "{:.2f}",
+            "Déficit [m²]": "{:.2f}",
+            "Margen [%]": lambda x: "—" if pd.isna(x) else f"{x:.2f}%"
+        })
+        .map(style_estado, subset=["Dictamen"]),
+        use_container_width=True,
+        height=250
+    )
+
+    st.markdown("### 📊 Comparación visual del área expandida")
+    if HAS_PLOTLY:
+        fig_area = go.Figure()
+        vals_area = [ae_val, keller_ae_min, burrill_ae_min, ae_min_requerido_sin_actual]
+        labs_area = ["Ae/A0 real", "Mín. Keller", "Mín. Burrill", "Recomendado"]
+        fig_area.add_trace(go.Bar(
+            x=labs_area, y=vals_area,
+            text=[f"{v:.3f}" for v in vals_area], textposition="outside",
+            hovertemplate="<b>%{x}</b><br>Ae/A0=%{y:.4f}<extra></extra>"
+        ))
+        fig_area.add_hline(y=ae_val, line_dash="dot", annotation_text=f"Área real {ae_val:.3f}")
+        fig_area.update_layout(
+            title="Área expandida real vs mínimos requeridos",
+            xaxis_title="Criterio", yaxis_title="Relación Ae/A0 [-]",
+            height=430, template="plotly_white", margin=dict(l=60, r=35, t=75, b=60),
+            showlegend=False
+        )
+        fig_area.update_yaxes(range=[0, max(vals_area+[0.7])*1.18], showgrid=True, gridcolor="rgba(148,163,184,0.25)")
+        st.plotly_chart(fig_area, use_container_width=True, config=_plotly_config())
+    else:
+        fig_area, ax_area = plt.subplots(figsize=(9.5, 4.6))
+        vals_area = [ae_val, keller_ae_min, burrill_ae_min, ae_min_requerido_sin_actual]
+        labs_area = ["Ae/A0 real", "Mín. Keller", "Mín. Burrill", "Recomendado"]
+        ax_area.bar(labs_area, vals_area)
+        ax_area.axhline(ae_val, linestyle=":", linewidth=1.8, label=f"Área real {ae_val:.3f}")
+        ax_area.set_ylabel("Relación Ae/A0 [-]")
+        ax_area.set_title("Área expandida real vs mínimos requeridos")
+        ax_area.grid(True, axis="y", linestyle=":", alpha=0.55)
+        for i, v in enumerate(vals_area):
+            ax_area.text(i, v+0.015, f"{v:.3f}", ha="center", fontweight="bold")
+        ax_area.legend()
+        st.pyplot(fig_area)
+
+    st.markdown("### ⚙️ Punto operativo usado por la app")
+    pto_operativo_df = pd.DataFrame([
+        {"Parámetro": "RPM de régimen / operación", "Valor": rpm_helice_requerida, "Unidad": "rpm", "Fuente en app": rpm_helice_origen, "Uso": "Calcula J operación, ηO, ηD, PD, PS y PB."},
+        {"Parámetro": "J de operación", "Valor": j_operacion, "Unidad": "—", "Fuente en app": "VA/(n·D)", "Uso": "Punto real de trabajo en curvas Wageningen."},
+        {"Parámetro": "P/D ingresado/base", "Valor": pd_val, "Unidad": "—", "Fuente en app": "Dato del usuario/PDF", "Uso": "Geometría base de la hélice."},
+        {"Parámetro": "P/D operativo evaluado", "Valor": pd_hidrodinamico_usado, "Unidad": "—", "Fuente en app": "Búsqueda hidrodinámica conservadora", "Uso": "Punto operativo usado para resolver RPM viable cuando aplica."},
+        {"Parámetro": "ηO de operación", "Valor": max_eff, "Unidad": "—", "Fuente en app": "Interpolación en J operación", "Uso": "Alimenta ηD = ηH·ηO·ηR."},
+        {"Parámetro": "ηD cuasi-propulsiva", "Valor": eta_d, "Unidad": "—", "Fuente en app": "ηH·ηO·ηR·ηextra", "Uso": "Determina PD = PE/ηD."},
+    ])
+    st.dataframe(
+        pto_operativo_df.style.format({"Valor": lambda x: "—" if pd.isna(x) else f"{x:,.4f}"}),
+        use_container_width=True,
+        height=270
+    )
+
+    st.markdown("### ⚡ Cadena trazable de potencia vinculada al punto operativo")
+    potencia_helice_df = pd.DataFrame([
+        {"Etapa": "PE", "Valor [kW]": PE_kw, "Fórmula / criterio": "RT con Sea Margin · VS", "Comentario": "Potencia efectiva con margen de servicio."},
+        {"Etapa": "PT", "Valor [kW]": PT_kw, "Fórmula / criterio": "Tprop · VA", "Comentario": "Potencia de empuje en el disco propulsor."},
+        {"Etapa": "PD", "Valor [kW]": PD_kw, "Fórmula / criterio": "PE/ηD", "Comentario": "Potencia entregada a la hélice."},
+        {"Etapa": "PS", "Valor [kW]": PS_kw, "Fórmula / criterio": "PD/ηS", "Comentario": "Potencia en eje considerando pérdidas mecánicas."},
+        {"Etapa": "PB", "Valor [kW]": PB_kw_calc, "Fórmula / criterio": "PS/ηG", "Comentario": "Potencia al freno requerida al motor."},
+        {"Etapa": "MCR requerido", "Valor [kW]": MCR_requerido_kw, "Fórmula / criterio": "PB/0.85", "Comentario": "Reserva para no operar permanentemente al 100% MCR."},
+    ])
+    st.dataframe(
+        potencia_helice_df.style.format({"Valor [kW]": "{:,.2f}"}),
+        use_container_width=True,
+        height=280
+    )
+
+    st.markdown("### 🧾 Dictamen final de hélice")
+    dictamen_final_df = pd.DataFrame([
+        {"Área revisada": "Área expandida", "Resultado": f"Ae/A0={ae_val:.3f} vs requerido={ae_min_requerido_sin_actual:.3f}", "Dictamen": "Cumple" if area_expandida_ok else "No cumple", "Acción sugerida": "Mantener geometría" if area_expandida_ok else "Aumentar Ae/A0, D o Z; o reducir carga/potencia."},
+        {"Área revisada": "Burrill", "Resultado": f"τc={tau_c_burrill:.3f} vs adm={tau_c_admisible:.3f}", "Dictamen": "Cumple" if burrill_ok else "No cumple", "Acción sugerida": "Carga aceptable" if burrill_ok else "Reducir carga de pala o aumentar área expandida."},
+        {"Área revisada": "Keller", "Resultado": f"Ae/A0 min={keller_ae_min:.3f}", "Dictamen": "Cumple" if keller_ok else "No cumple", "Acción sugerida": "Área suficiente" if keller_ok else "Aumentar área expandida."},
+        {"Área revisada": "RPM / J", "Resultado": f"n={rpm_helice_requerida:.2f} rpm, J={j_operacion:.3f}", "Dictamen": "Cumple" if rpm_helice_requerida > 0 and j_operacion > 0 else "Revisar", "Acción sugerida": "Usar este punto para potencia" if rpm_helice_requerida > 0 else "Cargar datos para resolver régimen."},
+        {"Área revisada": "Potencias", "Resultado": f"PD={PD_kw:,.0f} kW, PB={PB_kw_calc:,.0f} kW", "Dictamen": "Cumple" if PD_kw > 0 and PB_kw_calc > 0 else "Revisar", "Acción sugerida": "Validar motor y transmisión."},
+        {"Área revisada": "Dictamen global", "Resultado": dictamen_helice_global, "Dictamen": "Cumple" if dictamen_helice_global == "Cumple" else "No cumple", "Acción sugerida": "Diseño preliminar aceptable" if dictamen_helice_global == "Cumple" else "Rediseñar geometría o reducir carga antes de aceptar eficiencia."},
+    ])
+    st.dataframe(
+        dictamen_final_df.style.map(style_estado, subset=["Dictamen"]),
+        use_container_width=True,
+        height=330
+    )
+
+    if dictamen_helice_global == "Cumple":
+        estado_html("✅ Dictamen global favorable: la hélice tiene área, carga y punto operativo coherentes para prediseño.", "good")
+    else:
+        estado_html("❌ Dictamen global no favorable: la hélice puede ser eficiente, pero no debe aceptarse si no cumple área expandida/cavitación. La recomendación es rediseñar Ae/A0, P/D, D, Z o reducir carga.", "bad")
+
+    with st.expander("📘 Nota de clase: por qué la máxima eficiencia no gobierna sola", expanded=False):
+        st.markdown("""
+        Una hélice puede alcanzar una eficiencia teórica alta en aguas abiertas, pero eso no significa que sea aceptable para el buque real. El diseño debe evaluarse en el punto operativo: RPM, J, empuje, cavitación y área expandida. Por eso la app separa la eficiencia máxima teórica de la eficiencia de operación y usa esta última en la cadena de potencias.
+        """)
+        st.latex(r"J_{op}=\frac{V_A}{nD}")
+        st.latex(r"\eta_D=\eta_H\eta_O\eta_R")
+        st.latex(r"P_D=\frac{P_E}{\eta_D}\qquad P_S=\frac{P_D}{\eta_S}\qquad P_B=\frac{P_S}{\eta_G}")
 
 # ==============================================================================
 # NORMATIVA APLICABLE
@@ -5919,7 +6341,7 @@ with tab_clase:
         {"Bloque técnico": "Datos principales del buque", "Resultado clave": f"L={eslora:.2f} m · B={manga:.2f} m · T={calado:.2f} m · V={velocidad:.2f} kn", "Criterio de lectura": "Datos de entrada o ficha técnica", "Estado": "Cumple"},
         {"Bloque técnico": "Resistencia y potencia efectiva", "Resultado clave": f"RT={resistencia_total_kn:,.0f} kN · PE={PE_kw:,.0f} kW", "Criterio de lectura": "RT positiva y potencia trazable", "Estado": "Cumple" if resistencia_total_kn > 0 and PE_kw > 0 else "Revisar"},
         {"Bloque técnico": "Potencia al freno / motor", "Resultado clave": f"PB={PB_kw_calc:,.0f} kW · MCR req.={MCR_requerido_kw:,.0f} kW", "Criterio de lectura": "Reserva frente al MCR disponible", "Estado": motor_estado if 'motor_estado' in globals() else ("Cumple" if PB_kw_calc <= MCR_requerido_kw else "Revisar")},
-        {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO máx={max_eff*100:.2f}% · J={j_opt:.3f}", "Criterio de lectura": "Eficiencia de aguas abiertas razonable", "Estado": "Cumple" if hidro_ok else "Revisar"},
+        {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO operación={max_eff*100:.2f}% · J operación={j_operacion:.3f} · ηO máx teórica={max_eff_wageningen*100:.2f}%", "Criterio de lectura": "Eficiencia real de operación separada del óptimo teórico", "Estado": "Cumple" if hidro_ok else "Revisar"},
         {"Bloque técnico": "Geometría de hélice", "Resultado clave": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Criterio de lectura": "Rangos comerciales y área suficiente", "Estado": "Cumple" if (3 <= z_val <= 7 and 0.50 <= pd_val <= 1.40 and keller_ok) else "Revisar"},
         {"Bloque técnico": "Cavitación", "Resultado clave": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Criterio de lectura": "Burrill, Keller, σ y Reynolds", "Estado": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok and reynolds_ok) else "Revisar"},
         {"Bloque técnico": "Vibración torsional", "Resultado clave": f"τ={esfuerzo_real_mpa:.2f} MPa · τadm={tau_admisible_mpa:.2f} MPa", "Criterio de lectura": "Esfuerzo menor al admisible", "Estado": "Cumple" if torsion_ok else "No cumple"},
