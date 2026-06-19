@@ -2753,33 +2753,27 @@ with st.sidebar:
         help="En modo básico/intermedio se estima a partir de w. Activa modo avanzado o validación para editarla."
     )
 
-    modo_metodologia = st.selectbox(
-        "Modo de metodología de cálculo",
-        [
-            "Diseño general universal",
-            "Validación manual estilo profesor",
-            "Validación KVLCC2 — profesor"
-        ],
-        index=0,
-        help=(
-            "Diseño general universal sirve para cualquier buque. Validación manual estilo profesor permite "
-            "introducir RPM, ηO, P/D, Ae/A0 y/o Tprop de referencia sin amarrar la app al KVLCC2. "
-            "Validación KVLCC2 reproduce el caso visto en clase."
-        )
+    # Metodología única universal:
+    # La app no muestra modos especiales ni fija resultados para un barco específico.
+    # Si el usuario captura datos reales de operación (RPM, Tprop, ηO, P/D, Ae/A0),
+    # esos datos se usan como condición de operación; si no, la app estima valores preliminares.
+    modo_profesor_kvlcc2 = False
+    modo_validacion_profesor_generica = False
+    usar_filosofia_profesor = False
+    st.info(
+        "Metodología única universal: la app calcula con los datos del buque ingresado/PDF y con datos de operación conocidos cuando existan. "
+        "No usa un modo especial para un caso fijo; por eso sirve para este buque y para otros."
     )
-    modo_profesor_kvlcc2 = (modo_metodologia == "Validación KVLCC2 — profesor")
-    modo_validacion_profesor_generica = (modo_metodologia == "Validación manual estilo profesor")
-    usar_filosofia_profesor = modo_profesor_kvlcc2 or modo_validacion_profesor_generica
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=float(1.000 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("eta_r"), 1.010)),
+        value=float(nvl(datos_pdf.get("eta_r"), 1.010)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
         format="%.3f",
-        disabled=(modo_profesor_kvlcc2 or not editar_intermedio),
-        help="En modo profesor se fija en 1.000 porque así aparece en el módulo validado; fuera de ese modo es editable."
+        disabled=not editar_intermedio,
+        help="Eficiencia rotativa relativa del propulsor. Si existe ficha o ensayo, captura el dato real; si no, usa el valor preliminar."
     )
 
     inmersion_eje_m = st.number_input(
@@ -2843,22 +2837,6 @@ with st.sidebar:
         help="En modo básico se usa 15% como margen preliminar típico."
     )
 
-    if modo_profesor_kvlcc2:
-        # Valores observados en la herramienta validada del profesor para el caso KVLCC2.
-        # Se dejan explícitos para que Keller, Burrill, RPM y comparación trabajen con la misma metodología.
-        p_atm_auto = 101325.0
-        pd_val = 0.870
-        st.info(
-            "Modo profesor KVLCC2 activo: P/D=0.870, pA=101325 Pa, n=71.5464 rpm, "
-            "ηO=0.49527, ηR=1.000, ηS=0.980, ηG=0.970. "
-            "La cadena de potencia replica el módulo validado del profesor; Keller/Burrill conservan Tprop por t=0.220."
-        )
-    elif modo_validacion_profesor_generica:
-        st.info(
-            "Modo validación manual: la app sigue siendo universal. Tú introduces P/D, Ae/A0, RPM real, ηO y, si aplica, Tprop de referencia. "
-            "La J de eficiencia queda solo para optimización; la J de operación gobierna RPM, cavitación y comparación."
-        )
-
     st.markdown("---")
     st.subheader("⚙️ Material del sistema propulsivo")
     st.info(
@@ -2897,22 +2875,22 @@ with st.sidebar:
         st.caption(f"RT manual usada: {resistencia_total_kn:,.0f} kN.")
 
     usar_tprop_potencia_manual = st.checkbox(
-        "Usar Tprop manual solo para potencia PT/ηH",
-        value=True if modo_profesor_kvlcc2 else False,
-        disabled=modo_profesor_kvlcc2,
+        "Usar empuje de propulsor conocido para potencia PT/ηH",
+        value=False,
+        disabled=False,
         help=(
-            "Actívalo si la app del profesor o una ficha te da un empuje de propulsor específico para la cadena de potencia. "
+            "Actívalo si la ficha, ensayo, canal, CFD o una referencia técnica te da un empuje de propulsor específico para la cadena de potencia. "
             "Si no se activa, la app usa Tprop = RT·(1+SM)/(1-t), que es más general."
         )
     )
     tprop_potencia_manual_kn = st.number_input(
         "Tprop manual para potencia [kN]",
-        value=float(3166.78962 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("tprop_kn"), resistencia_total_kn)),
+        value=float(nvl(datos_pdf.get("tprop_kn"), resistencia_total_kn)),
         min_value=0.0,
         step=10.0,
         format="%.5f",
-        disabled=(modo_profesor_kvlcc2 or not usar_tprop_potencia_manual),
-        help="Este dato NO cambia Keller/Burrill; solo permite replicar la cadena PT-PD-PS-PB de una referencia."
+        disabled=not usar_tprop_potencia_manual,
+        help="Este dato NO cambia Keller/Burrill; solo permite usar un empuje de operación conocido para PT-PD-PS-PB."
     )
 
     with st.expander("📘 ¿Cómo calcula la app la RT automática?", expanded=False):
@@ -2933,31 +2911,31 @@ with st.sidebar:
 
     transmision_tipo = st.selectbox("Tipo de transmisión", ["Automática según motor recomendado", "Directa / sin caja reductora", "Con caja reductora"], disabled=not editar_intermedio )
     transmision_para_eta = "Directa / sin caja reductora" if transmision_tipo.startswith("Automática") else transmision_tipo
-    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=float(0.980 if modo_profesor_kvlcc2 else estimar_eta_s(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=(modo_profesor_kvlcc2 or not editar_avanzado))
-    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=float(0.970 if modo_profesor_kvlcc2 else estimar_eta_g(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=(modo_profesor_kvlcc2 or not editar_avanzado))
+    eta_s = st.number_input("Eficiencia del eje ηS [-]", value=float(estimar_eta_s(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
+    eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=float(estimar_eta_g(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado)
     eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado, help="Normalmente 1.000 si no se considera una pérdida adicional.")
 
     eta_o_fuente = st.selectbox(
         "Fuente de ηO para la cadena de potencia",
-        ["Wageningen por máxima eficiencia", "ηO manual/de operación"],
-        index=1 if usar_filosofia_profesor else 0,
-        disabled=modo_profesor_kvlcc2,
+        ["Wageningen por máxima eficiencia", "ηO de operación/conocida"],
+        index=1,
+        disabled=False,
         help=(
-            "Para diseño general se puede usar la ηO máxima de Wageningen. Para validación contra el profesor "
-            "conviene usar la ηO de operación o la que aparece en su módulo, porque no siempre coincide con el punto óptimo."
+            "Para una app realista conviene usar ηO de operación cuando se conoce por ensayo, ficha o curva en el punto de trabajo. "
+            "La ηO máxima solo sirve para explorar el máximo teórico, no para asegurar que la hélice sea segura."
         )
     )
     eta_o_manual = st.number_input(
-        "ηO manual/de operación [-]",
-        value=float(0.49527 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("eta_o"), 0.55)),
+        "ηO de operación/conocida [-]",
+        value=float(nvl(datos_pdf.get("eta_o"), 0.55)),
         min_value=0.20,
         max_value=0.90,
         step=0.001,
         format="%.5f",
-        disabled=(modo_profesor_kvlcc2 or eta_o_fuente == "Wageningen por máxima eficiencia"),
-        help="Usa este campo cuando quieras replicar una app/profesor, datos de ensaye, curva abierta a punto de operación o ficha validada."
+        disabled=eta_o_fuente == "Wageningen por máxima eficiencia",
+        help="Usa este campo cuando quieras usar datos de ensayo, curva abierta a punto de operación o ficha validada."
     )
-    usar_eta_o_manual = modo_profesor_kvlcc2 or (eta_o_fuente == "ηO manual/de operación")
+    usar_eta_o_manual = (eta_o_fuente == "ηO de operación/conocida")
 
     priorizar_integridad_helice = st.checkbox(
         "Priorizar integridad de hélice antes que máxima eficiencia",
@@ -2993,10 +2971,10 @@ with st.sidebar:
     st.subheader("🔎 Datos reales para comparar")
     st.caption("Estos campos son opcionales. Si no hay PDF o ficha técnica, déjalos en 0 y la app calculará sin comparar contra datos reales.")
     pb_real_kw = st.number_input("PB real/NCR del buque [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 0.0)), min_value=0.0, step=100.0)
-    rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 71.5464 if modo_profesor_kvlcc2 else 0.0)), min_value=0.0, step=1.0)
+    rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 0.0)), min_value=0.0, step=1.0)
     diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 0.0)), min_value=0.0, step=0.01)
     z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 0)), min_value=0, step=1)
-    pd_real = st.number_input("P/D real", value=float(0.870 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("prop_pd"), 0.0)), min_value=0.0, step=0.001, format="%.3f")
+    pd_real = st.number_input("P/D real", value=float(nvl(datos_pdf.get("prop_pd"), 0.0)), min_value=0.0, step=0.001, format="%.3f")
 
     st.markdown("---")
     st.subheader("⚙️ Parámetros mecánicos visibles")
@@ -3076,8 +3054,8 @@ j_opt_wageningen = float(res.loc[res["nO"].idxmax(), "J"]) if max_eff_wageningen
 # J_eficiencia: punto de máxima eficiencia de la curva Wageningen. Solo se usa para
 # optimización y para explicar "cuánto da" la hélice teóricamente.
 # J_operacion: punto real de trabajo del buque. Se calcula con VA, D y RPM de servicio.
-# Esta es la J que debe alimentar RPM, cavitación, Keller/Burrill y comparación con profesor.
-# En modo profesor, ηO no sale del máximo de la curva; se fija con el valor del módulo validado.
+# Esta es la J que debe alimentar RPM, cavitación, Keller/Burrill y comparación con la referencia.
+# Si se conoce ηO de operación, no se usa el máximo de la curva para la cadena de potencia.
 max_eff = float(eta_o_manual) if usar_eta_o_manual else max_eff_wageningen
 j_eficiencia = j_opt_wageningen
 j_opt = j_eficiencia  # alias antiguo para compatibilidad de gráficas/exports
@@ -3278,34 +3256,14 @@ PE_kw = RT_servicio_N * velocidad_buque_ms / 1000.0
 VA_ms = v_ms
 
 # --------------------------------------------------------------------------
-# Metodología de la app del profesor
+# Metodología única universal
 # --------------------------------------------------------------------------
-# En las capturas del profesor se observa una filosofía por módulos:
-# 1) Para Keller/Burrill usa Tprop = 3125.641 kN, equivalente a RT_servicio/(1-0.220).
-# 2) Para la cadena de potencias usa T = 3166.78962 kN y ηH = PE/PT = 1.1862.
-# 3) Para PD usa ηO = 0.49527, ηR = 1.000, ηS = 0.980 y ηG = 0.970.
-# Por eso se separa thrust_cavitacion_N de thrust_potencia_N.
-if modo_profesor_kvlcc2:
-    t_cavitacion_prof = 0.220
-    thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_cavitacion_prof, 1e-9))
-    thrust_potencia_N = 3166.78962 * 1000.0
-    eta_h = safe_div(PE_kw, max(thrust_potencia_N * VA_ms / 1000.0, 1e-9), default=0.0)
-    eta_r = 1.000
-    eta_s = 0.980
-    eta_g = 0.970
-    max_eff = 0.49527
-elif modo_validacion_profesor_generica:
-    # Filosofía universal estilo profesor: no amarra el cálculo a un buque.
-    # Cavitación usa el empuje de servicio por RT, margen y deducción t.
-    # Potencia puede usar ese mismo empuje o un Tprop manual de referencia.
-    thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
-    thrust_potencia_N = (tprop_potencia_manual_kn * 1000.0) if usar_tprop_potencia_manual and tprop_potencia_manual_kn > 0 else thrust_cavitacion_N
-    eta_h = safe_div(PE_kw, max(thrust_potencia_N * VA_ms / 1000.0, 1e-9), default=0.0) if usar_tprop_potencia_manual else safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
-else:
-    # Diseño general universal: usa los datos del usuario/PDF sin calibraciones fijas.
-    thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
-    thrust_potencia_N = thrust_cavitacion_N
-    eta_h = safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
+# La cavitación siempre se evalúa con el empuje de servicio derivado de RT, margen
+# y deducción de empuje t. Para la cadena PT-PD-PS-PB puede usarse ese mismo empuje
+# o un empuje de propulsor conocido, sin cambiar Keller/Burrill.
+thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
+thrust_potencia_N = (tprop_potencia_manual_kn * 1000.0) if usar_tprop_potencia_manual and tprop_potencia_manual_kn > 0 else thrust_cavitacion_N
+eta_h = safe_div(PE_kw, max(thrust_potencia_N * VA_ms / 1000.0, 1e-9), default=0.0) if usar_tprop_potencia_manual else safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
 
 thrust_req_N = thrust_cavitacion_N
 PT_kw = thrust_potencia_N * VA_ms / 1000.0
@@ -3335,13 +3293,10 @@ exceso_sobre_85_kw = max(PB_kw_calc - potencia_85_mcr_kw, 0.0)
 exceso_sobre_85_pct = safe_div(exceso_sobre_85_kw, max(potencia_85_mcr_kw, 1e-9)) * 100.0
 margen_hasta_mcr_kw = motor_mcr_kw - PB_kw_calc if motor_mcr_kw > 0 else 0.0
 margen_hasta_mcr_pct = safe_div(margen_hasta_mcr_kw, max(motor_mcr_kw, 1e-9)) * 100.0
-rpm_profesor_ref = 71.5464
-# RPM por máxima eficiencia: NO gobierna operación; sirve para la pestaña de optimización.
+# RPM por máxima eficiencia: NO gobierna operación; sirve solo para optimización.
 rpm_por_j_eficiencia = safe_div(VA_ms, max(j_eficiencia * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_eficiencia > 0 else 0.0
-# RPM operativa: sí gobierna validación. Si existe dato real/profesor se usa ese; si no, se toma la teórica como respaldo.
-if modo_profesor_kvlcc2:
-    rpm_helice_requerida = rpm_profesor_ref
-elif rpm_real and rpm_real > 0:
+# RPM operativa: si existe dato real de servicio se usa ese; si no, se toma la teórica como respaldo.
+if rpm_real and rpm_real > 0:
     rpm_helice_requerida = rpm_real
 else:
     rpm_helice_requerida = rpm_por_j_eficiencia
@@ -3374,7 +3329,7 @@ tau_c_burrill = safe_div(thrust_req_N, 0.5 * rho_auto * max(VA_ms**2, 1e-9) * ma
 tau_c_admisible = 0.22 + 0.18 * sigma_n
 # Además del tau, se estima Ae/A0 requerido para evitar que la app marque "cumple"
 # cuando el área expandida real es menor al área mínima de pala.
-burrill_ae_min = aeao_requerido_burrill_aprox(sigma_n, tau_c_burrill, ae_val, pd_val, modo_profesor_kvlcc2)
+burrill_ae_min = aeao_requerido_burrill_aprox(sigma_n, tau_c_burrill, ae_val, pd_val, False)
 burrill_ok = (tau_c_burrill <= tau_c_admisible) and (ae_val >= burrill_ae_min)
 ae_min_control = max(keller_ae_min, burrill_ae_min)
 area_expandida_ok = ae_val >= ae_min_control
