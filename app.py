@@ -2821,19 +2821,19 @@ with st.sidebar:
     sw_auto = estimar_superficie_mojada_simple(lwl, manga, calado, cb_buque)
     superficie_mojada_sin_timon_m2 = st.number_input(
         "Superficie mojada sin timón Swo [m²]",
-        value=float(nvl(datos_pdf.get("swo_m2"), sw_auto * 0.99)),
+        value=float(nvl(datos_pdf.get("swo_m2"), 27194.0)),
         min_value=0.0,
         step=100.0,
         disabled=not editar_intermedio,
-        help="En modo básico se estima con LWL, B, T y Cb. Activa modo intermedio/avanzado para editarla."
+        help="Valor inicial de referencia editable. Para otro buque, reemplázalo por ficha técnica, Maxsurf o cálculo de superficie mojada."
     )
     superficie_mojada_con_timon_m2 = st.number_input(
         "Superficie mojada con timón Sw [m²]",
-        value=float(nvl(datos_pdf.get("sw_m2"), sw_auto)),
+        value=float(nvl(datos_pdf.get("sw_m2"), 27467.0)),
         min_value=0.0,
         step=100.0,
         disabled=not editar_intermedio,
-        help="Superficie mojada total. En modo básico se estima automáticamente; en modo intermedio/avanzado puedes reemplazarla por Maxsurf o ficha técnica."
+        help="Valor inicial de referencia editable. Para otro buque, reemplázalo por ficha técnica, Maxsurf o cálculo de superficie mojada."
     )
     ajuste_estela_no_uniforme_pct = st.number_input(
         "Nonuniform Wake Adjustment [%]",
@@ -2853,23 +2853,23 @@ with st.sidebar:
 
     estela = st.number_input(
         "Fracción de estela w [-]",
-        value=float(nvl(datos_pdf.get("w"), w_estimado)),
+        value=float(nvl(datos_pdf.get("w"), 0.351)),
         min_value=0.0,
         max_value=0.8,
         step=0.001,
         format="%.3f",
         disabled=not editar_avanzado,
-        help="En modo básico/intermedio se estima por tipo de buque y Cb. Activa modo avanzado o validación para ajustarla manualmente."
+        help="Valor inicial de referencia editable. Para otro buque, usa el valor de estela de su análisis hidrodinámico."
     )
 
     t_fraction = st.slider(
         "Fracción de deducción de empuje t [-]",
         0.05,
         0.35,
-        float(nvl(datos_pdf.get("t"), t_estimado)),
+        float(nvl(datos_pdf.get("t"), 0.220)),
         0.005,
         disabled=not editar_avanzado,
-        help="En modo básico/intermedio se estima a partir de w. Activa modo avanzado o validación para editarla."
+        help="Valor inicial de referencia editable. Para otro buque, usa la deducción de empuje de su análisis propulsivo."
     )
 
     # Metodología única universal sin modos especiales visibles.
@@ -2881,23 +2881,44 @@ with st.sidebar:
 
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
-        value=float(nvl(datos_pdf.get("eta_r"), 1.000)),
+        value=float(nvl(datos_pdf.get("eta_r"), 1.015)),
         min_value=0.80,
         max_value=1.15,
         step=0.005,
         format="%.3f",
         disabled=not editar_intermedio,
-        help="Eficiencia rotativa relativa del propulsor. Si existe ficha o ensayo, captura el dato real; si no, usa el valor preliminar."
+        help="Valor inicial de referencia editable. Si existe ficha, ensayo o dato de clase, captura el dato real del buque."
     )
 
     inmersion_eje_m = st.number_input(
         "Inmersión del centro del eje h [m]",
-        value=float(nvl(datos_pdf.get("inmersion_eje_m"), max(0.50*calado, 0.1))),
+        value=float(nvl(datos_pdf.get("inmersion_eje_m"), 14.10)),
         min_value=0.1,
         step=0.1,
         disabled=not editar_intermedio,
-        help="Si no se conoce, se aproxima como 50% del calado. Activa modo intermedio/avanzado para editarlo."
+        help="Valor inicial de referencia editable. Para otro buque, usa la inmersión real del eje o la obtenida de geometría de popa."
     )
+
+    st.markdown(f"""
+    <style>
+    .referencia-validacion {{
+        background: rgba(100,149,237,0.08);
+        border-left: 4px solid rgba(100,149,237,0.35);
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin: 10px 0 4px 0;
+        color: #334155;
+        font-size: 13px;
+        line-height: 1.55;
+    }}
+    .referencia-validacion b {{ color:#1e3a8a; }}
+    </style>
+    <div class="referencia-validacion">
+        <b>Parámetros de referencia cargados al iniciar:</b><br>
+        Swo = {superficie_mojada_sin_timon_m2:,.0f} m² · Sw = {superficie_mojada_con_timon_m2:,.0f} m² ·
+        w = {estela:.3f} · t = {t_fraction:.3f} · ηR = {eta_r:.3f} · h = {inmersion_eje_m:.2f} m
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.subheader("⚙️ Geometría de la hélice")
