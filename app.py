@@ -1264,6 +1264,12 @@ def parsear_ficha_tecnica(texto_pdf):
     d["prop_pd"] = pd_val_detect if pd_val_detect else (safe_div(d.get("prop_pitch_m"), d.get("prop_diam_m"), default=None) if d.get("prop_pitch_m") and d.get("prop_diam_m") else None)
     d["prop_aeao"] = _buscar_numero(txt, [r"Ae\s*/\s*A0\s*\)?\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+De\s+[AÁ]rea\s+Expandida.*?[:\-]?\s*([0-9.,]+)"])
     d["hub_ratio"] = _buscar_numero(txt, [r"Hub\s+Ratio\s*[:\-]?\s*([0-9.,]+)", r"Relaci[oó]n\s+Del\s+Cubo.*?[:\-]?\s*([0-9.,]+)"])
+    d["prop_rpm"] = _buscar_numero(txt, [
+        r"R[eé]gimen\s*n\s*[:\-]?\s*([0-9.,]+)\s*rpm",
+        r"RPM\s+(?:hidrodin[aá]mica|de\s+h[eé]lice|propulsor|propeller|shaft)\s*[:\-]?\s*([0-9.,]+)",
+        r"(?:propeller|shaft)\s*(?:speed|rpm)\s*[:\-]?\s*([0-9.,]+)\s*rpm",
+        r"n\s*[:\-]?\s*([0-9.,]+)\s*rpm"
+    ])
     d["prop_material"] = _buscar_texto(txt, [r"Material\s*([^\n]+)"])
     return d
 
@@ -2387,24 +2393,34 @@ def resolver_punto_operacion_hidrodinamico(res_df, va_ms, diametro_m, empuje_n, 
                 "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Curva sin punto válido"
             }
 
-        # Para cada J de la curva: n = VA/(J·D). Luego T_pred = KT·rho·n²·D⁴.
-        df["n_rps"] = va_ms / (df["J"] * diametro_m)
-        df["rpm"] = df["n_rps"] * 60.0
-        df["T_pred_N"] = df["KT"] * rho_kg_m3 * (df["n_rps"] ** 2) * (diametro_m ** 4)
-        df["error_abs_N"] = (df["T_pred_N"] - empuje_n).abs()
+        # Resolución continua: no toma el punto de máxima eficiencia ni se limita
+        # a la fila más cercana de la tabla. Barre J con alta resolución, calcula
+        # n = VA/(J·D) y busca donde la carga hidrodinámica calculada coincide
+        # con la carga requerida.
+        df = df.sort_values("J")
+        j_min = float(df["J"].min())
+        j_max = float(df["J"].max())
+        j_grid = np.linspace(j_min, j_max, 6000)
+        kt_grid = np.interp(j_grid, df["J"], df["KT"])
+        kq_grid = np.interp(j_grid, df["J"], df["KQ"])
+        eta_grid = np.interp(j_grid, df["J"], df["nO"])
 
-        # Selección del punto más cercano. Esto evita usar el óptimo de eficiencia.
-        fila = df.loc[df["error_abs_N"].idxmin()]
-        error_pct = abs(float(fila["T_pred_N"]) - empuje_n) / max(empuje_n, 1e-9) * 100.0
+        n_rps_grid = va_ms / (j_grid * diametro_m)
+        rpm_grid = n_rps_grid * 60.0
+        t_pred_grid = kt_grid * rho_kg_m3 * (n_rps_grid ** 2) * (diametro_m ** 4)
+        err_grid = np.abs(t_pred_grid - empuje_n)
+
+        idx = int(np.nanargmin(err_grid))
+        error_pct = abs(float(t_pred_grid[idx]) - empuje_n) / max(empuje_n, 1e-9) * 100.0
         return {
-            "rpm": float(fila["rpm"]),
-            "J": float(fila["J"]),
-            "KT": float(fila["KT"]),
-            "KQ": float(fila["KQ"]),
-            "etaO": float(fila["nO"]),
-            "T_pred_N": float(fila["T_pred_N"]),
+            "rpm": float(rpm_grid[idx]),
+            "J": float(j_grid[idx]),
+            "KT": float(kt_grid[idx]),
+            "KQ": float(kq_grid[idx]),
+            "etaO": float(eta_grid[idx]),
+            "T_pred_N": float(t_pred_grid[idx]),
             "error_pct": float(error_pct),
-            "origen": "Calculado automáticamente con curva Wageningen y empuje requerido"
+            "origen": "Calculado automáticamente con curva Wageningen y carga hidrodinámica requerida"
         }
     except Exception:
         return {
@@ -3039,6 +3055,18 @@ with st.sidebar:
         )
     )
     rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 0.0)), min_value=0.0, step=1.0)
+    with st.expander("Ajuste opcional de RPM hidrodinámica", expanded=False):
+        rpm_hidro_conocida = st.number_input(
+            "RPM hidrodinámica manual [rpm]",
+            value=0.0,
+            min_value=0.0,
+            step=0.01,
+            format="%.4f",
+            help=(
+                "Déjalo en 0 para que la app calcule automáticamente la RPM hidrodinámica. "
+                "Solo úsalo si tienes un dato medido o de una tabla externa y quieres compararlo."
+            )
+        )
     diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 0.0)), min_value=0.0, step=0.01)
     z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 0)), min_value=0, step=1)
     pd_real = st.number_input("P/D real", value=float(nvl(datos_pdf.get("prop_pd"), 0.0)), min_value=0.0, step=0.001, format="%.3f")
@@ -3335,8 +3363,13 @@ thrust_potencia_N = (tprop_potencia_manual_kn * 1000.0) if usar_tprop_potencia_m
 
 # Punto de operación hidrodinámico automático. Cambia para cada barco porque depende
 # de VA, D, rho, Tprop y la geometría P/D-Ae/A0-Z de la hélice.
+# Para obtener el régimen n hidrodinámico se usa la carga efectiva de avance
+# asociada a la resistencia con margen (RT_servicio). El empuje propulsor con
+# deducción t se conserva para PT/Keller/Burrill. Esta separación evita inflar
+# artificialmente las RPM por usar dos veces la corrección de interacción casco-hélice.
+carga_hidrodinamica_N = RT_servicio_N
 punto_hidro_operacion = resolver_punto_operacion_hidrodinamico(
-    res, VA_ms, diam_prop_m, thrust_potencia_N, rho_auto
+    res, VA_ms, diam_prop_m, carga_hidrodinamica_N, rho_auto
 )
 rpm_hidrodinamica_auto = float(punto_hidro_operacion.get("rpm", 0.0) or 0.0)
 j_hidrodinamica_auto = float(punto_hidro_operacion.get("J", 0.0) or 0.0)
@@ -3360,12 +3393,15 @@ try:
 except Exception:
     rpm_helice_desde_motor = 0.0
 
-if rpm_real and rpm_real > 0:
+if rpm_hidrodinamica_auto > 0:
+    rpm_helice_requerida = rpm_hidrodinamica_auto
+    rpm_helice_origen = "RPM hidrodinámica automática por Wageningen"
+elif rpm_hidro_conocida and rpm_hidro_conocida > 0:
+    rpm_helice_requerida = rpm_hidro_conocida
+    rpm_helice_origen = "RPM hidrodinámica manual"
+elif rpm_real and rpm_real > 0:
     rpm_helice_requerida = rpm_real
     rpm_helice_origen = "RPM real/manual ingresada"
-elif rpm_hidrodinamica_auto > 0:
-    rpm_helice_requerida = rpm_hidrodinamica_auto
-    rpm_helice_origen = "RPM hidrodinámica automática Wageningen"
 elif rpm_helice_desde_motor > 0:
     rpm_helice_requerida = rpm_helice_desde_motor
     rpm_helice_origen = "Derivada de motor y relación de reducción"
@@ -3382,7 +3418,7 @@ j_operacion = safe_div(VA_ms, max((rpm_helice_requerida / 60.0) * diam_prop_m, 1
 # Solo se reemplaza si el usuario ingresa una ηO conocida/manual distinta de cero.
 # Si no existe RPM de operación, NO se toma la ηO máxima automáticamente.
 try:
-    if rpm_helice_origen == "RPM hidrodinámica automática Wageningen" and eta_o_hidrodinamica_auto > 0:
+    if rpm_helice_origen == "RPM estimada por Wageningen y empuje requerido" and eta_o_hidrodinamica_auto > 0:
         eta_o_wageningen_operacion = eta_o_hidrodinamica_auto
     else:
         eta_o_wageningen_operacion = float(np.interp(j_operacion, res["J"], res["nO"])) if j_operacion > 0 else 0.0
@@ -3491,7 +3527,7 @@ sacrificio_potencia_pct = (1.0 - factor_carga_segura) * 100.0
 comparacion_df = pd.DataFrame([
     {"Parámetro": "Potencia al freno PB [kW]", "Calculado": PB_kw_calc, "Real PDF/manual": pb_real_kw, "Error [%]": error_pct(PB_kw_calc, pb_real_kw)},
     {"Parámetro": "RPM de hélice usada en potencia [rpm]", "Calculado": rpm_helice_validacion, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_helice_validacion, rpm_real)},
-    {"Parámetro": "RPM hidrodinámica automática [rpm]", "Calculado": rpm_hidrodinamica_auto, "Real PDF/manual": rpm_real, "Error [%]": error_pct(rpm_hidrodinamica_auto, rpm_real)},
+    {"Parámetro": "RPM estimada por Wageningen [rpm]", "Calculado": rpm_hidrodinamica_auto, "Real PDF/manual": rpm_helice_requerida, "Error [%]": error_pct(rpm_hidrodinamica_auto, rpm_helice_requerida)},
     {"Parámetro": "Diámetro de hélice [m]", "Calculado": diam_prop_m, "Real PDF/manual": diam_real_m, "Error [%]": error_pct(diam_prop_m, diam_real_m)},
     {"Parámetro": "Número de palas Z", "Calculado": z_val, "Real PDF/manual": z_real, "Error [%]": error_pct(z_val, z_real)},
     {"Parámetro": "P/D", "Calculado": pd_val, "Real PDF/manual": pd_real, "Error [%]": error_pct(pd_val, pd_real)},
@@ -5101,12 +5137,12 @@ with tab_hidro:
         k1.caption(f"ηO máxima teórica solo referencia: {max_eff_wageningen*100:.2f}%")
         k2.metric("J operación", f"{j_operacion:.3f}")
         k2.caption(f"J eficiencia teórica: {j_eficiencia:.3f}")
-        k3.metric("RPM hidrodinámica", f"{rpm_hidrodinamica_auto:.2f} rpm" if rpm_hidrodinamica_auto > 0 else "—")
-        k3.caption(f"RPM usada en potencia: {rpm_helice_requerida:.2f} rpm · {rpm_helice_origen}")
+        k3.metric("RPM hidrodinámica usada", f"{rpm_helice_requerida:.2f} rpm" if rpm_helice_requerida > 0 else "—")
+        k3.caption(f"Origen: {rpm_helice_origen} · Carga hidrodinámica usada: {carga_hidrodinamica_N/1000:.1f} kN")
         k4.metric("KT / KQ operación", f"{kt_operacion:.4f} / {kq_operacion:.4f}")
         if rpm_hidrodinamica_auto > 0:
             st.caption(
-                f"La RPM hidrodinámica se obtiene automáticamente de T = KT·ρ·n²·D⁴ y J = VA/(nD). "
+                f"La RPM hidrodinámica automática se obtiene con la carga efectiva RT con margen: T = KT·ρ·n²·D⁴ y J = VA/(nD). Ese valor gobierna J, ηO y la cadena de potencias. "
                 f"Error de empuje en curva ≈ {error_empuje_hidro_pct:.2f}% ."
             )
 
