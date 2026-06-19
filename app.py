@@ -3597,6 +3597,14 @@ area_expandida_real_m2 = ae_val * area_disco
 area_expandida_req_keller_m2 = keller_ae_min * area_disco
 area_expandida_req_burrill_m2 = burrill_ae_min * area_disco
 area_expandida_req_recomendada_m2 = ae_min_control * area_disco
+
+# DATO INFORMATIVO: Ae/A0 de seguridad mínima.
+# No modifica RPM, J, eficiencias ni la cadena de potencias.
+# Solo se muestra como recomendación de margen para proteger la hélice.
+aeao_seguridad_min_info = max(0.60, float(keller_ae_min), float(burrill_ae_min))
+area_expandida_seguridad_m2 = aeao_seguridad_min_info * area_disco
+deficit_area_seguridad_m2 = max(area_expandida_seguridad_m2 - area_expandida_real_m2, 0.0)
+
 deficit_area_keller_m2 = max(area_expandida_req_keller_m2 - area_expandida_real_m2, 0.0)
 deficit_area_burrill_m2 = max(area_expandida_req_burrill_m2 - area_expandida_real_m2, 0.0)
 deficit_area_recomendada_m2 = max(area_expandida_req_recomendada_m2 - area_expandida_real_m2, 0.0)
@@ -5817,13 +5825,27 @@ with tab_cav:
         b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
         b3.metric("Ae/A0 mín. Burrill", f"{burrill_ae_min:.3f}")
         b4.metric("Ae requerida", f"{area_expandida_req_burrill_m2:.2f} m²")
+
+        st.markdown(
+            f"""
+            <div style="background:rgba(16,185,129,0.08); border-left:4px solid rgba(16,185,129,0.35); border-radius:12px; padding:12px 14px; margin:12px 0;">
+                <b>🛡️ Ae/A0 de seguridad mínima recomendado</b><br>
+                <span style="font-size:22px; font-weight:900; color:#065f46;">{aeao_seguridad_min_info:.3f}</span><br>
+                <span class="small-muted">Área expandida segura equivalente: {area_expandida_seguridad_m2:.2f} m². Este valor es solo informativo y no modifica las potencias ni las eficiencias.</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
         burrill_area_df = pd.DataFrame([
             {"Parámetro": "Velocidad local v1 a 0.7R", "Valor": v1_burrill, "Unidad": "m/s", "Lectura": "Velocidad resultante usada para estimar carga de pala en Burrill."},
-            {"Parámetro": "Área de pala requerida Ap", "Valor": area_pala_req_burrill_m2, "Unidad": "m²", "Lectura": "Área mínima preliminar antes de convertir a relación expandida."},
+            {"Parámetro": "Área de pala requerida Ap", "Valor": area_expandida_req_burrill_m2, "Unidad": "m²", "Lectura": "Área expandida mínima requerida por Burrill; dato informativo, no modifica la cadena de potencias."},
             {"Parámetro": "Constante Keller c", "Valor": keller_constante_c, "Unidad": "—", "Lectura": "Constante preliminar adoptada para monohélice mercante."},
             {"Parámetro": "Área de disco A0", "Valor": area_disco, "Unidad": "m²", "Lectura": "Área circular barrida por la hélice."},
             {"Parámetro": "Área expandida actual Ae", "Valor": area_expandida_real_m2, "Unidad": "m²", "Lectura": f"Sale de Ae/A0 actual = {ae_val:.3f}."},
             {"Parámetro": "Área mínima requerida por Burrill", "Valor": area_expandida_req_burrill_m2, "Unidad": "m²", "Lectura": f"Equivale a Ae/A0 mín. = {burrill_ae_min:.3f}."},
+            {"Parámetro": "Ae/A0 seguridad mínima", "Valor": aeao_seguridad_min_info, "Unidad": "—", "Lectura": "Recomendación informativa; no modifica los cálculos existentes."},
+            {"Parámetro": "Área expandida segura sugerida", "Valor": area_expandida_seguridad_m2, "Unidad": "m²", "Lectura": "Área sugerida para dejar margen adicional contra cavitación."},
             {"Parámetro": "Déficit de área", "Valor": deficit_area_burrill_m2, "Unidad": "m²", "Lectura": "Si es mayor que cero, falta área de pala para este criterio."},
         ])
         st.markdown("#### Área requerida mínima por Burrill")
@@ -5843,10 +5865,24 @@ with tab_cav:
         k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
         k3.metric("Ae requerida", f"{area_expandida_req_keller_m2:.2f} m²")
         k4.metric("Déficit", f"{deficit_area_keller_m2:.2f} m²")
+
+        st.markdown(
+            f"""
+            <div style="background:rgba(16,185,129,0.08); border-left:4px solid rgba(16,185,129,0.35); border-radius:12px; padding:12px 14px; margin:12px 0;">
+                <b>🛡️ Ae/A0 de seguridad mínima recomendado</b><br>
+                <span style="font-size:22px; font-weight:900; color:#065f46;">{aeao_seguridad_min_info:.3f}</span><br>
+                <span class="small-muted">Área expandida segura equivalente: {area_expandida_seguridad_m2:.2f} m². Este valor es solo informativo y no modifica las potencias ni las eficiencias.</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
         keller_area_df = pd.DataFrame([
             {"Parámetro": "Área de disco A0", "Valor": area_disco, "Unidad": "m²", "Lectura": "Área circular barrida por la hélice."},
             {"Parámetro": "Área expandida actual Ae", "Valor": area_expandida_real_m2, "Unidad": "m²", "Lectura": f"Sale de Ae/A0 actual = {ae_val:.3f}."},
             {"Parámetro": "Área mínima requerida por Keller", "Valor": area_expandida_req_keller_m2, "Unidad": "m²", "Lectura": f"Equivale a Ae/A0 mín. = {keller_ae_min:.3f}."},
+            {"Parámetro": "Ae/A0 seguridad mínima", "Valor": aeao_seguridad_min_info, "Unidad": "—", "Lectura": "Recomendación informativa; no modifica los cálculos existentes."},
+            {"Parámetro": "Área expandida segura sugerida", "Valor": area_expandida_seguridad_m2, "Unidad": "m²", "Lectura": "Área sugerida para dejar margen adicional contra cavitación."},
             {"Parámetro": "Déficit de área", "Valor": deficit_area_keller_m2, "Unidad": "m²", "Lectura": "Si es mayor que cero, falta área de pala para este criterio."},
         ])
         st.markdown("#### Área requerida mínima por Keller")
