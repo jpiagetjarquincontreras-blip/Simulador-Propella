@@ -5000,18 +5000,31 @@ with tab_hidro:
     hidro_curvas, hidro_tabla, hidro_formulas = st.tabs(["📈 Curvas", "📋 Resultados numéricos", "🧮 Fórmulas"])
 
     with hidro_curvas:
+        # Punto de OPERACIÓN: este es el que interesa para potencia, RPM y cavitación.
+        # No se muestra como resultado principal la eficiencia máxima teórica, porque eso
+        # puede hacer parecer que la app está optimizando por eficiencia en vez de evaluar
+        # el punto real de trabajo de la hélice.
+        try:
+            kt_operacion = float(np.interp(j_operacion, res["J"], res["KT"])) if j_operacion > 0 else 0.0
+            kq_operacion = float(np.interp(j_operacion, res["J"], res["KQ"])) if j_operacion > 0 else 0.0
+        except Exception:
+            kt_operacion, kq_operacion = 0.0, 0.0
+
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("ηO máxima teórica", f"{max_eff_wageningen*100:.2f}%")
-        k2.metric("J eficiencia teórica", f"{j_eficiencia:.3f}")
-        k2.caption(f"J operación: {j_operacion:.3f}")
-        k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
-        k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
+        k1.metric("ηO de operación", f"{max_eff*100:.2f}%")
+        k1.caption(f"ηO máxima teórica solo referencia: {max_eff_wageningen*100:.2f}%")
+        k2.metric("J operación", f"{j_operacion:.3f}")
+        k2.caption(f"J eficiencia teórica: {j_eficiencia:.3f}")
+        k3.metric("KT en operación", f"{kt_operacion:.4f}")
+        k4.metric("KQ en operación", f"{kq_operacion:.4f}")
 
         fig, ax = plt.subplots(figsize=(11, 5.2))
         ax.plot(res["J"], res["KT"], linewidth=2.6, label="KT — Coeficiente de empuje")
         ax.plot(res["J"], res["10KQ"], linewidth=2.6, label="10·KQ — Coeficiente de torque")
         ax.plot(res["J"], res["nO"], linewidth=3.2, linestyle="--", label="ηO — Eficiencia")
-        ax.axvline(x=j_opt, linestyle=":", linewidth=2, label=f"J óptimo = {j_opt:.3f}")
+        if j_operacion > 0:
+            ax.axvline(x=j_operacion, linestyle="-", linewidth=2.2, label=f"J operación = {j_operacion:.3f}")
+        ax.axvline(x=j_eficiencia, linestyle=":", linewidth=1.6, label=f"J eficiencia teórica = {j_eficiencia:.3f}")
         ax.fill_between(res["J"], 0, res["nO"], alpha=0.08)
         ax.set_title("Curvas KT, 10KQ y ηO — Hélice Wageningen Serie B", fontsize=12, fontweight="bold")
         ax.set_xlabel("Coeficiente de avance J")
