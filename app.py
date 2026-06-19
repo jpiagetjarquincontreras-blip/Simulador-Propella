@@ -1554,7 +1554,7 @@ def crear_figura_motor_transmision_interactiva(pb_kw, mcr_kw, rpm_motor_val, rpm
 
 
 @st.cache_data(show_spinner=False)
-def optimizar_helice_wageningen(modo="Rápida", rpm_referencia=0.0, va_ms_ref=0.0, diametro_ref_m=1.0):
+def optimizar_helice_wageningen(modo="Rápida", rpm_referencia=0.0, va_ms_ref=0.0, diametro_ref_m=1.0, ae_min_requerido=0.0, priorizar_integridad=True):
     """
     Optimización ligera para no bloquear la app en Streamlit Cloud.
     Modo Rápida: pocas combinaciones, ideal para clase.
@@ -1600,20 +1600,39 @@ def optimizar_helice_wageningen(modo="Rápida", rpm_referencia=0.0, va_ms_ref=0.
                 eta_pct = float(eta_vals[imax] * 100.0)
                 rpm_est = safe_div(va_ms_ref, max(j_best * diametro_ref_m, 1e-9), default=0.0) * 60.0 if va_ms_ref > 0 else 0.0
                 error_rpm = abs(rpm_est - rpm_referencia) / max(rpm_referencia, 1e-9) * 100.0 if rpm_referencia and rpm_referencia > 0 and rpm_est > 0 else np.nan
-                # Puntaje profesional: maximiza eficiencia, pero penaliza alejarse de la RPM real/PDF si existe.
+                # Puntaje profesional-realista:
+                # La app NO debe elegir una hélice solo por máxima eficiencia si esa geometría
+                # queda corta de área expandida frente a Keller/Burrill. Primero se exige
+                # integridad de la hélice; después se premian eficiencia y cercanía a RPM real.
                 penalizacion_rpm = 0.35 * error_rpm if not np.isnan(error_rpm) else 0.0
-                puntaje = eta_pct - penalizacion_rpm
+                ae_min_local = float(max(ae_min_requerido, 0.0))
+                margen_ae_pct = (aev - ae_min_local) / max(ae_min_local, 1e-9) * 100.0 if ae_min_local > 0 else np.nan
+                dictamen_area = "Cumple" if (ae_min_local <= 0 or aev >= ae_min_local) else "No cumple"
+                penalizacion_area = 0.0
+                bonus_area = 0.0
+                if priorizar_integridad and ae_min_local > 0:
+                    if aev < ae_min_local:
+                        # Penalización fuerte: una hélice eficiente pero frágil/cavitante no debe ganar.
+                        penalizacion_area = 120.0 + abs(margen_ae_pct) * 2.0
+                    else:
+                        # Pequeño bono por margen sano sin premiar excesivamente áreas enormes.
+                        bonus_area = min(margen_ae_pct, 20.0) * 0.08
+                puntaje = eta_pct - penalizacion_rpm - penalizacion_area + bonus_area
                 dictamen_rpm = "Cumple" if (np.isnan(error_rpm) or error_rpm <= 10) else ("Revisar" if error_rpm <= 20 else "No cumple")
                 filas.append({
                     "Z": z,
                     "P/D": float(pdv),
                     "Ae/A0": float(aev),
+                    "Ae/A0 mínimo": ae_min_local if ae_min_local > 0 else np.nan,
+                    "Margen área [%]": margen_ae_pct,
+                    "Dictamen área": dictamen_area,
                     "J óptimo": j_best,
                     "KT": float(kt_vals[imax]),
                     "KQ": float(kq_vals[imax]),
                     "ηO [%]": eta_pct,
                     "RPM estimada [rpm]": rpm_est,
                     "Error RPM [%]": error_rpm,
+                    "Puntaje realista": puntaje,
                     "Puntaje optimizado": puntaje,
                     "Dictamen RPM": dictamen_rpm,
                 })
@@ -2734,6 +2753,24 @@ with st.sidebar:
         help="En modo básico/intermedio se estima a partir de w. Activa modo avanzado o validación para editarla."
     )
 
+    modo_metodologia = st.selectbox(
+        "Modo de metodología de cálculo",
+        [
+            "Diseño general universal",
+            "Validación manual estilo profesor",
+            "Validación KVLCC2 — profesor"
+        ],
+        index=0,
+        help=(
+            "Diseño general universal sirve para cualquier buque. Validación manual estilo profesor permite "
+            "introducir RPM, ηO, P/D, Ae/A0 y/o Tprop de referencia sin amarrar la app al KVLCC2. "
+            "Validación KVLCC2 reproduce el caso visto en clase."
+        )
+    )
+    modo_profesor_kvlcc2 = (modo_metodologia == "Validación KVLCC2 — profesor")
+    modo_validacion_profesor_generica = (modo_metodologia == "Validación manual estilo profesor")
+    usar_filosofia_profesor = modo_profesor_kvlcc2 or modo_validacion_profesor_generica
+
     eta_r = st.number_input(
         "Eficiencia rotativa relativa ηR [-]",
         value=float(1.000 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("eta_r"), 1.010)),
@@ -2806,15 +2843,6 @@ with st.sidebar:
         help="En modo básico se usa 15% como margen preliminar típico."
     )
 
-    modo_profesor_kvlcc2 = st.checkbox(
-        "Usar metodología de validación del profesor para KVLCC2",
-        value=True,
-        help=(
-            "Activa la comparación directa con la app aprobada: la cadena de potencias usa la "
-            "filosofía observada en la app del profesor; cavitación conserva t=0.220 y potencia usa "
-            "el empuje/eficiencias calibrados del módulo validado."
-        )
-    )
     if modo_profesor_kvlcc2:
         # Valores observados en la herramienta validada del profesor para el caso KVLCC2.
         # Se dejan explícitos para que Keller, Burrill, RPM y comparación trabajen con la misma metodología.
@@ -2824,6 +2852,11 @@ with st.sidebar:
             "Modo profesor KVLCC2 activo: P/D=0.870, pA=101325 Pa, n=71.5464 rpm, "
             "ηO=0.49527, ηR=1.000, ηS=0.980, ηG=0.970. "
             "La cadena de potencia replica el módulo validado del profesor; Keller/Burrill conservan Tprop por t=0.220."
+        )
+    elif modo_validacion_profesor_generica:
+        st.info(
+            "Modo validación manual: la app sigue siendo universal. Tú introduces P/D, Ae/A0, RPM real, ηO y, si aplica, Tprop de referencia. "
+            "La J de eficiencia queda solo para optimización; la J de operación gobierna RPM, cavitación y comparación."
         )
 
     st.markdown("---")
@@ -2863,6 +2896,25 @@ with st.sidebar:
         rt_fuente = "Dato conocido/manual del usuario o PDF"
         st.caption(f"RT manual usada: {resistencia_total_kn:,.0f} kN.")
 
+    usar_tprop_potencia_manual = st.checkbox(
+        "Usar Tprop manual solo para potencia PT/ηH",
+        value=True if modo_profesor_kvlcc2 else False,
+        disabled=modo_profesor_kvlcc2,
+        help=(
+            "Actívalo si la app del profesor o una ficha te da un empuje de propulsor específico para la cadena de potencia. "
+            "Si no se activa, la app usa Tprop = RT·(1+SM)/(1-t), que es más general."
+        )
+    )
+    tprop_potencia_manual_kn = st.number_input(
+        "Tprop manual para potencia [kN]",
+        value=float(3166.78962 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("tprop_kn"), resistencia_total_kn)),
+        min_value=0.0,
+        step=10.0,
+        format="%.5f",
+        disabled=(modo_profesor_kvlcc2 or not usar_tprop_potencia_manual),
+        help="Este dato NO cambia Keller/Burrill; solo permite replicar la cadena PT-PD-PS-PB de una referencia."
+    )
+
     with st.expander("📘 ¿Cómo calcula la app la RT automática?", expanded=False):
         st.markdown("""
         La resistencia total automática es una **estimación preliminar universal**. La app no usa un valor fijo de un barco específico.
@@ -2884,6 +2936,38 @@ with st.sidebar:
     eta_s = st.number_input("Eficiencia del eje ηS [-]", value=float(0.980 if modo_profesor_kvlcc2 else estimar_eta_s(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=(modo_profesor_kvlcc2 or not editar_avanzado))
     eta_g = st.number_input("Eficiencia de engranaje/transmisión ηG [-]", value=float(0.970 if modo_profesor_kvlcc2 else estimar_eta_g(transmision_para_eta)), min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=(modo_profesor_kvlcc2 or not editar_avanzado))
     eta_o_extra = st.number_input("Eficiencia extra / pérdidas varias [-]", value=1.000, min_value=0.50, max_value=1.00, step=0.001, format="%.3f", disabled=not editar_avanzado, help="Normalmente 1.000 si no se considera una pérdida adicional.")
+
+    eta_o_fuente = st.selectbox(
+        "Fuente de ηO para la cadena de potencia",
+        ["Wageningen por máxima eficiencia", "ηO manual/de operación"],
+        index=1 if usar_filosofia_profesor else 0,
+        disabled=modo_profesor_kvlcc2,
+        help=(
+            "Para diseño general se puede usar la ηO máxima de Wageningen. Para validación contra el profesor "
+            "conviene usar la ηO de operación o la que aparece en su módulo, porque no siempre coincide con el punto óptimo."
+        )
+    )
+    eta_o_manual = st.number_input(
+        "ηO manual/de operación [-]",
+        value=float(0.49527 if modo_profesor_kvlcc2 else nvl(datos_pdf.get("eta_o"), 0.55)),
+        min_value=0.20,
+        max_value=0.90,
+        step=0.001,
+        format="%.5f",
+        disabled=(modo_profesor_kvlcc2 or eta_o_fuente == "Wageningen por máxima eficiencia"),
+        help="Usa este campo cuando quieras replicar una app/profesor, datos de ensaye, curva abierta a punto de operación o ficha validada."
+    )
+    usar_eta_o_manual = modo_profesor_kvlcc2 or (eta_o_fuente == "ηO manual/de operación")
+
+    priorizar_integridad_helice = st.checkbox(
+        "Priorizar integridad de hélice antes que máxima eficiencia",
+        value=True,
+        help=(
+            "Activa una condición conservadora: la app no recomienda como 'mejor' una hélice que no cumpla "
+            "Ae/A0 mínimo por Keller/Burrill, aunque tenga una ηO alta. Si no cumple, se marca como No cumple "
+            "y se sugiere aumentar Ae/A0, diámetro, número de palas o reducir carga/potencia de operación."
+        )
+    )
 
     st.markdown("---")
     st.subheader("🛠️ Motor y transmisión")
@@ -2994,7 +3078,7 @@ j_opt_wageningen = float(res.loc[res["nO"].idxmax(), "J"]) if max_eff_wageningen
 # J_operacion: punto real de trabajo del buque. Se calcula con VA, D y RPM de servicio.
 # Esta es la J que debe alimentar RPM, cavitación, Keller/Burrill y comparación con profesor.
 # En modo profesor, ηO no sale del máximo de la curva; se fija con el valor del módulo validado.
-max_eff = 0.49527 if modo_profesor_kvlcc2 else max_eff_wageningen
+max_eff = float(eta_o_manual) if usar_eta_o_manual else max_eff_wageningen
 j_eficiencia = j_opt_wageningen
 j_opt = j_eficiencia  # alias antiguo para compatibilidad de gráficas/exports
 
@@ -3210,7 +3294,15 @@ if modo_profesor_kvlcc2:
     eta_s = 0.980
     eta_g = 0.970
     max_eff = 0.49527
+elif modo_validacion_profesor_generica:
+    # Filosofía universal estilo profesor: no amarra el cálculo a un buque.
+    # Cavitación usa el empuje de servicio por RT, margen y deducción t.
+    # Potencia puede usar ese mismo empuje o un Tprop manual de referencia.
+    thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
+    thrust_potencia_N = (tprop_potencia_manual_kn * 1000.0) if usar_tprop_potencia_manual and tprop_potencia_manual_kn > 0 else thrust_cavitacion_N
+    eta_h = safe_div(PE_kw, max(thrust_potencia_N * VA_ms / 1000.0, 1e-9), default=0.0) if usar_tprop_potencia_manual else safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
 else:
+    # Diseño general universal: usa los datos del usuario/PDF sin calibraciones fijas.
     thrust_cavitacion_N = safe_div(RT_servicio_N, max(1.0 - t_fraction, 1e-9))
     thrust_potencia_N = thrust_cavitacion_N
     eta_h = safe_div(1.0 - t_fraction, 1.0 - estela, default=0.0)
@@ -3286,6 +3378,17 @@ burrill_ae_min = aeao_requerido_burrill_aprox(sigma_n, tau_c_burrill, ae_val, pd
 burrill_ok = (tau_c_burrill <= tau_c_admisible) and (ae_val >= burrill_ae_min)
 ae_min_control = max(keller_ae_min, burrill_ae_min)
 area_expandida_ok = ae_val >= ae_min_control
+
+# Condición conservadora de integridad: si el área de pala real no alcanza el mínimo,
+# la app no debe vender el punto como óptimo. Calcula una carga/potencia segura aproximada
+# proporcional al área disponible y una geometría mínima recomendada.
+ae_min_recomendado = max(ae_min_control * 1.05, ae_val) if ae_min_control > 0 else ae_val
+factor_carga_segura = min(1.0, safe_div(ae_val, max(ae_min_control, 1e-9), default=1.0)) if priorizar_integridad_helice else 1.0
+thrust_seguro_N = thrust_req_N * factor_carga_segura
+PT_seguro_kw = PT_kw * factor_carga_segura
+PE_segura_kw = PE_kw * factor_carga_segura
+PB_seguro_kw = PB_kw_calc * factor_carga_segura
+sacrificio_potencia_pct = (1.0 - factor_carga_segura) * 100.0
 
 comparacion_df = pd.DataFrame([
     {"Parámetro": "Potencia al freno PB [kW]", "Calculado": PB_kw_calc, "Real PDF/manual": pb_real_kw, "Error [%]": error_pct(PB_kw_calc, pb_real_kw)},
@@ -4794,7 +4897,7 @@ with tab_opt:
     normativa_pestana("Optimización preliminar de hélice por desempeño hidrodinámico.", [("Wageningen Serie B / MARIN", "curvas KT, KQ y eficiencia en aguas abiertas"), ("ITTC", "uso de coeficientes no dimensionales J, KT, KQ"), ("ISO 484", "calidad geométrica y tolerancias de manufactura de hélices")])
     st.markdown("""
     <div class="section-card">
-    Esta herramienta no cambia tus datos automáticamente: prueba combinaciones comerciales de número de palas Z, P/D y Ae/A0, calcula sus curvas Wageningen y genera una propuesta preliminar. Si existe RPM real cargada desde el PDF o entrada manual, la optimización no solo busca eficiencia: también penaliza las configuraciones que se alejan demasiado de la RPM real de servicio.
+    Esta herramienta no cambia tus datos automáticamente: prueba combinaciones comerciales de número de palas Z, P/D y Ae/A0, calcula sus curvas Wageningen y genera una propuesta preliminar. Si existe RPM real cargada desde el PDF o entrada manual, la optimización penaliza las configuraciones que se alejan demasiado de la RPM real de servicio. Además, si está activa la condición conservadora, la app descarta en puntaje las hélices que no alcancen el Ae/A0 mínimo de Keller/Burrill, aunque tengan alta eficiencia.
     Para evitar que la app se quede cargando y bloquee las pestañas siguientes, la optimización se ejecuta solo cuando el usuario presiona el botón.
     </div>
     """, unsafe_allow_html=True)
@@ -4817,7 +4920,7 @@ with tab_opt:
 
     if ejecutar_opt:
         with st.spinner("Calculando combinaciones de hélice con búsqueda detallada... espera unos segundos."):
-            st.session_state["opt_df"] = optimizar_helice_wageningen(modo_opt, rpm_real, VA_ms, diam_prop_m)
+            st.session_state["opt_df"] = optimizar_helice_wageningen(modo_opt, rpm_real, VA_ms, diam_prop_m, ae_min_control, priorizar_integridad_helice)
             st.session_state["opt_modo"] = modo_opt
         st.success(f"Optimización detallada terminada. Se evaluaron {len(st.session_state['opt_df'])} combinaciones.")
 
@@ -4827,19 +4930,22 @@ with tab_opt:
             opt_df.head(20).style.format({
                 "P/D":"{:.3f}",
                 "Ae/A0":"{:.3f}",
+                "Ae/A0 mínimo":"{:.3f}",
+                "Margen área [%]":"{:.2f}",
                 "J óptimo":"{:.3f}",
                 "KT":"{:.4f}",
                 "KQ":"{:.4f}",
                 "ηO [%]":"{:.2f}",
                 "RPM estimada [rpm]":"{:.2f}",
                 "Error RPM [%]":"{:.2f}",
-                "Puntaje optimizado":"{:.2f}"
-            }).map(style_estado, subset=["Dictamen RPM"]),
+                "Puntaje optimizado":"{:.2f}",
+                "Puntaje realista":"{:.2f}"
+            }).map(style_estado, subset=["Dictamen RPM", "Dictamen área"]),
             use_container_width=True,
             height=520
         )
         mejor = opt_df.iloc[0]
-        estado_html(f"Mejor combinación encontrada por puntaje: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%, RPM estimada={mejor['RPM estimada [rpm]']:.2f} rpm.", "good")
+        estado_html(f"Mejor combinación encontrada por puntaje realista: Z={int(mejor['Z'])}, P/D={mejor['P/D']:.3f}, Ae/A0={mejor['Ae/A0']:.3f}, ηO={mejor['ηO [%]']:.2f}%, RPM estimada={mejor['RPM estimada [rpm]']:.2f} rpm, área={mejor.get('Dictamen área','N/A')}.", "good" if str(mejor.get('Dictamen área','Cumple')) == "Cumple" else "warn")
 
         st.markdown("### 📊 Visualización de mejores alternativas")
         top_opt = opt_df.head(10).copy()
