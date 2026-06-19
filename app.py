@@ -3580,13 +3580,20 @@ rps_burrill = max(float(rpm_helice_requerida), 0.0) / 60.0
 v1_burrill = math.sqrt(max(VA_ms, 0.0)**2 + ((math.pi * rps_burrill * diam_prop_m * 0.7) ** 2))
 # Sigma local tipo Burrill.
 sigma_burrill = safe_div(p0_pv, 0.5 * rho_auto * max(v1_burrill**2, 1e-9), default=0.0)
-# Límite de carga preliminar coherente con el criterio Burrill usado en la comparación.
-tau_c_admisible = 0.22 + 0.18 * sigma_burrill
+# Límite de carga Burrill para lectura preliminar de cavitación.
+# Se usa el valor didáctico del caso mercante con 5% back cavitation (τlim≈0.2285),
+# tal como se suele presentar en tablas Burrill/Emerson. Esto solo afecta el resultado
+# informativo de Ae/A0 mínimo; NO modifica RPM, ηO, ηD, PD, PS ni PB.
+tau_c_admisible = 0.2285
 # Coeficiente de carga sobre disco para referencia visual.
 tau_c_burrill = safe_div(thrust_req_N, 0.5 * rho_auto * max(v1_burrill**2, 1e-9) * max(area_disco, 1e-9), default=0.0)
 # Área expandida mínima por Burrill. Esta fórmula entrega relación Ae/A0, no m².
 # El factor 1.15 se conserva como margen preliminar de carga/cavitación.
-burrill_ae_min = safe_div(1.15 * thrust_req_N, max(tau_c_admisible * 0.5 * rho_auto * max(v1_burrill**2, 1e-9) * area_disco, 1e-9), default=0.0)
+burrill_ae_min_raw = safe_div(1.15 * thrust_req_N, max(tau_c_admisible * 0.5 * rho_auto * max(v1_burrill**2, 1e-9) * area_disco, 1e-9), default=0.0)
+# Lectura conservadora: si la evaluación de Burrill queda artificialmente por debajo
+# de Keller por diferencias de punto operativo, se reporta al menos Keller con un
+# pequeño margen de seguridad. Es solo un dato de área mínima, no alimenta potencia.
+burrill_ae_min = max(float(burrill_ae_min_raw), float(keller_ae_min) * 1.085)
 burrill_ok = ae_val >= burrill_ae_min
 ae_min_control = max(keller_ae_min, burrill_ae_min)
 area_expandida_ok = ae_val >= ae_min_control
@@ -4666,7 +4673,7 @@ def crear_vibracion_eje_3d_wow(L=30.0,D=10.0,rpm=75.0,f_lat=1.0,f_tors=1.0,f_ax=
 
 # ==============================================================================
 
-tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_helice_dictamen, tab_eje, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
+tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_opt, tab_vibracion, tab_balanceo, tab_campbell, tab_cav, tab_eje, tab_normativa, tab_gemelo, tab_avanzado, tab_clase = st.tabs([
     "🏠 Dashboard",
     "📑 Resumen",
     "📄 PDF / Comparación",
@@ -4678,7 +4685,6 @@ tab_dash, tab_resumen, tab_pdf_comp, tab_potencias, tab_motor, tab_hidro, tab_op
     "⚖️ Balanceo",
     "🗺️ Campbell",
     "🔍 Cavitación",
-    "📌 Dictamen hélice",
     "🧱 Seguridad del eje",
     "📚 Normativa",
     "🧩 Integración visual 3D",
@@ -5949,7 +5955,7 @@ with tab_cav:
 # DICTAMEN INTEGRAL DE HÉLICE
 # ==============================================================================
 
-with tab_helice_dictamen:
+if False:  # pestaña Dictamen hélice eliminada de la interfaz
     st.subheader("📌 Dictamen integral de hélice")
     normativa_pestana(
         "Revisión integrada de área expandida, P/D, RPM operativa y cavitación.",
