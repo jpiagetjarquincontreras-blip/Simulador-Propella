@@ -2971,6 +2971,17 @@ with st.sidebar:
     st.subheader("🔎 Datos reales para comparar")
     st.caption("Estos campos son opcionales. Si no hay PDF o ficha técnica, déjalos en 0 y la app calculará sin comparar contra datos reales.")
     pb_real_kw = st.number_input("PB real/NCR del buque [kW]", value=float(nvl(datos_pdf.get("ncr_kw"), 0.0)), min_value=0.0, step=100.0)
+    pd_conocida_kw = st.number_input(
+        "PD conocida/manual para cadena de potencia [kW]",
+        value=float(nvl(datos_pdf.get("pd_kw"), 0.0)),
+        min_value=0.0,
+        step=100.0,
+        help=(
+            "Dato opcional y universal. Úsalo solo si tienes PD de ficha, ensayo, profesor o cálculo externo. "
+            "Si se deja en 0, la app calcula PD con ηD = ηH·ηO·ηR. "
+            "Si se ingresa, la app recalcula ηD y ηO de operación a partir de PE/PD, sin usar valores fijos."
+        )
+    )
     rpm_real = st.number_input("RPM reales de hélice/servicio [rpm]", value=float(nvl(datos_pdf.get("ncr_rpm"), 0.0)), min_value=0.0, step=1.0)
     diam_real_m = st.number_input("Diámetro real de hélice [m]", value=float(nvl(datos_pdf.get("prop_diam_m"), 0.0)), min_value=0.0, step=0.01)
     z_real = st.number_input("Número real de palas", value=int(nvl(datos_pdf.get("prop_z"), 0)), min_value=0, step=1)
@@ -3260,22 +3271,36 @@ VA_ms = v_ms
 # --------------------------------------------------------------------------
 # RPM Y J DE OPERACIÓN ANTES DE LA CADENA DE POTENCIA
 # --------------------------------------------------------------------------
-# Si existe RPM real/conocida, esa gobierna el punto de operación. Si no existe,
-# se usa la RPM de máxima eficiencia solo como respaldo de prediseño.
+# Si existe RPM real/conocida, esa gobierna el punto de operación.
+# IMPORTANTE: ya NO se usa la RPM de máxima eficiencia como respaldo automático,
+# porque eso hacía que la cadena de potencia regresara al punto óptimo teórico.
+# La máxima eficiencia queda solo como referencia de optimización.
 rpm_por_j_eficiencia = safe_div(VA_ms, max(j_eficiencia * diam_prop_m, 1e-9), default=0.0) * 60.0 if j_eficiencia > 0 else 0.0
+rpm_helice_desde_motor = 0.0
+try:
+    if motor_ncr_rpm and motor_ncr_rpm > 0 and relacion_reduccion and relacion_reduccion > 0:
+        rpm_helice_desde_motor = motor_ncr_rpm / relacion_reduccion
+except Exception:
+    rpm_helice_desde_motor = 0.0
+
 if rpm_real and rpm_real > 0:
     rpm_helice_requerida = rpm_real
+elif rpm_helice_desde_motor > 0:
+    rpm_helice_requerida = rpm_helice_desde_motor
+elif rpm_motor and rpm_motor > 0:
+    rpm_helice_requerida = rpm_motor
 else:
-    rpm_helice_requerida = rpm_por_j_eficiencia
+    rpm_helice_requerida = 0.0
 
 j_operacion = safe_div(VA_ms, max((rpm_helice_requerida / 60.0) * diam_prop_m, 1e-9), default=0.0) if rpm_helice_requerida > 0 else 0.0
 
 # ηO de operación universal: se toma de la curva Wageningen en el J real de operación.
 # Solo se reemplaza si el usuario ingresa una ηO conocida/manual distinta de cero.
+# Si no existe RPM de operación, NO se toma la ηO máxima automáticamente.
 try:
-    eta_o_wageningen_operacion = float(np.interp(j_operacion, res["J"], res["nO"])) if j_operacion > 0 else max_eff_wageningen
+    eta_o_wageningen_operacion = float(np.interp(j_operacion, res["J"], res["nO"])) if j_operacion > 0 else 0.0
 except Exception:
-    eta_o_wageningen_operacion = max_eff_wageningen
+    eta_o_wageningen_operacion = 0.0
 
 if usar_eta_o_manual:
     max_eff = float(eta_o_manual)
@@ -3296,9 +3321,22 @@ eta_h = safe_div(PE_kw, max(thrust_potencia_N * VA_ms / 1000.0, 1e-9), default=0
 
 thrust_req_N = thrust_cavitacion_N
 PT_kw = thrust_potencia_N * VA_ms / 1000.0
-eta_b = max_eff * eta_r
-eta_d = eta_h * eta_b * eta_o_extra
-PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
+# Cadena de potencia universal:
+# 1) Si el usuario proporciona PD conocida/manual, se respeta ese dato y se recalculan
+#    las eficiencias implícitas. Esto permite validar contra fichas, ensayos o una app externa
+#    sin crear un modo especial ni fijar datos de un barco.
+# 2) Si PD no se conoce, se calcula con ηD = ηH·ηO·ηR usando ηO de operación
+#    por Wageningen o ηO manual, nunca la máxima eficiencia salvo que el usuario la elija.
+if pd_conocida_kw and pd_conocida_kw > 0:
+    PD_kw = float(pd_conocida_kw)
+    eta_d = safe_div(PE_kw, max(PD_kw, 1e-9), default=0.0)
+    eta_b = safe_div(eta_d, max(eta_h * eta_o_extra, 1e-9), default=0.0)
+    max_eff = safe_div(eta_b, max(eta_r, 1e-9), default=0.0)
+else:
+    eta_b = max_eff * eta_r
+    eta_d = eta_h * eta_b * eta_o_extra
+    PD_kw = safe_div(PE_kw, max(eta_d, 1e-9))
+
 PS_kw = safe_div(PD_kw, max(eta_s, 1e-9))
 PB_kw_calc = safe_div(PS_kw, max(eta_g, 1e-9))
 MCR_requerido_kw = safe_div(PB_kw_calc, 0.85, default=0.0)
@@ -3438,7 +3476,7 @@ comparacion_prof_df["Dictamen"] = comparacion_prof_df["Error [%]"].apply(dictame
 
 efficiency_prof_df = pd.DataFrame([
     {"Eficiencia": "ηH", "Descripción": "Eficiencia de casco = (1-t)/(1-w)", "Valor": eta_h, "Rango esperado": "0.80–1.30", "Dictamen": dictamen_eficiencia(eta_h, 0.80, 1.30)},
-    {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas Wageningen", "Valor": max_eff, "Rango esperado": "0.40–0.85", "Dictamen": dictamen_eficiencia(max_eff, 0.40, 0.85)},
+    {"Eficiencia": "ηO", "Descripción": "Eficiencia en aguas abiertas de operación", "Valor": max_eff, "Rango esperado": "0.40–0.85", "Dictamen": dictamen_eficiencia(max_eff, 0.40, 0.85)},
     {"Eficiencia": "ηR", "Descripción": "Eficiencia rotativa relativa", "Valor": eta_r, "Rango esperado": "0.90–1.10", "Dictamen": dictamen_eficiencia(eta_r, 0.90, 1.10)},
     {"Eficiencia": "ηB", "Descripción": "Eficiencia detrás del casco aproximada = ηO·ηR", "Valor": eta_b, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_b, 0.35, 0.90)},
     {"Eficiencia": "ηD", "Descripción": "Eficiencia cuasi-propulsiva aproximada", "Valor": eta_d, "Rango esperado": "0.35–0.90", "Dictamen": dictamen_eficiencia(eta_d, 0.35, 0.90)},
@@ -4963,8 +5001,8 @@ with tab_hidro:
 
     with hidro_curvas:
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("ηO máxima", f"{max_eff*100:.2f}%")
-        k2.metric("J eficiencia", f"{j_eficiencia:.3f}")
+        k1.metric("ηO máxima teórica", f"{max_eff_wageningen*100:.2f}%")
+        k2.metric("J eficiencia teórica", f"{j_eficiencia:.3f}")
         k2.caption(f"J operación: {j_operacion:.3f}")
         k3.metric("KT en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KT']):.4f}")
         k4.metric("KQ en ηO máx.", f"{float(res.loc[res['nO'].idxmax(), 'KQ']):.4f}")
@@ -5835,7 +5873,7 @@ with tab_clase:
         {"Bloque técnico": "Datos principales del buque", "Resultado clave": f"L={eslora:.2f} m · B={manga:.2f} m · T={calado:.2f} m · V={velocidad:.2f} kn", "Criterio de lectura": "Datos de entrada o ficha técnica", "Estado": "Cumple"},
         {"Bloque técnico": "Resistencia y potencia efectiva", "Resultado clave": f"RT={resistencia_total_kn:,.0f} kN · PE={PE_kw:,.0f} kW", "Criterio de lectura": "RT positiva y potencia trazable", "Estado": "Cumple" if resistencia_total_kn > 0 and PE_kw > 0 else "Revisar"},
         {"Bloque técnico": "Potencia al freno / motor", "Resultado clave": f"PB={PB_kw_calc:,.0f} kW · MCR req.={MCR_requerido_kw:,.0f} kW", "Criterio de lectura": "Reserva frente al MCR disponible", "Estado": motor_estado if 'motor_estado' in globals() else ("Cumple" if PB_kw_calc <= MCR_requerido_kw else "Revisar")},
-        {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO máx={max_eff*100:.2f}% · J={j_opt:.3f}", "Criterio de lectura": "Eficiencia de aguas abiertas razonable", "Estado": "Cumple" if hidro_ok else "Revisar"},
+        {"Bloque técnico": "Hélice Wageningen", "Resultado clave": f"ηO operación={max_eff*100:.2f}% · J operación={j_operacion:.3f} · ηO máx teórica={max_eff_wageningen*100:.2f}%", "Criterio de lectura": "Eficiencia real de operación separada del óptimo teórico", "Estado": "Cumple" if hidro_ok else "Revisar"},
         {"Bloque técnico": "Geometría de hélice", "Resultado clave": f"D={diam_prop_m:.2f} m · Z={z_val} · P/D={pd_val:.3f} · Ae/A0={ae_val:.3f}", "Criterio de lectura": "Rangos comerciales y área suficiente", "Estado": "Cumple" if (3 <= z_val <= 7 and 0.50 <= pd_val <= 1.40 and keller_ok) else "Revisar"},
         {"Bloque técnico": "Cavitación", "Resultado clave": f"σ={sigma_n:.3f} · Burrill={'Cumple' if burrill_ok else 'Revisar'} · Keller={'Cumple' if keller_ok else 'No cumple'}", "Criterio de lectura": "Burrill, Keller, σ y Reynolds", "Estado": "Cumple" if (burrill_ok and keller_ok and cavitacion_ok and reynolds_ok) else "Revisar"},
         {"Bloque técnico": "Vibración torsional", "Resultado clave": f"τ={esfuerzo_real_mpa:.2f} MPa · τadm={tau_admisible_mpa:.2f} MPa", "Criterio de lectura": "Esfuerzo menor al admisible", "Estado": "Cumple" if torsion_ok else "No cumple"},
