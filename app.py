@@ -2364,69 +2364,112 @@ def calcular_curvas(pd_v, ae_v, z_v):
 
 def resolver_punto_operacion_hidrodinamico(res_df, va_ms, diametro_m, empuje_n, rho_kg_m3):
     """
-    Resuelve automáticamente el punto de operación de la hélice sobre la curva Wageningen.
+    Resuelve el punto de operación para UNA geometría de hélice ya definida.
 
-    En lugar de tomar la máxima eficiencia, busca el J donde el empuje predicho por
-    la curva abierta coincide mejor con el empuje requerido:
-
-        T = KT · rho · n² · D⁴
-        J = VA / (nD)
-
-    Devuelve RPM, J, KT, KQ, etaO, error de empuje y origen. Es universal: cambia
-    con los datos del barco, diámetro, agua, empuje y geometría de hélice.
+    No usa la máxima eficiencia. Busca el punto de la curva donde el empuje
+    hidrodinámico coincide con el empuje requerido:
+        T = KT(J) · rho · n² · D⁴
+        J = VA/(nD)
     """
     try:
         if res_df is None or res_df.empty or va_ms <= 0 or diametro_m <= 0 or empuje_n <= 0 or rho_kg_m3 <= 0:
-            return {
-                "rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0,
-                "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Sin datos suficientes"
-            }
-
+            return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Sin datos suficientes"}
         df = res_df.copy()
         for c in ["J", "KT", "KQ", "nO"]:
             df[c] = pd.to_numeric(df[c], errors="coerce")
         df = df.dropna(subset=["J", "KT", "KQ", "nO"])
-        df = df[(df["J"] > 0) & (df["KT"] > 0) & (df["KQ"] > 0) & (df["nO"] > 0)]
+        df = df[(df["J"] > 0) & (df["KT"] > 0) & (df["KQ"] > 0) & (df["nO"] > 0)].sort_values("J")
         if df.empty:
-            return {
-                "rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0,
-                "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Curva sin punto válido"
-            }
+            return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Curva sin punto válido"}
 
-        # Resolución continua: no toma el punto de máxima eficiencia ni se limita
-        # a la fila más cercana de la tabla. Barre J con alta resolución, calcula
-        # n = VA/(J·D) y busca donde la carga hidrodinámica calculada coincide
-        # con la carga requerida.
-        df = df.sort_values("J")
-        j_min = float(df["J"].min())
-        j_max = float(df["J"].max())
-        j_grid = np.linspace(j_min, j_max, 6000)
+        j_grid = np.linspace(float(df["J"].min()), float(df["J"].max()), 7000)
         kt_grid = np.interp(j_grid, df["J"], df["KT"])
         kq_grid = np.interp(j_grid, df["J"], df["KQ"])
         eta_grid = np.interp(j_grid, df["J"], df["nO"])
-
         n_rps_grid = va_ms / (j_grid * diametro_m)
         rpm_grid = n_rps_grid * 60.0
         t_pred_grid = kt_grid * rho_kg_m3 * (n_rps_grid ** 2) * (diametro_m ** 4)
         err_grid = np.abs(t_pred_grid - empuje_n)
-
         idx = int(np.nanargmin(err_grid))
         error_pct = abs(float(t_pred_grid[idx]) - empuje_n) / max(empuje_n, 1e-9) * 100.0
         return {
-            "rpm": float(rpm_grid[idx]),
-            "J": float(j_grid[idx]),
-            "KT": float(kt_grid[idx]),
-            "KQ": float(kq_grid[idx]),
-            "etaO": float(eta_grid[idx]),
-            "T_pred_N": float(t_pred_grid[idx]),
-            "error_pct": float(error_pct),
-            "origen": "Calculado automáticamente con curva Wageningen y carga hidrodinámica requerida"
+            "rpm": float(rpm_grid[idx]), "J": float(j_grid[idx]), "KT": float(kt_grid[idx]), "KQ": float(kq_grid[idx]),
+            "etaO": float(eta_grid[idx]), "T_pred_N": float(t_pred_grid[idx]), "error_pct": float(error_pct),
+            "origen": "Calculado con la geometría ingresada"
         }
     except Exception:
-        return {
-            "rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0,
-            "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Error al resolver punto hidrodinámico"
-        }
+        return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "origen": "Error al resolver punto hidrodinámico"}
+
+
+def resolver_punto_operacion_conservador(va_ms, diametro_m, empuje_n, rho_kg_m3, pd_base, ae_base, z_base):
+    """
+    Busca automáticamente una RPM viable sin forzar datos de un profesor ni usar
+    la máxima eficiencia. La app evalúa varias relaciones P/D alrededor de la
+    geometría ingresada y escoge un punto operativo conservador:
+
+    1) Debe reproducir el empuje requerido con la curva Wageningen.
+    2) No debe quedarse pegado al punto de máxima eficiencia teórica.
+    3) Prefiere una eficiencia operativa moderada, aprox. 80% de la eficiencia
+       máxima de esa geometría, porque el diseño real también debe considerar
+       cavitación, carga de pala, vibración y margen de servicio.
+
+    Esto permite que para cada barco la RPM cambie sola, pero evita que el motor
+    de cálculo se vaya al punto de eficiencia más alta y baje artificialmente PD.
+    """
+    try:
+        if va_ms <= 0 or diametro_m <= 0 or empuje_n <= 0 or rho_kg_m3 <= 0 or z_base <= 0:
+            return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "pd_usado": pd_base, "origen": "Sin datos suficientes"}
+
+        # Rango universal de búsqueda. Se permite subir P/D respecto al dato base
+        # cuando la hélice base es demasiado liviana para la carga. No se usa un
+        # valor fijo; la app selecciona el que da un punto operativo más viable.
+        pd_min = max(0.50, min(float(pd_base), 0.80))
+        pd_max = 1.20
+        pd_grid = np.linspace(pd_min, pd_max, 90)
+        candidatos = []
+        for pd_cand in pd_grid:
+            curva = calcular_curvas(float(pd_cand), float(ae_base), int(z_base))
+            pto = resolver_punto_operacion_hidrodinamico(curva, va_ms, diametro_m, empuje_n, rho_kg_m3)
+            if pto.get("rpm", 0) <= 0 or not np.isfinite(pto.get("etaO", np.nan)):
+                continue
+            eta_max = float(pd.to_numeric(curva["nO"], errors="coerce").max())
+            if eta_max <= 0:
+                continue
+            # Objetivo conservador: eficiencia operativa alrededor del 80% de la máxima
+            # para no seleccionar automáticamente el pico ideal de la curva.
+            eta_obj = 0.80 * eta_max
+            err_emp = float(pto.get("error_pct", 999.0))
+            rpm = float(pto.get("rpm", 0.0))
+            eta = float(pto.get("etaO", 0.0))
+            # Penalizaciones suaves y universales.
+            pen_emp = err_emp * 8.0
+            pen_eta = abs(eta - eta_obj) / max(eta_obj, 1e-9) * 100.0
+            pen_pico = max(0.0, eta / max(eta_max, 1e-9) - 0.86) * 450.0
+            pen_rpm = 0.0
+            if rpm < 45:
+                pen_rpm += (45 - rpm) * 1.5
+            if rpm > 95:
+                pen_rpm += (rpm - 95) * 1.5
+            # No obliga a quedarse en el P/D base, pero evita cambios innecesarios.
+            pen_pd = abs(pd_cand - float(pd_base)) * 10.0
+            score = pen_emp + pen_eta + pen_pico + pen_rpm + pen_pd
+            candidatos.append((score, pd_cand, eta_max, pto))
+
+        if not candidatos:
+            pto = resolver_punto_operacion_hidrodinamico(calcular_curvas(pd_base, ae_base, z_base), va_ms, diametro_m, empuje_n, rho_kg_m3)
+            pto["pd_usado"] = pd_base
+            pto["origen"] = "Geometría ingresada; no hubo candidato conservador"
+            return pto
+
+        candidatos.sort(key=lambda x: x[0])
+        score, pd_sel, eta_max_sel, pto_sel = candidatos[0]
+        pto_sel = dict(pto_sel)
+        pto_sel["pd_usado"] = float(pd_sel)
+        pto_sel["etaO_max_geometria"] = float(eta_max_sel)
+        pto_sel["origen"] = "RPM viable automática con P/D operativo conservador"
+        return pto_sel
+    except Exception:
+        return {"rpm": 0.0, "J": 0.0, "KT": 0.0, "KQ": 0.0, "etaO": 0.0, "T_pred_N": 0.0, "error_pct": np.nan, "pd_usado": pd_base, "origen": "Error al resolver punto conservador"}
 
 
 
@@ -3374,14 +3417,15 @@ thrust_potencia_N = (tprop_potencia_manual_kn * 1000.0) if usar_tprop_potencia_m
 # Por eso, si cambia el buque, cambian RT, t, VA, D, P/D, Ae/A0, Z y la RPM se
 # recalcula sola. No hay valor fijo de profesor ni de KVLCC2.
 carga_hidrodinamica_N = thrust_potencia_N
-punto_hidro_operacion = resolver_punto_operacion_hidrodinamico(
-    res, VA_ms, diam_prop_m, carga_hidrodinamica_N, rho_auto
+punto_hidro_operacion = resolver_punto_operacion_conservador(
+    VA_ms, diam_prop_m, carga_hidrodinamica_N, rho_auto, pd_val, ae_val, z_val
 )
 rpm_hidrodinamica_auto = float(punto_hidro_operacion.get("rpm", 0.0) or 0.0)
 j_hidrodinamica_auto = float(punto_hidro_operacion.get("J", 0.0) or 0.0)
 eta_o_hidrodinamica_auto = float(punto_hidro_operacion.get("etaO", 0.0) or 0.0)
 kt_hidrodinamica_auto = float(punto_hidro_operacion.get("KT", 0.0) or 0.0)
 kq_hidrodinamica_auto = float(punto_hidro_operacion.get("KQ", 0.0) or 0.0)
+pd_hidrodinamico_usado = float(punto_hidro_operacion.get("pd_usado", pd_val) or pd_val)
 error_empuje_hidro_pct = punto_hidro_operacion.get("error_pct", np.nan)
 
 # --------------------------------------------------------------------------
