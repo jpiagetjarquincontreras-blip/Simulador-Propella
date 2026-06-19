@@ -3584,18 +3584,36 @@ caja_cumple = True if transmision_tipo.startswith("Automática") or motor_ncr_rp
 transmision_ok = bool(caja_cumple)
 
 # Keller: área expandida mínima preliminar para evitar cavitación excesiva.
+# IMPORTANTE: T debe estar en N, no en kN.
+# Para hélice monohélice mercante se emplea c = 0.20, que es la constante que
+# permite comparar de forma coherente con el criterio Keller usado en la app de referencia.
 p0_pv = (p_atm_auto + rho_auto * g_auto * inmersion_eje_m - p_vap_auto)
-keller_ae_min = safe_div((1.3 + 0.3 * z_val) * thrust_req_N, max(p0_pv * diam_prop_m**2, 1e-9), default=0.0) + 0.10
+keller_constante_c = 0.20
+keller_ae_min = safe_div((1.3 + 0.3 * z_val) * thrust_req_N, max(p0_pv * diam_prop_m**2, 1e-9), default=0.0) + keller_constante_c
 keller_ok = ae_val >= keller_ae_min
 
 # Burrill preliminar: coeficiente de carga de empuje vs sigma.
 area_disco = math.pi * diam_prop_m**2 / 4.0
 tau_c_burrill = safe_div(thrust_req_N, 0.5 * rho_auto * max(VA_ms**2, 1e-9) * max(area_disco, 1e-9), default=0.0)
-tau_c_admisible = 0.22 + 0.18 * sigma_n
-# Además del tau, se estima Ae/A0 requerido para evitar que la app marque "cumple"
-# cuando el área expandida real es menor al área mínima de pala.
-burrill_ae_min = aeao_requerido_burrill_aprox(sigma_n, tau_c_burrill, ae_val, pd_val, False)
-burrill_ok = (tau_c_burrill <= tau_c_admisible) and (ae_val >= burrill_ae_min)
+
+# Límite preliminar Burrill/Emerson usado para estimar área mínima.
+# La relación 0.16 + 0.10σ reproduce de forma conservadora el límite de carga
+# para el caso KVLCC2 y mantiene la app universal para otros buques.
+tau_c_admisible = max(0.05, 0.16 + 0.10 * float(sigma_n))
+
+# Área expandida mínima por Burrill.
+# Se calcula con la velocidad local de la pala a 0.7R:
+# v1 = sqrt(VA² + (π·n·0.7D)²).
+# Luego Ap_req = T/(τlim·0.5ρv1²) y se convierte a Ae/A0 con un factor
+# de expansión preliminar. Esto evita que el resultado salga artificialmente pequeño.
+rps_burrill = max(float(rpm_helice_requerida), 0.0) / 60.0
+v1_burrill = math.sqrt(max(VA_ms, 0.0)**2 + (math.pi * rps_burrill * 0.7 * diam_prop_m)**2)
+area_pala_req_burrill_m2 = safe_div(thrust_req_N, max(tau_c_admisible * 0.5 * rho_auto * v1_burrill**2, 1e-9), default=0.0)
+factor_expansion_burrill = 1.15
+burrill_ae_min = safe_div(factor_expansion_burrill * area_pala_req_burrill_m2, max(area_disco, 1e-9), default=0.0)
+if burrill_ae_min <= 0 or not np.isfinite(burrill_ae_min):
+    burrill_ae_min = aeao_requerido_burrill_aprox(sigma_n, tau_c_burrill, ae_val, pd_val, False)
+burrill_ok = ae_val >= burrill_ae_min
 ae_min_control = max(keller_ae_min, burrill_ae_min)
 area_expandida_ok = ae_val >= ae_min_control
 
@@ -5819,12 +5837,16 @@ with tab_cav:
         st.markdown("### 🫧 Criterio de Burrill")
         st.markdown("Burrill compara la carga de pala τc contra un límite admisible dependiente de σ. Es útil para detectar si la hélice está demasiado cargada.")
         st.latex(r"\tau_c = \frac{T}{\frac{1}{2}\rho V_A^2A_0}")
+        st.latex(r"v_1=\sqrt{V_A^2+(\pi n\,0.7D)^2}\quad ; \quad A_{E/A0,req}\approx\frac{1.15\,T}{\tau_{lim}(0.5\rho v_1^2)A_0}")
         b1, b2, b3, b4 = st.columns(4)
         b1.metric("τc calculado", f"{tau_c_burrill:.3f}")
         b2.metric("τc admisible", f"{tau_c_admisible:.3f}")
         b3.metric("Ae/A0 mín. Burrill", f"{burrill_ae_min:.3f}")
         b4.metric("Ae requerida", f"{area_expandida_req_burrill_m2:.2f} m²")
         burrill_area_df = pd.DataFrame([
+            {"Parámetro": "Velocidad local v1 a 0.7R", "Valor": v1_burrill, "Unidad": "m/s", "Lectura": "Velocidad resultante usada para estimar carga de pala en Burrill."},
+            {"Parámetro": "Área de pala requerida Ap", "Valor": area_pala_req_burrill_m2, "Unidad": "m²", "Lectura": "Área mínima preliminar antes de convertir a relación expandida."},
+            {"Parámetro": "Constante Keller c", "Valor": keller_constante_c, "Unidad": "—", "Lectura": "Constante preliminar adoptada para monohélice mercante."},
             {"Parámetro": "Área de disco A0", "Valor": area_disco, "Unidad": "m²", "Lectura": "Área circular barrida por la hélice."},
             {"Parámetro": "Área expandida actual Ae", "Valor": area_expandida_real_m2, "Unidad": "m²", "Lectura": f"Sale de Ae/A0 actual = {ae_val:.3f}."},
             {"Parámetro": "Área mínima requerida por Burrill", "Valor": area_expandida_req_burrill_m2, "Unidad": "m²", "Lectura": f"Equivale a Ae/A0 mín. = {burrill_ae_min:.3f}."},
@@ -5841,7 +5863,7 @@ with tab_cav:
     with cav_keller:
         st.markdown("### 📐 Criterio de Keller")
         st.markdown("Keller estima el área expandida mínima requerida para evitar una carga excesiva sobre las palas.")
-        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+0.10")
+        st.latex(r"\left(\frac{A_E}{A_0}\right)_{min}=\frac{(1.3+0.3Z)T}{(P_0-P_v)D^2}+c")
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Ae/A0 mínimo", f"{keller_ae_min:.3f}")
         k2.metric("Ae/A0 actual", f"{ae_val:.3f}")
@@ -6007,6 +6029,39 @@ with tab_helice_dictamen:
         use_container_width=True,
         height=250
     )
+
+    st.markdown("### 📊 Comparación visual del área expandida")
+    if HAS_PLOTLY:
+        fig_area = go.Figure()
+        vals_area = [ae_val, keller_ae_min, burrill_ae_min, ae_min_requerido_sin_actual]
+        labs_area = ["Ae/A0 real", "Mín. Keller", "Mín. Burrill", "Recomendado"]
+        fig_area.add_trace(go.Bar(
+            x=labs_area, y=vals_area,
+            text=[f"{v:.3f}" for v in vals_area], textposition="outside",
+            hovertemplate="<b>%{x}</b><br>Ae/A0=%{y:.4f}<extra></extra>"
+        ))
+        fig_area.add_hline(y=ae_val, line_dash="dot", annotation_text=f"Área real {ae_val:.3f}")
+        fig_area.update_layout(
+            title="Área expandida real vs mínimos requeridos",
+            xaxis_title="Criterio", yaxis_title="Relación Ae/A0 [-]",
+            height=430, template="plotly_white", margin=dict(l=60, r=35, t=75, b=60),
+            showlegend=False
+        )
+        fig_area.update_yaxes(range=[0, max(vals_area+[0.7])*1.18], showgrid=True, gridcolor="rgba(148,163,184,0.25)")
+        st.plotly_chart(fig_area, use_container_width=True, config=_plotly_config())
+    else:
+        fig_area, ax_area = plt.subplots(figsize=(9.5, 4.6))
+        vals_area = [ae_val, keller_ae_min, burrill_ae_min, ae_min_requerido_sin_actual]
+        labs_area = ["Ae/A0 real", "Mín. Keller", "Mín. Burrill", "Recomendado"]
+        ax_area.bar(labs_area, vals_area)
+        ax_area.axhline(ae_val, linestyle=":", linewidth=1.8, label=f"Área real {ae_val:.3f}")
+        ax_area.set_ylabel("Relación Ae/A0 [-]")
+        ax_area.set_title("Área expandida real vs mínimos requeridos")
+        ax_area.grid(True, axis="y", linestyle=":", alpha=0.55)
+        for i, v in enumerate(vals_area):
+            ax_area.text(i, v+0.015, f"{v:.3f}", ha="center", fontweight="bold")
+        ax_area.legend()
+        st.pyplot(fig_area)
 
     st.markdown("### ⚙️ Punto operativo usado por la app")
     pto_operativo_df = pd.DataFrame([
